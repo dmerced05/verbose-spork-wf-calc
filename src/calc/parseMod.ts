@@ -15,6 +15,13 @@ export type StatKey =
   | 'weakpointDamage' // Primary/Secondary Acuity, added to the weak point multiplier (x1.5 on heads)
   | 'magazineCapacity'
   | 'reloadSpeed'
+  | 'critChancePerCombo' // Blood Rush, x (combo multiplier - 1)
+  | 'statusChancePerCombo' // Weeping Wounds, x (combo multiplier - 1)
+  | 'heavyCritChance' // crit chance that only counts on heavy attacks (Melee Animosity, the 2nd half of "x2 for Heavy Attacks")
+  | 'heavyDamage' // Killing Blow: "+120% Melee Damage on Heavy Attack"
+  | 'heavyWindUpSpeed'
+  | 'heavyEfficiency' // how much combo a heavy attack keeps
+  | 'statusDuration' // longer DoTs = more ticks
 
 export type ModEffect =
   | { kind: 'stat'; stat: StatKey; value: number }
@@ -25,6 +32,7 @@ export type ModEffect =
   | { kind: 'overguardMultiplier'; value: number } // Secondary Fortifier
   | { kind: 'damageMultiplier'; value: number } // separate multiplier, e.g. Longbow Sharpshot's next shot bonus
   | { kind: 'lockMultishot' } // Primary/Pistol Acuity: multishot mods stop working
+  | { kind: 'heavyScaledCritChance'; value: number; heavyFactor: number } // "(x2 for Heavy Attacks)"
 
 export interface ConditionalEffect {
   trigger: string // "On Kill:", "On Toxin Status Effect:", "While Overshields Active:" ...
@@ -46,7 +54,14 @@ const STAT_PATTERNS: [RegExp, StatKey][] = [
   [/^([+-][\d.]+)% (?:Melee )?[Dd]amage$/, 'damage'],
   [/^Enemies take ([+-][\d.]+)% damage per Cold Status$/i, 'damagePerColdStack'],
   [/^([+-][\d.]+)% (?:Weak Point Critical Chance|Critical Chance on Weakpoint Hits)\b/, 'weakpointCritChance'],
-  [/^([+-][\d.]+)% Critical Chance(?: \(x[\d.]+ for Heavy Attacks\))?$/, 'critChance'],
+  [/^([+-][\d.]+)% Critical Chance$/, 'critChance'],
+  [/^([+-][\d.]+)% Critical Chance stacks with Combo Multiplier$/, 'critChancePerCombo'],
+  [/^([+-][\d.]+)% Status Chance per Combo Multiplier$/, 'statusChancePerCombo'],
+  [/^([+-][\d.]+)% Critical Chance on (?:your )?next Heavy Attack\b/, 'heavyCritChance'],
+  [/^([+-][\d.]+)% (?:Melee )?Damage on Heavy Attacks?\b/, 'heavyDamage'],
+  [/^([+-][\d.]+)% Heavy Attack Wind Up Speed$/, 'heavyWindUpSpeed'],
+  [/^([+-][\d.]+)% Heavy Attack Efficiency$/, 'heavyEfficiency'],
+  [/^([+-][\d.]+)% Status Duration$/, 'statusDuration'],
   [/^([+-][\d.]+)% Critical Damage$/, 'critDamage'],
   [/^([+-][\d.]+)% Multishot$/, 'multishot'],
   [/^([+-][\d.]+)% (?:Fire Rate|Attack Speed)(?: \(x[\d.]+ for Bows\))?$/, 'fireRate'],
@@ -59,6 +74,11 @@ const STAT_PATTERNS: [RegExp, StatKey][] = [
 ]
 
 export function parseStatLine(line: string): ModEffect | null {
+  // True Steel family: "+120% Critical Chance (x2 for Heavy Attacks)". per the Galvanized Steel hotfix, heavies get
+  // the doubled value instead of the normal one (+240% total, not +360%)
+  const heavyScaled = line.match(/^([+-][\d.]+)% Critical Chance \(x([\d.]+) for Heavy Attacks\)$/)
+  if (heavyScaled) return { kind: 'heavyScaledCritChance', value: percent(heavyScaled[1]), heavyFactor: Number(heavyScaled[2]) }
+
   for (const [pattern, stat] of STAT_PATTERNS) {
     const match = line.match(pattern)
     if (match) return { kind: 'stat', stat, value: percent(match[1]) }
@@ -121,7 +141,8 @@ function parseUpgradeUncached(levelStats: string[][], rank: number): ParsedUpgra
 
   const addConditional = (trigger: string, body: string) => {
     const stackCount = body.match(/Stacks up to (\d+)x/)
-    const stackPercentCap = body.match(/Stacks up to ([\d.]+)%/) // Cascadia Flare: "+12% ... Stacks up to 480%"
+    // Cascadia Flare: "+12% ... Stacks up to 480%", Melee Animosity: "42% Critical Chance on your next Heavy Attack, up to 420%"
+    const stackPercentCap = body.match(/(?:Stacks|,) up to ([\d.]+)%/)
     const parts = cleanConditionalBody(body).split(/\s+and\s+(?=[+-]?\d)/)
     for (const part of parts) {
       const effect = parseStatLine(/^\d/.test(part) ? `+${part}` : part)
@@ -179,5 +200,14 @@ export const maxConditionalStacks = (levelStats: string[][], rank: number, inclu
       .conditionals.filter((conditional) => includeTrigger(conditional.trigger))
       .map((conditional) => conditional.maxStacks),
   )
+
+// fire rate / attack speed mods (positive only, so Critical Delay's -fire rate doesn't count), for the "FR" tag and the
+// leaderboard's "no fire rate mods" rankings
+export const raisesFireRate = (levelStats: string[][], rank = levelStats.length - 1) => {
+  const parsed = parseUpgrade(levelStats, rank)
+  return [...parsed.effects, ...parsed.conditionals.map((conditional) => conditional.effect)].some(
+    (effect) => effect.kind === 'stat' && effect.stat === 'fireRate' && effect.value > 0,
+  )
+}
 
 export const isHeadshotTrigger = (trigger: string) => /headshot|weak ?point/i.test(trigger)

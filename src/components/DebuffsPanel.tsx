@@ -108,7 +108,7 @@ export function DebuffsPanel({ debuffs, buffs, onDebuffsChange, onBuffsChange }:
           Roar / faction buff %
           <input
             type="number" min={0} value={toPercent(buffs.roar)}
-            onChange={(event) => onBuffsChange({ roar: Math.max(0, Number(event.target.value)) / 100 })}
+            onChange={(event) => onBuffsChange({ ...buffs, roar: Math.max(0, Number(event.target.value)) / 100 })}
           />
         </label>
       </div>

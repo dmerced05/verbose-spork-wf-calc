@@ -7,7 +7,7 @@ import { cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { weapons } from '../src/data'
 import { optimizeAttack, type OptimizedBuild } from '../src/optimizer/optimize'
-import { OBJECTIVES, type ObjectiveId } from '../src/optimizer/objectives'
+import { BOARDS, boardKey } from '../src/optimizer/objectives'
 import type { CompactEntry, LeaderboardFile } from '../src/optimizer/leaderboardTypes'
 import { SCENARIO_DESCRIPTION } from '../src/optimizer/scenario'
 
@@ -15,8 +15,8 @@ const ROOT = new URL('../', import.meta.url)
 const CACHE_DIR = new URL('node_modules/.cache/leaderboard/', ROOT)
 const OUTPUT = new URL('public/leaderboard.json', ROOT)
 
-type Boards = Record<ObjectiveId, CompactEntry[]>
-const emptyBoards = (): Boards => Object.fromEntries(OBJECTIVES.map((objective) => [objective.id, []])) as unknown as Boards
+type Boards = Record<string, CompactEntry[]>
+const emptyBoards = (): Boards => Object.fromEntries(BOARDS.map((board) => [board.key, []]))
 const round = (value: number, digits = 4) => Math.round(value * 10 ** digits) / 10 ** digits
 
 // mods/arcanes become indexes into one shared table, which keeps the JSON a fraction of the size
@@ -65,28 +65,42 @@ function toShardEntry(build: OptimizedBuild, score: number): ShardEntry {
     mods: build.mods.map(({ mod, rank, conditionalStacks }) => [mod.uniqueName, mod.name, rank, conditionalStacks]),
     arcane: build.arcane ? [build.arcane.arcane.uniqueName, build.arcane.arcane.name, build.arcane.rank, build.arcane.conditionalStacks] : null,
     perks: build.perks.map(({ perk }) => ({ tier: perk.tier, name: perk.name })),
+    passives: build.result.passives,
+    bonusElement: build.bonusElement,
   }
 }
 
 // one shard: per weapon and objective, the best normal attack and the best Incarnon-form attack (kept apart so
 // the page can toggle Incarnon forms, whose charge/magazine isn't modeled)
 function runShard(shard: number, count: number) {
-  const boards = Object.fromEntries(OBJECTIVES.map((objective) => [objective.id, [] as ShardEntry[]]))
+  const boards = Object.fromEntries(BOARDS.map((board) => [board.key, [] as ShardEntry[]]))
   weapons.forEach((weapon, index) => {
     if (index % count !== shard) return
     // event-only attacks (reload explosions, turret expiry) don't fire at the fire rate, so they're skipped
     const attacks = weapon.attacks.filter(
       (attack) => Object.values(attack.damage).some((amount) => amount > 0) && !/reload|expiry|turret/i.test(attack.name),
     )
-    for (const objective of OBJECTIVES) {
-      const bestByForm = new Map<boolean, { build: OptimizedBuild; score: number }>()
-      for (const attack of attacks) {
-        const build = optimizeAttack(weapon, attack, objective)
-        const isIncarnon = /incarnon/i.test(attack.name)
-        if (build.score > (bestByForm.get(isIncarnon)?.score ?? 0)) bestByForm.set(isIncarnon, { build, score: build.score })
+    const bestByBoard = new Map<string, Map<boolean, { build: OptimizedBuild; score: number }>>()
+    for (const attack of attacks) {
+      const isIncarnon = /incarnon/i.test(attack.name)
+      const builds = new Map<string, OptimizedBuild>()
+      for (const { key, objective, allowFireRateMods } of BOARDS) {
+        // heavies use up the combo, so spamming them at max combo isn't real DPS. they only compete for single hits
+        if (attack.heavy && objective.usesFireRate) continue
+        builds.set(key, optimizeAttack(weapon, attack, objective, allowFireRateMods))
       }
-      for (const { build, score } of bestByForm.values()) boards[objective.id].push(toShardEntry(build, score))
+      // the search is a heuristic, so the no-fire-rate build can come out ahead. it's a legal build either way
+      for (const { key, objective, allowFireRateMods } of BOARDS) {
+        const without = builds.get(boardKey(objective.id, false))
+        if (allowFireRateMods && objective.usesFireRate && without && without.score > (builds.get(key)?.score ?? 0)) builds.set(key, without)
+      }
+      for (const [key, build] of builds) {
+        const byForm = bestByBoard.get(key) ?? new Map()
+        bestByBoard.set(key, byForm)
+        if (build.score > (byForm.get(isIncarnon)?.score ?? 0)) byForm.set(isIncarnon, { build, score: build.score })
+      }
     }
+    for (const [key, byForm] of bestByBoard) for (const { build, score } of byForm.values()) boards[key].push(toShardEntry(build, score))
     process.stdout.write('.')
   })
   writeFileSync(new URL(`shard-${shard}.json`, CACHE_DIR), JSON.stringify(boards))
@@ -102,7 +116,7 @@ async function main() {
   const count = Math.max(1, Math.min(cpus().length - 1, 12))
   rmSync(CACHE_DIR, { recursive: true, force: true })
   mkdirSync(CACHE_DIR, { recursive: true })
-  console.log(`optimizing ${weapons.length} weapons x ${OBJECTIVES.length} rankings on ${count} processes...`)
+  console.log(`optimizing ${weapons.length} weapons x ${BOARDS.length} rankings on ${count} processes...`)
   const started = Date.now()
   const self = fileURLToPath(import.meta.url)
   await Promise.all(
@@ -116,10 +130,10 @@ async function main() {
 
   const boards = emptyBoards()
   for (let shard = 0; shard < count; shard++) {
-    const part = JSON.parse(readFileSync(new URL(`shard-${shard}.json`, CACHE_DIR), 'utf8')) as Record<ObjectiveId, ShardEntry[]>
-    for (const objective of OBJECTIVES) {
-      for (const entry of part[objective.id]) {
-        boards[objective.id].push({
+    const part = JSON.parse(readFileSync(new URL(`shard-${shard}.json`, CACHE_DIR), 'utf8')) as Record<string, ShardEntry[]>
+    for (const { key } of BOARDS) {
+      for (const entry of part[key]) {
+        boards[key].push({
           ...entry,
           mods: entry.mods.map(([id, name, rank, stacks]) => [tableIndexFor(id, name), rank, stacks]),
           arcane: entry.arcane ? [tableIndexFor(entry.arcane[0], entry.arcane[1]), entry.arcane[2], entry.arcane[3]] : null,
@@ -127,7 +141,7 @@ async function main() {
       }
     }
   }
-  for (const objective of OBJECTIVES) boards[objective.id].sort((a, b) => b.score - a.score)
+  for (const { key } of BOARDS) boards[key].sort((a, b) => b.score - a.score)
 
   const itemsPackage = JSON.parse(readFileSync(new URL('node_modules/@wfcd/items/package.json', ROOT), 'utf8'))
   const file: LeaderboardFile = {

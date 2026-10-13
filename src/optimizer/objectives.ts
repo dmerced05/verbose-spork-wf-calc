@@ -20,7 +20,7 @@ export const OBJECTIVES: Objective[] = [
     id: 'sustained',
     label: 'Sustained DPS',
     unit: 'DPS',
-    description: 'Direct hits + status DoTs per second over a long fight, magazine and reload included',
+    description: 'Average DPS over a 60 s fight: reloads, status ticks as they land (Heat stacking included), DoT ticks after the fight ends not counted',
     usesFireRate: true,
     score: (result) => result.sustainedDps,
   },
@@ -43,3 +43,18 @@ export const OBJECTIVES: Objective[] = [
 ]
 
 export const objectiveById = (id: ObjectiveId) => OBJECTIVES.find((objective) => objective.id === id)!
+
+// every precomputed ranking. the DPS-type ones get a second board optimized without fire rate / attack speed mods
+export interface BoardSpec {
+  key: string
+  objective: Objective
+  allowFireRateMods: boolean
+}
+export const boardKey = (id: ObjectiveId, allowFireRateMods: boolean) => (allowFireRateMods ? id : `${id}-nofr`)
+export const BOARDS: BoardSpec[] = OBJECTIVES.flatMap((objective) =>
+  [true, ...(objective.usesFireRate ? [false] : [])].map((allowFireRateMods) => ({
+    key: boardKey(objective.id, allowFireRateMods),
+    objective,
+    allowFireRateMods,
+  })),
+)

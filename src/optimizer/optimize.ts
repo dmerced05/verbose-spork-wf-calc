@@ -2,9 +2,10 @@
 // beam search over a pruned mod pool, then single swaps, Incarnon perks, arcane, and elemental slot order.
 // it's a heuristic, not a proof of the best build, but it's checked against hand-built meta builds.
 import { resolveCoBehavior } from '../calc/conditionOverload'
-import { calculate, type CalcResult } from '../calc/damage'
+import { calculate, type CalcResult, type SelectedPassive } from '../calc/damage'
+import { BONUS_ELEMENT_RANGE, BONUS_ELEMENTS, hasBonusElement, passivesFor, type BonusElement } from '../data/passives'
 import { getIncarnonTiers, type SelectedPerk } from '../calc/incarnon'
-import { isHeadshotTrigger, maxConditionalStacks, parseUpgrade } from '../calc/parseMod'
+import { isHeadshotTrigger, maxConditionalStacks, parseUpgrade, raisesFireRate } from '../calc/parseMod'
 import { getCompatibleArcanes, getCompatibleMods } from '../data'
 import type { Arcane, Attack, EquippedArcane, EquippedMod, Mod, Weapon } from '../types'
 import { conflicts, damageModPool } from './modPool'
@@ -24,6 +25,8 @@ export interface OptimizedBuild {
   mods: EquippedMod[] // slot order matters for element combining
   arcane: EquippedArcane | null
   perks: SelectedPerk[]
+  passives: SelectedPassive[]
+  bonusElement: BonusElement | null
 }
 
 // mods and arcanes go in at max rank with conditionals at max stacks (the scenario's assumption),
@@ -52,22 +55,47 @@ function* permutations<T>(items: T[]): Generator<T[]> {
   }
 }
 
-export function optimizeAttack(weapon: Weapon, attack: Attack, objective: Objective): OptimizedBuild {
-  const pool = damageModPool(getCompatibleMods(weapon), objective.usesFireRate).map(equipMod)
-  const arcaneOptions = getCompatibleArcanes(weapon).map(equipArcane)
+export function optimizeAttack(weapon: Weapon, attack: Attack, objective: Objective, allowFireRateMods = true): OptimizedBuild {
+  const pool = damageModPool(getCompatibleMods(weapon), objective.usesFireRate, Boolean(attack.heavy), allowFireRateMods).map(equipMod)
+  // "no fire rate mods" rankings skip fire rate arcanes too
+  const arcaneOptions = getCompatibleArcanes(weapon)
+    .filter((option) => allowFireRateMods || !raisesFireRate(option.levelStats))
+    .map(equipArcane)
   const incarnonTiers = getIncarnonTiers(weapon.name) ?? []
   const coBehavior = resolveCoBehavior(weapon, attack)
 
   let arcane: EquippedArcane | null = null
   let perks: SelectedPerk[] = []
+  // passives at the scenario's stacks, Kuva/Tenet/Coda element picked below (at the max 60%)
+  const passives: SelectedPassive[] = passivesFor(weapon.name).map((passive) => ({
+    passive, stacks: passive.condition ? passive.scenarioStacks ?? passive.maxStacks ?? 1 : 1,
+  }))
+  let bonusElement: BonusElement | null = null
 
   const run = (mods: EquippedMod[]) =>
     calculate({
-      weapon, attack, mods, arcane, coBehavior, incarnonPerks: perks,
+      weapon, attack, mods, arcane, coBehavior, incarnonPerks: perks, passives, bonusElement,
       target: SCENARIO_TARGET, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS,
     })
   const evaluate = (mods: EquippedMod[]) => objective.score(run(mods))
   const fits = (mods: EquippedMod[], candidate: EquippedMod) => !mods.some((equipped) => conflicts(equipped.mod, candidate.mod))
+
+  // ---- 0. bonus element: try each one (the element changes which mods are good, so it's picked again later) ----
+  const pickBonusElement = (mods: EquippedMod[]) => {
+    if (!hasBonusElement(weapon.name)) return
+    let bestElement: BonusElement | null = null
+    let bestScore = -1
+    for (const damageType of BONUS_ELEMENTS) {
+      bonusElement = { damageType, value: BONUS_ELEMENT_RANGE.max }
+      const score = evaluate(mods)
+      if (score > bestScore) {
+        bestScore = score
+        bestElement = bonusElement
+      }
+    }
+    bonusElement = bestElement
+  }
+  pickBonusElement([])
 
   // ---- 1. beam search: grow builds one mod at a time, keep the best few at each size ----
   let beam = [{ mods: [] as EquippedMod[], score: evaluate([]) }]
@@ -159,12 +187,21 @@ export function optimizeAttack(weapon: Weapon, attack: Attack, objective: Object
     }
   }
 
+  const repickBonusElement = () => {
+    if (!hasBonusElement(weapon.name)) return
+    pickBonusElement(best.mods)
+    best = { ...best, score: evaluate(best.mods) }
+  }
+
+  repickBonusElement()
   pickPerks()
   pickArcane()
   swapPass()
   orderElements()
+  repickBonusElement()
+  swapPass()
   pickPerks()
   pickArcane()
 
-  return { weapon, attack, score: best.score, result: run(best.mods), mods: best.mods, arcane, perks }
+  return { weapon, attack, score: best.score, result: run(best.mods), mods: best.mods, arcane, perks, passives, bonusElement }
 }

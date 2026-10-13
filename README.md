@@ -62,17 +62,84 @@ collected by hand from the wiki since warframe-items doesn't have them. `src/cal
 Enemy box: pick a preset, set base level + level (slider) and Steel Path. Health/shields/armor scale with the
 Enemy_Level_Scaling curves for the selected faction (smoothstep blend between 70-80 levels over base), armor clamps 200-2700.
 Steel Path = +100 levels and x2.5 health/shields (armor isn't multiplied since U36). Shows shots to kill and time to kill from
-average damage, toxin skips shields, no overflow from shields into health. "With DoTs" divides by direct + DoT DPS.
+average damage, toxin skips shields, no overflow from shields into health. "With DoTs" plays the fight out over time (procs tick
+as they land, Heat stacks, reloads) and finds when the expected damage reaches the target's health.
 
 Status types for Condition Overload / Galvanized default to the build's own damage types (a weapon with Impact/Puncture/Slash
 that's modded into three elements counts 6), switchable to the debuff stacks in the Debuffs panel.
 Magazine Capacity / Reload Speed mods are parsed, results show sustained DPS, burst DPS and damage in the first 10 s.
+
+### Damage over time (`src/calc/simulate.ts`)
+- Shots go out on the fire rate from t = 0, a full magazine, then a reload. Each status proc ticks on its own clock
+  (Slash/Heat/Toxin at 1-6 s, Electricity/Gas at 0-5 s, Blast after a 1.5 s fuse) and only ticks inside the window count,
+  so a long Status Duration tail past the end of the fight adds nothing (that's what was inflating Continuous Misery)
+- Heat: a new Heat proc refreshes every Heat stack (wiki Heat_Damage, no stack cap), so while Heat procs keep coming within one
+  duration the stacks keep ticking and the damage ramps. In the expected value that's assumed when the average gap between Heat procs
+  is shorter than the duration
+- Sustained DPS = expected damage over a 60 s fight / 60. The old formula (burst x uptime, every tick counted, no Heat stacking)
+  is still shown as "if the target never died"
+- Ranges: a Monte Carlo (60-300 runs, ~400k pellet rolls) rolls crit tier, status procs and proc type per pellet and gives the
+  10th / 90th percentile for 3 / 10 / 30 / 60 s. It's seeded, so the numbers don't jump around between renders
+- Shell-by-shell reloads (`src/data/reloads.ts`, wiki Reload_Speed): Felarx, Strun, Mk1-Strun, Strun Prime, Strun Wraith, Corinth, Zarr.
+  Reload = (start/end delay + per shell x magazine) / (1 + reload speed), so magazine mods make the reload longer
+- Fire rate / attack speed mods get an orange FR tag in the mod browser, the slots and leaderboard builds
 Semi-___ Cannonade: semi-auto only and locks fire rate (both read from the mod's description in the data).
 
 Debuffs: every status type has its stack count, plus Heat strip stage, Corrosive Projection auras, other armor strip %, generic vulnerability %, and Roar.
 Armor strips multiply: (1 − heat) × (1 − corrosive) × (1 − 18% × auras) × (1 − other). Enemy presets level-scale armor (clamped 200–2700).
 
 `npm run check` tests against the wiki's examples: quantization, Roar + Bane = 477, Roar Slash tick = 78.75, Bleed tick = 297.82, Gas tick = 3699.07, Blast proc = 72.075, Viral ×4.25, armor strip, Cold crit 3.86.
+
+## Melee
+
+Combo slider (1x-12x, Venka Prime 13x, Dex Nikana 11x at 11 hits per tier) and Gladiator pieces on the Warframe show up for melee.
+- Combo only multiplies damage on Heavy Attacks and Heavy Slams (wiki Heavy_Attack):
+  `[base x (1 + damage mods) x (1 + elemental mods)] x heavy multiplier x combo`, then crits. Bleed from a heavy scales with it too
+- The export has no Heavy Attack entry, just `heavyAttackDamage` (= total x the class multiplier) and `windUp`, so build-data adds a
+  "Heavy Attack" with the normal attack's damage split scaled up to that. Glaives list it at 1x, so they don't get one
+- Blood Rush / Weeping Wounds / Gladiator set: `bonus x (combo - 1)` added in with the other crit/status mods
+  (Blood_Rush: 20% x (1 + 1.2 + 0.4 x 3) = 68% at 4x). Applies to every melee attack, not just heavies
+- "(x2 for Heavy Attacks)" (True Steel, Sacrificial Steel, Galvanized Steel): heavies get the doubled value instead of the normal
+  one, per the Galvanized Steel hotfix (+220%, not +330%)
+- Killing Blow / Melee Assimilation "Damage on Heavy Attack" add to damage mods on heavies, Melee Animosity adds heavy crit (420% cap)
+- Heavy rate = wind-up / (1 + Wind Up Speed) + one swing at attack speed (Attack_Speed: attack speed doesn't shorten the wind-up)
+- Heavy Attack Efficiency keeps that share of the combo count, capped at 90% (40% at 9x leaves 4x), shown as "Combo left"
+
+## Weapon passives
+
+The export only has passives as flavor text, so `src/data/passives.ts` is a hand-kept table: each entry has the weapon(s),
+a wiki quote, which attacks it applies to, an optional condition with stacks, and effects from a small set of kinds
+(mod-like stat, flat crit/status after mods, per-status-type crit or damage, final crit multiplier, status duration,
+"next hit" overrides, multiplicative attack speed, reload/magazine overrides, non-combining element, Harmony detonation).
+Chance-based ones are expected values, timed buffs are toggles. Conditional ones start at what the leaderboard assumes.
+
+In the table now: Harmony (heavy detonation + Harmonic Resonance), Cedo, Galariak Prime, Gotva Prime, Sagek Prime, Buzlok,
+AX-52, Arca Scisco, Vesper 77, Knell, Sporothrix / Coda Sporothrix, Reconifex, Ekhein, Lesion, Pennant, Slaytra, Dorrclave,
+Tonkkatt, Pyrana Prime, Dual Coda Torxica, plus Tekko / Alternox / Epitaph signature bonuses (off on the leaderboard).
+
+- Kuva / Tenet / Coda bonus element: pick the element and 25-60%. It's added as an innate element worth that share of base damage,
+  so it combines after the elemental mods. The leaderboard tries all 7 at 60% and keeps the best
+- Status Duration (mods like Lingering Torment, Slaytra, Harmonic Resonance) adds DoT ticks at one per second: floor(6 x (1 + duration))
+- Harmony: the heavy's own procs land all their ticks at once (same total, just sooner), stacks already on the target (Debuffs panel)
+  detonate too, counted at Normal Attack strength
+- Covered by the attack list instead: Kuva Kohm (Fully Spooled), Nataruk (Perfect Shot)
+- Not in the table: signature bonuses that aren't damage (ammo, reload on headshot...), Thalys shards, Catabolyst grenade scaling,
+  Vadarya chain lightning, Arca Titron, Lesion-style effects whose numbers the wiki doesn't give
+
+## Mod restrictions
+
+`src/calc/modConflicts.ts`, used by both the mod browser (blocked mods show greyed out with "Incompatible with X", an equipped
+pair that conflicts gets a red outline) and the optimizer. The export has no incompatibility field, so:
+1. same name
+2. same internal mod: Primed / Galvanized / Spectral copies reuse the base mod's path with a suffix
+   (Hell's Chamber `Shotgun/WeaponFireIterationsMod`, Galvanized Hell `Shotgun/WeaponFireIterationsSPMod`), plus "Primed X" vs "X"
+3. `INCOMPATIBLE_GROUPS`, copied from the "Incompatible Mods" infobox on each mod's wiki page, for pairs the paths don't show:
+   Galvanized Shot / Sure Shot, Galvanized Aptitude / Rifle Aptitude, the Serration family (Spectral, Amalgam, Higasa),
+   the True Steel family (Sacrificial, Galvanized, Amalgam Ripkas), Pressure Point family, Fury / Berserker Fury,
+   corrupted crit mods vs their normal one (Critical Delay / Point Strike, Creeping Bullseye / Pistol Gambit,
+   Critical Deceleration / Blunderbuss), Split Flights / Split Chamber, and the Amalgam mods vs their source mod
+
+`npm run check` tests the pairs both ways (blocked and allowed, e.g. Primed Chamber + Charged Chamber is fine per the wiki).
 
 ## Leaderboard
 
@@ -81,19 +148,23 @@ The page has two tabs: Calculator and Leaderboard. The leaderboard is precompute
 `public/leaderboard.json` (committed, fetched only when the tab opens). After a data update: `npm run leaderboard`, then deploy.
 
 One leaderboard, ranked by a setting (`src/optimizer/objectives.ts`, each one optimized separately):
-- Sustained DPS: direct + status DoTs with magazine and reload (`burst x mag / (fire rate x reload + mag)`, wiki Damage/Calculation)
+- Sustained DPS: average over a 60 s fight (see Damage over time above)
 - Damage in a time window (3 / 10 / 30 s): simulates shots from t = 0 with reloads, DoTs count the part that fits in the window
 - Single damage instance: one hit of one projectile / one melee swing, crits averaged, no DoTs
 
-Settings on the page: Rank by, time window, Primary/Secondary/Melee, search, and "Include Incarnon forms". Incarnon forms run on
+The DPS-type rankings are optimized twice, with and without fire rate / attack speed mods (and arcanes), switched by "Allow fire rate
+mods". If the search happens to find a better build without them, that build is used for the "allowed" board too.
+
+Settings on the page: Rank by, time window, Primary/Secondary/Melee, search, "Allow fire rate mods" and "Include Incarnon forms". Incarnon forms run on
 Incarnon charge which isn't in the data, so they never reload here, which is why they can be toggled off.
 
 - Scenario (`src/optimizer/scenario.ts`): no faction, no armor, body shots, conditionals at max stacks (headshot-triggered ones off),
-  Condition Overload/Galvanized count only the build's own damage types (base physical + modded elements), capacity ignored, no rivens
+  Condition Overload/Galvanized count only the build's own damage types (base physical + modded elements), capacity ignored, no rivens,
+  melee at max combo. Heavy attacks/heavy slams only compete in Single damage instance, since they spend the combo they need
 - Search (`src/optimizer/optimize.ts`): mod pool = compatible mods with an effect that can raise that ranking (`modPool.ts`, fire rate /
   magazine / reload only for the DPS-type rankings), beam search over 8 slots (width 8), single-mod swaps, best Incarnon perk per tier,
   best arcane, elemental slot order. Heuristic, so check odd results in the calculator ("Load build" applies the scenario too)
-- Conflicts: Primed/Amalgam/Archon/Umbral/Sacrificial/Spectral variants conflict with their base mod, plus `EXCLUSIVE_GROUPS` in `modPool.ts`
+- Conflicts: same rules as the mod browser, see Mod restrictions below
 - Not optimized: Exilus slot, polarities/capacity. Event-only attacks (reload explosions, turret expiry) are skipped
 - Each attack is scored on its own (an impact + its explosion aren't summed). Incarnon forms count as 1 projectile. Charged attacks use
   `1 / (charge time + 1 / fire rate)`
@@ -131,10 +202,11 @@ src/components/           Weapon/Mod/Target/Debuffs/Stats/Leaderboard panels. Mo
 - Puncture (+5%/stack) and Tau (+10%/stack) are added flat after mods
 - Faction weaknesses apply to shields, not overguard
 - Heat/Toxin/Electricity/Gas ticks are reduced by armor (the wiki pages don't say either way)
-- Heat procs refresh all Heat stacks, so under sustained fire Heat ticks longer than the 6 shown per proc
+- Heat stacks tick on their own 1 s clocks here, in game they merge into one tick per second (same total, slightly different timing)
+- Incarnon forms never reload (Felarx's form has its own 60-round pool that mods don't touch, the others' charge isn't in the data)
 - Head multiplier/headcrit defaults are per faction, specific enemies differ (Juggernaut 4x, Ropalolyst 0.2x, armored heads),
   override them in the target panel
-- Weapon-innate CO bonuses (Cedo +60%/status, Incarnon Genesis per-status bonuses) aren't in the data
+- Incarnon Genesis per-status bonuses aren't in the data (Cedo's +60%/status is in the passives table)
 
 - Incarnon data: Burston Prime uses Burston's numbers and Soma Prime uses Soma's (their tables didn't come through),
   Thalys isn't in warframe-items yet. Untagged base damage perks are assumed to apply to the Incarnon form too
@@ -143,8 +215,10 @@ src/components/           Weapon/Mod/Target/Debuffs/Stats/Leaderboard panels. Mo
 
 ## Not modeled yet
 
-- Melee combo / Blood Rush / Weeping Wounds, heavy attacks, rivens, bow ×2 fire rate
+- Rivens, bow ×2 fire rate
+- Melee: slide attacks (Maiming Strike), Slam Damage multiplier, the class-specific heavy splits (Nikana heavies being pure bleed,
+  Dagger 250% impact + 250% bleed, ...), combo duration / initial combo / combo count chance, Tennokai, a heavy-attack DPS loop
+  that rebuilds combo between heavies
 - Arcanes that aren't stat lines: Cascadia Empowered (+750 flat per proc), Secondary Encumber/Enervate/Surge/Kinship/Outburst,
-  Melee Duplicate/Doughty/Retaliation/Animosity, Primary Plated Round, Longbow Sharpshot treated as additive damage (unverified)
-- Reload / sustained DPS, charge and burst fire rate formulas
+  Melee Duplicate/Doughty/Retaliation, Primary Plated Round, Longbow Sharpshot treated as additive damage (unverified)
 - Electricity chain and Blast/Gas AoE on other enemies

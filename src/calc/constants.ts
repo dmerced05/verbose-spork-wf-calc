@@ -135,3 +135,17 @@ export const hasHeadcrits = (faction: string) => HEADCRIT_FACTIONS.has(faction)
 export const FACTION_LABELS: Record<string, string> = { Orokin: 'Orokin (Corrupted)', Zariman: 'Zariman (Void)' }
 export const factionLabel = (faction: string) => FACTION_LABELS[faction] ?? faction
 export const WEAK_POINT_BONUS_RATE_ON_HEAD = 1.5 // weak point damage bonuses count 1.5x on heads
+
+// ---- melee combo (wiki Melee_Combo) ----
+// every 20 hits adds 1x, starting at 1x and capping at 12x on 220 hits. Venka Prime goes to 13x,
+// Dex Nikana needs only 11 hits per tier but caps at 11x
+export const DEFAULT_MAX_COMBO = 12
+const MAX_COMBO_BY_WEAPON: Record<string, number> = { 'Venka Prime': 13, 'Dex Nikana': 11 }
+const HITS_PER_TIER_BY_WEAPON: Record<string, number> = { 'Dex Nikana': 11 }
+export const maxComboFor = (weaponName: string) => MAX_COMBO_BY_WEAPON[weaponName] ?? DEFAULT_MAX_COMBO
+export const hitsPerComboTier = (weaponName: string) => HITS_PER_TIER_BY_WEAPON[weaponName] ?? 20
+// Heavy Attack Efficiency keeps part of the counter, capped at 90% (wiki Melee_Combo)
+export const MAX_HEAVY_EFFICIENCY = 0.9
+// Gladiator set bonus: +10% melee crit chance per piece, per combo multiplier, same shape as Blood Rush
+export const GLADIATOR_CRIT_PER_PIECE = 0.1
+export const GLADIATOR_MAX_PIECES = 6

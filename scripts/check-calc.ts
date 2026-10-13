@@ -7,7 +7,10 @@ import { estimateKill } from '../src/calc/kill'
 import { resolveCoBehavior } from '../src/calc/conditionOverload'
 import { getIncarnonTiers } from '../src/calc/incarnon'
 import { INCARNON_FAMILIES } from '../src/data/incarnon'
-import type { Attack, Debuffs, Mod, Weapon } from '../src/types'
+import { passivesFor } from '../src/data/passives'
+import { modsConflict } from '../src/calc/modConflicts'
+import type { Attack, Debuffs, EquippedMod, Mod, Weapon } from '../src/types'
+type EquippedModList = EquippedMod[]
 
 let failures = 0
 const expectClose = (label: string, actual: number, expected: number) => {
@@ -287,7 +290,7 @@ const exergisRun = (extraMods: ReturnType<typeof maxed>[] = []) => calculate({ w
 const exergisPlain = exergisRun()
 expectClose('Exergis magazine 1', exergisPlain.magazineSize ?? 0, 1)
 expectClose('Exergis uptime', exergisPlain.uptime, 1 / (exergis.attacks[0].fireRate * exergis.reloadTime! + 1))
-expectClose('Exergis sustained = burst x uptime', exergisPlain.sustainedDps, exergisPlain.totalDps * exergisPlain.uptime)
+expectClose('Exergis steady state = burst x uptime', exergisPlain.steadyStateDps, exergisPlain.totalDps * exergisPlain.uptime)
 // 10s window with a 1-round mag: shots at 0, then every (1/fr + reload)
 const exergisShots = Math.ceil(10 / (1 / exergis.attacks[0].fireRate + exergis.reloadTime!))
 expectClose('Exergis 10s direct part', exergisRun().damageInWindow(10) >= exergisShots * exergisPlain.averageShot ? 1 : 0, 1)
@@ -303,6 +306,160 @@ expectClose('Cannonade locks fire rate', toridRate(true), torid.attacks[0].fireR
 expectClose('Speed Trigger alone works', toridRate(false) > torid.attacks[0].fireRate ? 1 : 0, 1)
 expectClose('Cannonade semi-only flag', cannonade.semiOnly && cannonade.locksFireRate ? 1 : 0, 1)
 expectClose('Sirocco removed (Drifter amp)', weapons.some((weapon) => weapon.name === 'Sirocco') ? 1 : 0, 0)
+
+// ---- melee combo / Blood Rush / Weeping Wounds / heavy attacks ----
+const meleeMod = (name: string) => {
+  const mod = mods.find((candidate) => candidate.name === name && candidate.type === 'Melee Mod')!
+  return { mod, rank: mod.fusionLimit, conditionalStacks: 0 }
+}
+const meleeWeapon = (attack: Attack): Weapon => ({ ...testWeapon(attack), name: 'Test Sword', type: 'Melee', category: 'Melee' })
+const runMelee = (attack: Attack, overrides: Partial<CalcInput> = {}) => run(attack, { weapon: meleeWeapon(attack), ...overrides })
+const swing = testAttack({ slash: 100 }, { critChance: 0.2, statusChance: 0.2 })
+// Blood_Rush: 20% x (1 + 1.2 True Steel + 0.4 x (4 - 1)) = 68%
+expectClose('Blood Rush wiki example (4x combo)', runMelee(swing, { mods: [meleeMod('True Steel'), meleeMod('Blood Rush')], buffs: { roar: 0, combo: 4 } }).critChance, 0.68)
+// Weeping_Wounds: 20% x (1 + 0.6 Voltaic Strike + 0.4 x (4 - 1)) = 56%
+expectClose('Weeping Wounds wiki example (4x combo)', runMelee(swing, { mods: [meleeMod('Voltaic Strike'), meleeMod('Weeping Wounds')], buffs: { roar: 0, combo: 4 } }).statusChance, 0.56)
+expectClose('Blood Rush does nothing at 1x', runMelee(swing, { mods: [meleeMod('Blood Rush')], buffs: { roar: 0, combo: 1 } }).critChance, 0.2)
+// Gladiator set: Might on the weapon + 2 on the Warframe = 3 pieces = +30% per combo step, 20% x (1 + 0.3 x 11)
+expectClose('Gladiator set at 12x', runMelee(swing, { mods: [meleeMod('Gladiator Might')], buffs: { roar: 0, combo: 12, gladiatorWarframePieces: 2 } }).critChance, 0.2 * (1 + 0.3 * 11))
+expectClose('combo cap 12x', runMelee(swing, { buffs: { roar: 0, combo: 20 } }).melee!.combo, 12)
+// normal swings don't get the combo damage multiplier
+expectClose('normal swing ignores combo', runMelee(swing, { buffs: { roar: 0, combo: 12 } }).hit.normal, runMelee(swing).hit.normal)
+// Heavy_Attack: Paracesis 222 base, +120% damage, +90% elemental, 6x heavy, 7x combo = ~38,974 (the wiki skips quantization)
+const paracesis = weapons.find((weapon) => weapon.name === 'Paracesis')!
+const paracesisHeavy = paracesis.attacks.find((attack) => attack.name === 'Heavy Attack')!
+expectClose('Paracesis heavy base = 6x', Object.values(paracesisHeavy.damage).reduce((a, b) => a + b, 0), 1332)
+const paracesisHit = calculate({ weapon: paracesis, attack: paracesisHeavy, mods: [meleeMod('Pressure Point'), meleeMod('Molten Impact')],
+  armor: 0, debuffs: noDebuffs(), buffs: { roar: 0, combo: 7 }, target: { ...grineerTarget, faction: 'None', headshot: false } }).hit.normal
+expectClose('Paracesis heavy wiki example (within quantization)', Math.abs(paracesisHit / 38974 - 1) < 0.005 ? 1 : 0, 1)
+// True Steel: heavies get 2x the crit bonus *instead of* the normal one (Galvanized Steel hotfix)
+const heavySwing = testAttack({ slash: 500 }, { critChance: 0.2, heavy: true, windUp: 0.5 })
+expectClose('True Steel x2 on heavies', runMelee(heavySwing, { mods: [meleeMod('True Steel')] }).critChance, 0.2 * (1 + 2.4))
+expectClose('True Steel x1 on swings', runMelee(swing, { mods: [meleeMod('True Steel')] }).critChance, 0.2 * (1 + 1.2))
+// Killing Blow: +120% damage only on heavies, wind-up 0.5 / 1.6
+const killingBlowHeavy = runMelee(heavySwing, { mods: [meleeMod('Killing Blow')] })
+expectClose('Killing Blow heavy damage', killingBlowHeavy.hit.normal, 500 * 2.2)
+expectClose('Killing Blow skips swings', runMelee(swing, { mods: [meleeMod('Killing Blow')] }).hit.normal, 100)
+expectClose('heavy wind-up speed', killingBlowHeavy.melee!.windUp!, 0.5 / 1.6)
+expectClose('heavy rate = wind-up + one swing', killingBlowHeavy.fireRate, 1 / (0.5 / 1.6 + 1))
+// Melee_Combo: 40% efficiency at 9x (160 hits) keeps 64 hits = 4x
+expectClose('Heavy Attack Efficiency 9x -> 4x', runMelee(heavySwing, { mods: [meleeMod('Focus Energy')], buffs: { roar: 0, combo: 9 } }).melee!.comboAfterHeavy!, 4)
+// heavy slash procs scale with the combo too (bleed is 35% of the initial blow)
+const heavyBleed = (combo: number) => runMelee({ ...heavySwing, statusChance: 1 }, { buffs: { roar: 0, combo } }).dots.find((dot) => dot.damageType === 'slash')!.tick.normal
+expectClose('heavy bleed x combo', heavyBleed(6) / heavyBleed(1), 6)
+const animosity = arcanes.find((arcane) => arcane.name === 'Melee Animosity')!
+expectClose('Melee Animosity at 420% on heavies', runMelee(heavySwing, { arcane: { arcane: animosity, rank: animosity.levelStats.length - 1, conditionalStacks: 10 } }).critChance, 0.2 * (1 + 4.2))
+
+// ---- weapon passives (src/data/passives.ts) ----
+const named = (name: string) => weapons.find((weapon) => weapon.name === name)!
+const passivesOn = (weaponName: string, stacks = 1) => passivesFor(weaponName).map((passive) => ({ passive, stacks }))
+const neutral = { ...grineerTarget, faction: 'None' }
+const runWeapon = (name: string, overrides: Partial<CalcInput> = {}, attackIndex = 0) => {
+  const weapon = named(name)
+  return calculate({ weapon, attack: weapon.attacks[attackIndex], mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral, ...overrides })
+}
+// Buzlok: "Point Strike with the buff active gives 107.5%" (23% x 2.5 + 50%)
+expectClose('Buzlok wiki example', runWeapon('Buzlok', { mods: [maxed('Point Strike')], passives: passivesOn('Buzlok') }).critChance, 1.075)
+expectClose('Buzlok without the mark', runWeapon('Buzlok', { mods: [maxed('Point Strike')], passives: passivesOn('Buzlok', 0) }).critChance, 0.575)
+// Galariak Prime: +10% flat per status type, its own impact/slash/puncture = 3 types
+expectClose('Galariak Prime crit per status type',
+  runWeapon('Galariak Prime', { passives: passivesOn('Galariak Prime'), debuffs: { ...noDebuffs(), statusTypeSource: 'build' } }).critChance, 0.19 + 0.3)
+// Cedo: +60% per status type, added in with damage mods. 3 types on the target -> x2.8
+const cedoStacks = { ...noDebuffs(), stacks: { ...noDebuffs().stacks, heat: 1, cold: 1, toxin: 1 } }
+expectClose('Cedo +60% per status type',
+  runWeapon('Cedo', { passives: passivesOn('Cedo'), debuffs: cedoStacks }).moddedBaseDamage / runWeapon('Cedo', { debuffs: cedoStacks }).moddedBaseDamage, 2.8)
+expectClose('Cedo skips the glaive explosion', runWeapon('Cedo', { passives: passivesOn('Cedo'), debuffs: cedoStacks }, 2).passives.length, 0)
+// Gotva Prime: 15% of hits after a proc roll at 300% crit. at 100%+ status every hit procs
+const gotva = runWeapon('Gotva Prime', { mods: [{ mod: findMod('Rifle Aptitude'), rank: findMod('Rifle Aptitude').fusionLimit, conditionalStacks: 0 }, maxed('Hammer Shot')], passives: passivesOn('Gotva Prime') })
+const gotvaPlain = runWeapon('Gotva Prime', { mods: [{ mod: findMod('Rifle Aptitude'), rank: findMod('Rifle Aptitude').fusionLimit, conditionalStacks: 0 }, maxed('Hammer Shot')] })
+const gotvaShare = Math.min(1, gotvaPlain.statusChance) * 0.15
+expectClose('Gotva Prime super crit expected value', gotva.hit.average / gotvaPlain.hit.normal,
+  (1 - gotvaShare) * (1 + gotvaPlain.critChance * (gotvaPlain.critMultiplier - 1)) + gotvaShare * (1 + 3 * (gotvaPlain.critMultiplier - 1)))
+// Sagek Prime: 6% of shots after a crit get 500% status
+const sagek = runWeapon('Sagek Prime', { passives: passivesOn('Sagek Prime') })
+expectClose('Sagek Prime status expected value', sagek.statusChance, (1 - 0.3 * 0.06) * 0.01 + 0.3 * 0.06 * 5)
+// Slaytra: +100% Slash duration = 12 Bleed ticks
+const slaytra = runWeapon('Slaytra', { passives: passivesOn('Slaytra') }).dots.find((dot) => dot.damageType === 'slash')!
+expectClose('Slaytra 12 bleed ticks', slaytra.ticks, 12)
+expectClose('Slaytra per proc = 12 ticks', slaytra.perProc.average, slaytra.tick.average * 12)
+// status duration mods: +90% -> floor(6 x 1.9) = 11 ticks
+const torment = mods.find((mod) => mod.name === 'Lingering Torment')!
+const strunForDuration = named('Strun')
+expectClose('+90% status duration = 11 ticks', calculate({ weapon: strunForDuration, attack: testAttack({ slash: 100 }, { statusChance: 1 }), mods: [{ mod: torment, rank: torment.fusionLimit, conditionalStacks: 0 }],
+  armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral }).dots.find((dot) => dot.damageType === 'slash')!.ticks, 11)
+// Harmony: stacks already on the target detonate at Normal Attack strength (heavy procs / 6x heavy multiplier at 1x combo)
+const harmony = named('Harmony')
+const harmonyStacks = { ...noDebuffs(), stacks: { ...noDebuffs().stacks, slash: 2 } }
+const harmonyHeavy = calculate({ weapon: harmony, attack: harmony.attacks.find((attack) => attack.name === 'Heavy Attack')!, mods: [], passives: passivesOn('Harmony', 0),
+  armor: 0, debuffs: harmonyStacks, buffs: { roar: 0, combo: 1 }, target: neutral })
+const harmonySwingBleed = calculate({ weapon: harmony, attack: harmony.attacks[0], mods: [], armor: 0, debuffs: harmonyStacks, buffs: { roar: 0 }, target: neutral })
+  .dots.find((dot) => dot.damageType === 'slash')!.perProc.average
+expectClose('Harmony detonates 2 bleed stacks', harmonyHeavy.detonation!.existingStacks, 2 * harmonySwingBleed)
+expectClose('Harmony detonation only on heavies', runWeapon('Harmony', { passives: passivesOn('Harmony') }).detonation === null ? 1 : 0, 1)
+// Lesion: +15% attack speed multiplies with Fury
+const fury = meleeMod('Fury')
+expectClose('Lesion Frenzy multiplies attack speed', runWeapon('Lesion', { mods: [fury], passives: passivesOn('Lesion') }).fireRate, named('Lesion').attacks[0].fireRate * 1.3 * 1.15)
+// Kuva/Tenet/Coda bonus element: 60% Toxin on Kuva Hek = 0.6 x base damage of Toxin
+const kuvaHekBase = Object.values(named('Kuva Hek').attacks[0].damage).reduce((a, b) => a + b, 0)
+expectClose('Kuva bonus element', runWeapon('Kuva Hek', { bonusElement: { damageType: 'toxin', value: 0.6 } }).damageTypes.find((row) => row.damageType === 'toxin')!.modded,
+  (Math.floor((0.6 / 1.6) * 32 + 0.5) / 32) * kuvaHekBase * 1.6)
+expectClose('bonus element ignored on non-Kuva', runWeapon('Braton Prime', { bonusElement: { damageType: 'toxin', value: 0.6 } }).damageTypes.some((row) => row.damageType === 'toxin') ? 1 : 0, 0)
+// Tonkkatt: heat that doesn't combine. with a Cold mod there should still be Heat (and Cold), no Blast
+const tonkkatt = runWeapon('Tonkkatt', { mods: [meleeMod('North Wind')], passives: passivesOn('Tonkkatt', 30) })
+expectClose('Tonkkatt heat stays heat', tonkkatt.damageTypes.some((row) => row.damageType === 'heat') && !tonkkatt.damageTypes.some((row) => row.damageType === 'blast') ? 1 : 0, 1)
+expectClose('Tekko +6% base status with Atlas', runWeapon('Tekko', { passives: passivesOn('Tekko') }).statusChance, named('Tekko').attacks[0].statusChance + 0.06)
+expectClose('Tekko without Atlas', runWeapon('Tekko', { passives: passivesOn('Tekko', 0) }).statusChance, named('Tekko').attacks[0].statusChance)
+expectClose('Pyrana Prime x2 magazine', runWeapon('Pyrana Prime', { passives: passivesOn('Pyrana Prime') }).magazineSize!, named('Pyrana Prime').magazineSize! * 2)
+// ---- mod restrictions (wiki "Incompatible Mods" infoboxes + the export's mod paths) ----
+const anyMod = (name: string) => mods.find((mod) => mod.name === name)!
+const expectConflict = (a: string, b: string, expected: boolean) =>
+  expectClose(`${a} + ${b} ${expected ? 'blocked' : 'allowed'}`, modsConflict(anyMod(a), anyMod(b)) ? 1 : 0, expected ? 1 : 0)
+expectConflict("Hell's Chamber", 'Galvanized Hell', true)
+expectConflict('Galvanized Shot', 'Sure Shot', true)
+expectConflict('Spectral Serration', 'Serration', true)
+expectConflict('Amalgam Serration', 'Spectral Serration', true)
+expectConflict('Split Chamber', 'Galvanized Chamber', true)
+expectConflict('Galvanized Steel', 'Sacrificial Steel', true)
+expectConflict('Critical Delay', 'Point Strike', true)
+expectConflict('Primed Cryo Rounds', 'Cryo Rounds', true)
+expectConflict('Primed Bane Of Grineer', 'Bane Of Grineer', true)
+expectConflict('Berserker Fury', 'Fury', true)
+expectConflict('Primed Chamber', 'Charged Chamber', false) // wiki Mod page: these two do stack
+expectConflict('Galvanized Chamber', 'Vigilante Armaments', false)
+expectConflict('Point Strike', 'Vital Sense', false)
+expectConflict('Heavy Caliber', 'Serration', false)
+expectConflict('Blood Rush', 'Sacrificial Steel', false)
+// ---- reloads + status over time ----
+// shell by shell: Strun Prime 0.6s + 0.4s per shell. +30% magazine (13 shells) -> 5.8s instead of 4.6s
+expectClose('Strun Prime base reload', runWeapon('Strun Prime').reloadTime!, 4.6)
+const magazineMod = mods.find((mod) => mod.name === 'Ammo Stock')!
+const strunMag = runWeapon('Strun Prime', { mods: [{ mod: magazineMod, rank: magazineMod.fusionLimit, conditionalStacks: 0 }] })
+expectClose('Strun Prime reload grows with magazine', strunMag.reloadTime!, 0.6 + 0.4 * strunMag.magazineSize!)
+expectClose('Felarx reload = 1.3 + 0.4 x 6', runWeapon('Felarx').reloadTime!, 3.7)
+// one shot (1-round mag, long reload) with a guaranteed Slash proc: in a 3s window only ticks at 1s and 2s count,
+// so +90% status duration adds nothing there
+const oneShotAttack = testAttack({ slash: 100 }, { statusChance: 1 })
+const oneShotWeapon = { ...testWeapon(oneShotAttack), magazineSize: 1, reloadTime: 100 }
+const oneShot = (extraMods: EquippedModList) => calculate({ weapon: oneShotWeapon, attack: oneShotAttack, mods: extraMods, armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral })
+
+const plainShot = oneShot([])
+expectClose('3s window: 2 bleed ticks', plainShot.damageInWindow(3) - plainShot.averageShot, 2 * plainShot.dots[0].tick.average)
+const tormentShot = calculate({ weapon: { ...oneShotWeapon, type: 'Shotgun' }, attack: oneShotAttack, mods: [{ mod: torment, rank: torment.fusionLimit, conditionalStacks: 0 }],
+  armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral })
+expectClose('status duration tail cut by the window', tormentShot.damageInWindow(3), plainShot.damageInWindow(3))
+expectClose('status duration still counts in a long window', tormentShot.damageInWindow(30) - tormentShot.averageShot, 11 * plainShot.dots[0].tick.average)
+// Heat refresh: a proc every second, window 10s -> stack i ticks from i+1 until the window ends = 9 + 8 + ... + 0 = 45 ticks
+const heatAttack = testAttack({ heat: 100 }, { statusChance: 1, fireRate: 1 })
+const heatRun = run(heatAttack)
+expectClose('Heat stacks refresh (45 ticks in 10s)', heatRun.damageInWindow(10) - 10 * heatRun.averageShot, 45 * heatRun.dots[0].tick.average)
+// Monte Carlo agrees with the expected value (no Heat), and the range brackets it
+const bratonStatus = calculate({ weapon: named('Braton Prime'), attack: named('Braton Prime').attacks[0], mods: ['Serration', 'Rifle Aptitude', 'Hellfire', 'Infected Clip'].map(maxed),
+  armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral })
+const [bratonRange] = bratonStatus.simulateWindows([10], 2000)
+const bratonExpected = bratonStatus.damageInWindow(10)
+console.log('Braton 10s expected', bratonExpected.toFixed(0), 'MC', bratonRange)
+expectClose('MC mean within 3% of expected', Math.abs(bratonRange.expected / bratonExpected - 1) < 0.03 ? 1 : 0, 1)
+expectClose('MC range brackets the mean', bratonRange.low <= bratonRange.expected && bratonRange.expected <= bratonRange.high ? 1 : 0, 1)
 
 // sanity: standard Braton Prime build, element combining in slot order
 const braton = weapons.find((weapon) => weapon.name === 'Braton Prime')!

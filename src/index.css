@@ -239,3 +239,34 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .leaderboard-settings { display: flex; flex-wrap: wrap; gap: 12px 20px; }
 .leaderboard-settings > label { display: grid; gap: 6px; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .leaderboard-settings .board-tabs button { text-transform: none; letter-spacing: 0; font-size: 0.9rem; }
+
+/* melee combo controls in the weapon panel */
+.melee-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; font-size: 0.8rem; color: var(--muted); }
+.melee-row input[type='range'] { flex: 1; min-width: 140px; }
+.melee-row label { display: flex; align-items: center; gap: 6px; }
+.melee-row input[type='number'] { width: 52px; }
+.melee-row .muted { flex-basis: 100%; margin: 0; }
+
+/* ---- weapon passives ---- */
+.passives-panel { border-color: rgba(120, 220, 200, 0.25); }
+.passive { padding: 8px 0; border-top: 1px solid var(--border); }
+.passive:first-of-type { border-top: none; }
+.passive.inactive { opacity: 0.5; }
+.passive-quote { margin: 4px 0; font-size: 0.8rem; font-style: italic; color: var(--muted); }
+.passive .row select, .passive .row input[type='number'] { width: auto; }
+.passive-chip { border-color: rgba(120, 220, 200, 0.45); color: #c8f3ea; }
+.passive .stepper { font-size: 0.8rem; display: flex; align-items: center; gap: 6px; margin: 4px 0; color: var(--muted); }
+
+/* ---- incompatible mods ---- */
+.mod-card.conflict { outline: 2px solid #d9534f; outline-offset: -2px; }
+.conflict-label { font-size: 0.7rem; color: #ff8a80; margin-top: 4px; }
+.browser-card.blocked { opacity: 0.45; cursor: not-allowed; }
+
+/* fire rate / attack speed mods */
+.fr-tag { display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 3px; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; color: #1a1205; background: #f0a64b; vertical-align: middle; }
+.fire-rate-chip { border-color: rgba(240, 166, 75, 0.6); }
+
+/* luck ranges */
+.headline .range { display: block; font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+.range-table td, .range-table th { text-align: right; }
+.range-table td:first-child, .range-table th:first-child { text-align: left; }

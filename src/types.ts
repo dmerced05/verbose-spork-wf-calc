@@ -10,6 +10,9 @@ export interface Attack {
   critMultiplier: number
   statusChance: number // fraction
   damage: DamageMap
+  heavy?: boolean // Heavy Attack / Heavy Slam: x combo multiplier, uses up the combo
+  windUp?: number | null // heavy attack wind-up in seconds
+  heavyMultiplier?: number // Heavy Attack only: how much bigger than the normal attack it is
 }
 
 export interface Weapon {
@@ -102,4 +105,6 @@ export interface Debuffs {
 
 export interface Buffs {
   roar: number // faction damage bonus from Roar etc, additive with bane mods
+  combo?: number // melee combo multiplier (1x-12x), defaults to 1x
+  gladiatorWarframePieces?: number // Gladiator set mods on the Warframe, they count toward the weapon's set bonus
 }

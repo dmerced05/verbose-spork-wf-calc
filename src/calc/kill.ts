@@ -1,6 +1,7 @@
 // shots / time to kill vs a scaled enemy. this works off average damage (crits averaged in), so a lucky
 // or unlucky string of crits will land on either side of it.
 import type { CalcResult } from './damage'
+import { timeToDeal } from './simulate'
 
 export interface KillEstimate {
   shieldDamagePerShot: number
@@ -8,7 +9,7 @@ export interface KillEstimate {
   shotsToStripShields: number
   shotsToKill: number // Infinity if this build can't get through
   directTimeToKill: number // seconds, first shot at t = 0, reloads included
-  sustainedTimeToKill: number // seconds, sustained direct + DoT DPS, ignores the DoT ramp-up
+  sustainedTimeToKill: number // seconds, direct + DoT ticks as they land (ramp-up, Heat stacking and reloads included)
   oneShot: boolean
 }
 
@@ -37,7 +38,7 @@ export function estimateKill(health: number, shield: number, vsHealth: CalcResul
     vsHealth.magazineSize && vsHealth.reloadTime ? Math.floor((shots - 1) / vsHealth.magazineSize) * vsHealth.reloadTime : 0
   const shieldDps = (shieldDamagePerShot * fireRate + vsShield.dotDps) * vsShield.uptime
   const sustainedTimeToKill =
-    (shield > 0 ? (shieldDps > 0 ? shield / shieldDps : Infinity) : 0) + (vsHealth.sustainedDps > 0 ? health / vsHealth.sustainedDps : Infinity)
+    (shield > 0 ? (shieldDps > 0 ? shield / shieldDps : Infinity) : 0) + timeToDeal(vsHealth.shotModel, health)
 
   return {
     shieldDamagePerShot,

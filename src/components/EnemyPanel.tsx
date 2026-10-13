@@ -93,7 +93,7 @@ export function EnemyPanel({ scaled, faction, steelPath, vsHealth, kill, headKil
       </table>
 
       <p className="muted">
-        {canHeadshot ? '' : 'AoE attacks can\'t headshot. '}Uses average damage (crits averaged in), no shield overflow into health. "With DoTs" assumes status damage is already ramped up.
+        {canHeadshot ? '' : 'AoE attacks can\'t headshot. '}Uses average damage (crits averaged in), no shield overflow into health. "With DoTs" plays the fight out: procs tick as they land, Heat stacks, reloads included.
       </p>
     </section>
   )

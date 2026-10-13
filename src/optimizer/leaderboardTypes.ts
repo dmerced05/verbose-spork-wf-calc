@@ -1,6 +1,5 @@
 // public/leaderboard.json is stored compact (mods/arcanes as indexes into one shared table) and expanded
 // into LeaderboardEntry when the Leaderboard tab loads it
-import type { ObjectiveId } from './objectives'
 
 export interface LeaderboardUpgrade {
   id: string // uniqueName
@@ -37,6 +36,8 @@ export interface LeaderboardEntry {
   mods: LeaderboardUpgrade[] // slot order
   arcane: LeaderboardUpgrade | null
   perks: { tier: string; name: string }[]
+  passives?: string[] // weapon passives that were on (at the scenario's stacks)
+  bonusElement?: { damageType: string; value: number } | null // Kuva/Tenet/Coda element the optimizer picked
 }
 
 // ---- compact file format ----
@@ -52,14 +53,14 @@ export interface LeaderboardFile {
   dataVersion: string
   scenario: string
   upgrades: { id: string; name: string }[] // shared table for mods + arcanes
-  boards: Record<ObjectiveId, CompactEntry[]>
+  boards: Record<string, CompactEntry[]> // keyed by boardKey(): 'sustained', 'sustained-nofr', ...
 }
 
 export interface Leaderboard {
   generatedAt: string
   dataVersion: string
   scenario: string
-  boards: Record<ObjectiveId, LeaderboardEntry[]>
+  boards: Record<string, LeaderboardEntry[]>
 }
 
 export function expandLeaderboard(file: LeaderboardFile): Leaderboard {

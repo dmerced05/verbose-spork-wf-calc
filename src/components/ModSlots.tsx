@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { capacityFor, modDrain, nextPolarity, type SlotPolarity } from '../calc/capacity'
-import { maxConditionalStacks } from '../calc/parseMod'
+import { maxConditionalStacks, raisesFireRate } from '../calc/parseMod'
+import { blockingMod } from '../calc/modConflicts'
 import { arcanesById, modsById } from '../data'
 import type { Arcane, Mod } from '../types'
 import { PolarityIcon } from './PolarityIcon'
@@ -94,6 +95,7 @@ const RemoveButton = ({ onRemove }: { onRemove: () => void }) => (
 
 interface ModCardProps {
   slot: ModSlot | null
+  conflictWith: string | null // another equipped mod this one can't go with (old/loaded builds)
   slotPolarity: SlotPolarity
   isExilusSlot: boolean
   selected: boolean
@@ -102,14 +104,14 @@ interface ModCardProps {
   onRemove: () => void
 }
 
-function ModCard({ slot, slotPolarity, isExilusSlot, selected, onSelect, onCyclePolarity, onRemove }: ModCardProps) {
+function ModCard({ slot, conflictWith, slotPolarity, isExilusSlot, selected, onSelect, onCyclePolarity, onRemove }: ModCardProps) {
   const mod = slot ? modsById.get(slot.modId) : undefined
   const drain = mod && slot ? modDrain(mod.baseDrain, slot.rank, mod.polarity, slotPolarity) : 0
   const rawDrain = mod && slot ? mod.baseDrain + slot.rank : 0
   const drainClass = drain < rawDrain ? 'matched' : drain > rawDrain ? 'mismatched' : ''
 
   return (
-    <CardShell selected={selected} rarity={mod?.rarity ?? null} isEmpty={!mod} onSelect={onSelect}>
+    <CardShell selected={selected} rarity={mod?.rarity ?? null} isEmpty={!mod} extraClass={conflictWith ? 'conflict' : ''} onSelect={onSelect}>
       <div className="mod-card-top">
         <button
           className="polarity-button" title={`Slot polarity: ${slotPolarity ?? 'none'} (click to change)`}
@@ -126,11 +128,15 @@ function ModCard({ slot, slotPolarity, isExilusSlot, selected, onSelect, onCycle
       {mod && slot ? (
         <>
           <ModArt imageName={mod.imageName} />
-          <div className="mod-name">{mod.name}</div>
+          <div className="mod-name">
+            {mod.name}
+            {raisesFireRate(mod.levelStats, slot.rank) && <span className="fr-tag" title="Fire rate / attack speed mod">FR</span>}
+          </div>
           <ul className="mod-lines">
             {statLinesAt(mod.levelStats, slot.rank).map((line) => <li key={line}>{line}</li>)}
           </ul>
           <RankPips rank={slot.rank} maxRank={mod.fusionLimit} />
+          {conflictWith && <div className="conflict-label">Can't go with {conflictWith}</div>}
           <RemoveButton onRemove={onRemove} />
         </>
       ) : (
@@ -206,6 +212,12 @@ export function ModSlots(props: Props) {
     return [...byName.values()]
   }, [compatibleMods])
   const equippedNames = new Set(slots.flatMap((slot) => (slot ? [modsById.get(slot.modId)!.name] : [])))
+  // incompatible pairs (Serration + Spectral Serration, Hell's Chamber + Galvanized Hell...). the mod in the slot
+  // being filled doesn't count, since picking a new one replaces it
+  const equippedExcept = (skipIndex: number) =>
+    slots.flatMap((slot, index) => (slot && index !== skipIndex ? [modsById.get(slot.modId)!] : []))
+  const othersForSelected = equippedExcept(selectedSlot)
+  const blockerFor = (mod: Mod) => blockingMod(mod, othersForSelected)
 
   // name matches first (starts-with before contains), then things that only match on a stat line
   const searchText = search.trim().toLowerCase()
@@ -226,6 +238,9 @@ export function ModSlots(props: Props) {
   const browserMods = arcaneSelected
     ? []
     : bySearch(uniqueMods.filter((mod) => !equippedNames.has(mod.name) && (!exilusSelected || mod.isExilus))) // exilus slot only takes exilus mods
+        // incompatible ones stay listed (greyed out, at the end) so it's clear why they can't go in
+        .map((mod) => ({ mod, blocker: blockerFor(mod) }))
+        .sort((a, b) => Number(Boolean(a.blocker)) - Number(Boolean(b.blocker)))
   const browserArcanes = arcaneSelected ? bySearch(compatibleArcanes.filter((arcane) => arcane.uniqueName !== arcaneSlot?.arcaneId)) : []
 
   const equipMod = (mod: Mod) => {
@@ -257,6 +272,10 @@ export function ModSlots(props: Props) {
     <ModCard
       key={index}
       slot={slots[index]}
+      conflictWith={(() => {
+        const mod = slots[index] ? modsById.get(slots[index]!.modId) : undefined
+        return mod ? blockingMod(mod, equippedExcept(index))?.name ?? null : null
+      })()}
       slotPolarity={polarities[index]}
       isExilusSlot={index === EXILUS_SLOT}
       selected={selectedSlot === index}
@@ -327,14 +346,22 @@ export function ModSlots(props: Props) {
           </span>
         </div>
         <div className="browser-grid">
-          {browserMods.map((mod) => (
-            <button key={mod.uniqueName} className={`browser-card rarity-${(mod.rarity ?? 'common').toLowerCase()}`} onClick={() => equipMod(mod)}>
+          {browserMods.map(({ mod, blocker }) => (
+            <button
+              key={mod.uniqueName}
+              className={`browser-card rarity-${(mod.rarity ?? 'common').toLowerCase()} ${blocker ? 'blocked' : ''}`}
+              disabled={Boolean(blocker)}
+              title={blocker ? `Can't be equipped with ${blocker.name}` : undefined}
+              onClick={() => equipMod(mod)}
+            >
               <span className="browser-top">
                 <span className="mod-name">{mod.name}</span>
                 <span className="drain">{mod.baseDrain + mod.fusionLimit} <PolarityIcon polarity={mod.polarity} size={11} /></span>
               </span>
               <span className="browser-line">{statLinesAt(mod.levelStats, mod.fusionLimit).join(' · ')}</span>
               {mod.isExilus && <span className="exilus-tag">Exilus</span>}
+              {raisesFireRate(mod.levelStats, mod.fusionLimit) && <span className="fr-tag" title="Fire rate / attack speed mod">FR</span>}
+              {blocker && <span className="conflict-label">Incompatible with {blocker.name}</span>}
             </button>
           ))}
           {browserArcanes.map((arcane) => (

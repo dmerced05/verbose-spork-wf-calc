@@ -26,6 +26,26 @@ const cleanStatLine = (line) =>
     .replace(/ {2,}/g, ' ')
     .trim()
 
+// the export has no Heavy Attack in attacks[], just weapon.heavyAttackDamage (total damage x the class's heavy
+// multiplier, e.g. Paracesis 222 x 6 = 1332) and windUp. so I add one: the normal attack's damage split scaled up
+// to heavyAttackDamage, same crit/status. some entries (glaives) list it at 1x, those I leave out
+function withHeavyAttack(weapon, attacks) {
+  if (weapon.category !== 'Melee' || !weapon.heavyAttackDamage) return attacks
+  const normal = attacks.find((attack) => /^normal attack$/i.test(attack.name)) ?? attacks[0]
+  const normalTotal = Object.values(normal?.damage ?? {}).reduce((total, amount) => total + amount, 0)
+  const heavyMultiplier = weapon.heavyAttackDamage / (weapon.totalDamage || normalTotal || 1)
+  if (!normal || normalTotal <= 0 || heavyMultiplier <= 1.01) return attacks
+  const heavy = {
+    ...normal,
+    name: 'Heavy Attack',
+    damage: Object.fromEntries(Object.entries(normal.damage).map(([damageType, amount]) => [damageType, amount * heavyMultiplier])),
+    heavy: true,
+    windUp: weapon.windUp ?? null,
+    heavyMultiplier,
+  }
+  return [...attacks, heavy]
+}
+
 const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('Melee')]
   .filter(
     (weapon) =>
@@ -51,7 +71,7 @@ const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('
 
     // I use attacks[].damage on purpose: the top-level `damage` object has
     // slash/puncture swapped on some weapons (Braton Prime for one)
-    attacks: weapon.attacks.map((attack) => ({
+    attacks: withHeavyAttack(weapon, weapon.attacks.map((attack) => ({
       name: attack.name,
       isAoE: attack.shot_type === 'AoE',
       fireRate: attack.speed ?? weapon.fireRate ?? 1,
@@ -67,7 +87,9 @@ const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('
           .map(([damageType, amount]) => [damageType, Number(amount)])
           .filter(([, amount]) => amount > 0),
       ),
-    })),
+      // heavy slams use up the combo and get its multiplier too (wiki Heavy_Attack)
+      ...(weapon.category === 'Melee' && /heavy slam/i.test(attack.name) ? { heavy: true } : {}),
+    }))),
   }))
   .sort((a, b) => a.name.localeCompare(b.name))
 

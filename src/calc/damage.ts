@@ -6,13 +6,20 @@
 // status DoTs use the same modded base, but faction applies twice and only literal element mods count.
 
 import {
-  BANE_TARGET, BLAST_DETONATION_MULTIPLIER, HEADCRIT_MULTIPLIER, WEAK_POINT_BONUS_RATE_ON_HEAD, hasHeadcrits, headMultiplierFor, COMBINED_ELEMENTS, DOT_STATUSES, FACTION_DAMAGE_MODIFIERS, PHYSICAL_TYPES, PRIMARY_ELEMENTS,
+  BANE_TARGET, BLAST_DETONATION_MULTIPLIER, GLADIATOR_CRIT_PER_PIECE, GLADIATOR_MAX_PIECES, MAX_HEAVY_EFFICIENCY, hitsPerComboTier, maxComboFor, HEADCRIT_MULTIPLIER, WEAK_POINT_BONUS_RATE_ON_HEAD, hasHeadcrits, headMultiplierFor, COMBINED_ELEMENTS, DOT_STATUSES, FACTION_DAMAGE_MODIFIERS, PHYSICAL_TYPES, PRIMARY_ELEMENTS,
   coldCritMultiplierBonus, magneticMultiplier, punctureCritChanceBonus, tauStatusChanceBonus, viralMultiplier,
 } from './constants'
 import { parseUpgrade, type ModEffect, type StatKey } from './parseMod'
 import { resolveCoBehavior, type CoBehavior } from './conditionOverload'
 import { perkAppliesTo, type SelectedPerk } from './incarnon'
 import { armorDamageMultiplier, effectiveArmor } from './target'
+import { hasBonusElement, type BonusElement, type WeaponPassive } from '../data/passives'
+import { SHELL_BY_SHELL_RELOAD } from '../data/reloads'
+import { expectedDamage, simulateDamage, type DamageRange, type ShotModel } from './simulate'
+
+// "sustained" = average DPS over a fight this long: reloads, DoT ramp-up and Heat stacking count, and DoT ticks
+// after the fight ends don't (so long Status Duration tails stop inflating it)
+export const SUSTAINED_FIGHT_SECONDS = 60
 import type { Attack, Buffs, Debuffs, EquippedArcane, EquippedMod, TargetSettings, Weapon } from '../types'
 
 export interface CalcInput {
@@ -22,10 +29,17 @@ export interface CalcInput {
   arcane?: EquippedArcane | null
   coBehavior?: CoBehavior // defaults to the wiki table for this weapon/attack
   incarnonPerks?: SelectedPerk[]
+  passives?: SelectedPassive[] // weapon passives (src/data/passives.ts)
+  bonusElement?: BonusElement | null // Kuva/Tenet/Coda bonus element
   target: TargetSettings
   armor: number // target armor before debuffs (already level scaled)
   debuffs: Debuffs
   buffs: Buffs
+}
+
+export interface SelectedPassive {
+  passive: WeaponPassive
+  stacks: number // only matters for passives with a condition
 }
 
 export interface DamageTypeRow {
@@ -77,9 +91,23 @@ export interface CalcResult {
   magazineSize: number | null // null = no reload modeled (melee, Incarnon form)
   reloadTime: number | null
   uptime: number // share of time spent firing
-  sustainedDps: number // totalDps with magazine + reload
-  damageInWindow: (seconds: number) => number
+  sustainedDps: number // expected damage over a SUSTAINED_FIGHT_SECONDS fight / its length
+  steadyStateDps: number // old formula: burst x uptime, every DoT tick counted, no Heat stacking
+  shellByShell: boolean // reloads one shell at a time (reload time grows with magazine size)
+  damageInWindow: (seconds: number) => number // expected damage in the first `seconds`
+  simulateWindows: (windows: number[], runs?: number) => DamageRange[] // Monte Carlo range (crit/status rolls)
+  shotModel: ShotModel
   fireRateLocked: boolean
+  passives: string[] // names of the passives that are on for this attack
+  detonation: { ownProcs: number; existingStacks: number } | null // Harmony heavy: DoT damage dealt at once, per heavy
+  melee: {
+    combo: number // multiplier actually used (clamped to the weapon's cap)
+    heavy: boolean
+    critFromCombo: number // Blood Rush + Gladiator set, added inside the crit mod bracket
+    statusFromCombo: number // Weeping Wounds
+    windUp: number | null // modded heavy wind-up
+    comboAfterHeavy: number | null // multiplier left after the heavy attack (Heavy Attack Efficiency)
+  } | null
   statusTypeSource: 'build' | 'debuffs'
   unparsed: string[]
 }
@@ -88,7 +116,9 @@ const sum = (values: number[]) => values.reduce((total, value) => total + value,
 // rounds to the nearest 1/32, sign(x) * floor(|x| * 32 + 0.5) / 32
 const quantize = (proportion: number) => (Math.sign(proportion) * Math.floor(Math.abs(proportion) * 32 + 0.5)) / 32
 
-export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPerks = [], target, armor, debuffs, buffs }: CalcInput): CalcResult {
+export function calculate({
+  weapon, attack, mods, arcane, coBehavior, incarnonPerks = [], passives = [], bonusElement, target, armor, debuffs, buffs,
+}: CalcInput): CalcResult {
   const stacks = (statusType: string) => debuffs.stacks[statusType] ?? 0
   // CO counts status *types*, not stacks. Lifted/knocked down is a hidden status that also counts
   const debuffStatusTypes = Object.values(debuffs.stacks).filter((count) => count > 0).length
@@ -98,6 +128,8 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
     damage: 0, damagePerStatusType: 0, damagePerColdStack: 0, critChance: 0, weakpointCritChance: 0,
     critDamage: 0, multishot: 0, fireRate: 0, statusChance: 0, statusDamage: 0, headshotMultiplier: 0, weakpointDamage: 0,
     magazineCapacity: 0, reloadSpeed: 0,
+    critChancePerCombo: 0, statusChancePerCombo: 0, heavyCritChance: 0, heavyDamage: 0, heavyWindUpSpeed: 0, heavyEfficiency: 0,
+    statusDuration: 0,
   }
   const physicalBonus: Record<string, number> = {}
   const elementBonus: Record<string, number> = {} // literal mod bonus per element, also used for DoTs
@@ -134,6 +166,11 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
       case 'lockMultishot':
         multishotLocked = true
         break
+      case 'heavyScaledCritChance':
+        // normal attacks get the value, heavies get value x factor, so the extra part only counts on heavies
+        bonus.critChance += effect.value * times
+        bonus.heavyCritChance += effect.value * (effect.heavyFactor - 1) * times
+        break
       case 'damageType':
         if (PHYSICAL_TYPES.includes(effect.damageType)) {
           physicalBonus[effect.damageType] = (physicalBonus[effect.damageType] ?? 0) + effect.value * times
@@ -157,6 +194,100 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
       if (activeStacks > 0) applyEffect(conditional.effect, activeStacks)
     }
     unparsed.push(...parsed.unparsed.map((line) => `${upgrade.name}: ${line}`))
+  }
+
+  // ---- weapon passives (hand-kept table, see src/data/passives.ts) ----
+  // mod-like parts go through applyEffect, the rest gets collected here and used further down
+  const passiveFlat = { critChance: 0, statusChance: 0 }
+  let critPerStatusType = 0 // Galariak Prime, flat after mods
+  let damagePerStatusTypePassive = 0 // Cedo, additive with damage mods
+  let finalCritMultiplierBonus = 0 // Knell
+  const statusDurationByType: Record<string, number> = {} // '*' = every DoT
+  let critOverride: { chance: number; critChance: number } | null = null // Gotva Prime
+  let statusOverride: { chance: number; statusChance: number } | null = null // Sagek Prime
+  let fireRateMultiplier = 1 // Lesion, multiplies with attack speed mods
+  let reloadOverride: number | null = null // Reconifex perfect reload
+  let detonatesDots = false // Harmony
+  const passiveBase = { critChance: 0, statusChance: 0 } // Tekko with Atlas
+  const separateElements: Record<string, number> = {} // Tonkkatt heat, doesn't combine
+  let magazineMultiplier = 1 // Pyrana Prime
+  const activePassives: string[] = []
+  for (const { passive, stacks: chosenStacks } of passives) {
+    if (passive.attacks && !passive.attacks.test(attack.name)) continue
+    const times = passive.condition ? Math.min(chosenStacks, passive.maxStacks ?? 1) : 1
+    if (times <= 0) continue
+    activePassives.push(passive.name)
+    for (const effect of passive.effects) {
+      switch (effect.kind) {
+        case 'mod':
+          applyEffect(effect.effect, times)
+          break
+        case 'flat':
+          passiveFlat[effect.stat] += effect.value * times
+          break
+        case 'flatPerStatusType':
+          critPerStatusType += effect.value * times
+          break
+        case 'damagePerStatusType':
+          damagePerStatusTypePassive += effect.value * times
+          break
+        case 'finalCritMultiplier':
+          finalCritMultiplierBonus += effect.value * times
+          break
+        case 'statusDuration':
+          for (const damageType of effect.types ?? ['*']) {
+            statusDurationByType[damageType] = (statusDurationByType[damageType] ?? 0) + effect.value * times
+          }
+          break
+        case 'nextHitCritOverride':
+          critOverride = effect
+          break
+        case 'nextHitStatusOverride':
+          statusOverride = effect
+          break
+        case 'fireRateMultiplier':
+          fireRateMultiplier *= (1 + effect.value) ** times
+          break
+        case 'reloadTime':
+          reloadOverride = effect.seconds
+          break
+        case 'heavyDetonatesDots':
+          detonatesDots = true
+          break
+        case 'base':
+          passiveBase[effect.stat] += effect.value * times
+          break
+        case 'separateElement':
+          separateElements[effect.damageType] = (separateElements[effect.damageType] ?? 0) + effect.value * times
+          break
+        case 'magazineMultiplier':
+          magazineMultiplier *= effect.value
+      }
+    }
+  }
+
+  // ---- melee combo (wiki Melee_Combo / Heavy_Attack) ----
+  // the multiplier only changes damage on heavy attacks/heavy slams. Blood Rush, Weeping Wounds and the Gladiator
+  // set read it on every melee attack: bonus x (multiplier - 1), added in with the other crit/status mods.
+  // heavies read the combo before they spend it, so a 12x heavy gets the 12x Blood Rush bonus
+  const isMelee = weapon.category === 'Melee'
+  const isHeavy = isMelee && Boolean(attack.heavy)
+  const combo = isMelee ? Math.min(maxComboFor(weapon.name), Math.max(1, buffs.combo ?? 1)) : 1
+  const comboSteps = combo - 1
+  const gladiatorPieces = Math.min(
+    GLADIATOR_MAX_PIECES,
+    mods.filter(({ mod }) => mod.name.startsWith('Gladiator ')).length + (buffs.gladiatorWarframePieces ?? 0),
+  )
+  const critFromCombo = isMelee ? (bonus.critChancePerCombo + GLADIATOR_CRIT_PER_PIECE * gladiatorPieces) * comboSteps : 0
+  const statusFromCombo = isMelee ? bonus.statusChancePerCombo * comboSteps : 0
+  // Killing Blow style "Melee Damage on Heavy Attack" just adds to the damage mods
+  if (isHeavy) bonus.damage += bonus.heavyDamage
+  const heavyComboFactor = isHeavy ? combo : 1
+
+  // ---- Kuva / Tenet / Coda bonus element: an innate element worth X% of base damage ----
+  if (bonusElement && bonusElement.value > 0 && hasBonusElement(weapon.name)) {
+    const extra = sum(Object.values(attack.damage)) * bonusElement.value
+    attack = { ...attack, damage: { ...attack.damage, [bonusElement.damageType]: (attack.damage[bonusElement.damageType] ?? 0) + extra } }
   }
 
   // ---- Incarnon evolution perks ----
@@ -190,9 +321,9 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
   attack = {
     ...attack,
     damage: Object.fromEntries(Object.entries(attack.damage).map(([damageType, amount]) => [damageType, amount * baseDamageScale])),
-    critChance: attack.critChance + perkBase.critChance,
+    critChance: attack.critChance + perkBase.critChance + passiveBase.critChance,
     critMultiplier: attack.critMultiplier + perkBase.critMultiplier,
-    statusChance: attack.statusChance + perkBase.statusChance,
+    statusChance: attack.statusChance + perkBase.statusChance + passiveBase.statusChance,
   }
   weapon = { ...weapon, multishot: (attack.multishot ?? weapon.multishot) + perkBase.multishot }
 
@@ -228,6 +359,8 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
     if (!second) addProportion(first, elementAmounts[first])
     else addProportion(COMBINED_ELEMENTS[[first, second].sort().join('+')], elementAmounts[first] + elementAmounts[second])
   }
+  // passive elements that skip combining (Tonkkatt's heat stays heat)
+  for (const [damageType, amount] of Object.entries(separateElements)) addProportion(damageType, amount)
 
   // which status types the target has, for CO / Galvanized. by default it's the build's own damage types
   // (base physical + modded elements), so a gun can't count statuses it never applies
@@ -236,6 +369,8 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
     : 0
   const activeStatusTypes =
     (debuffs.statusTypeSource === 'debuffs' ? debuffStatusTypes : buildStatusTypes) + (debuffs.liftedOrKnockedDown ? 1 : 0)
+  // Cedo: +60% per status type, in with the damage mods (not CO-style)
+  bonus.damage += damagePerStatusTypePassive * activeStatusTypes
 
   // Condition Overload style bonuses (CO, Galvanized per-status, Secondary Shiver per Cold stack).
   // additive weapons: base x [(1 + mods) x other multipliers + CO]
@@ -250,7 +385,9 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
       ? (1 + bonus.damage) * (1 + coBonus) * separateDamageMultiplier
       : (1 + bonus.damage) * separateDamageMultiplier + coBonus
 
-  const moddedBaseDamage = baseDamage * damageScale
+  // heavy: [base x (1 + damage mods) x elements] x heavy multiplier x combo. the heavy multiplier is already in the
+  // Heavy Attack's base damage (build-data), the combo multiplies everything, CO included
+  const moddedBaseDamage = baseDamage * damageScale * heavyComboFactor
 
   // each final type (sums included) is quantized on its own, then scaled by modded base damage
   const moddedByType: Record<string, number> = {}
@@ -269,16 +406,25 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
   const headcrit = target.headcrit ?? hasHeadcrits(target.faction)
   const weakpointCritBonus = isHeadshot ? bonus.weakpointCritChance : 0
   const critChance =
-    attack.critChance * (1 + bonus.critChance + weakpointCritBonus) + perkFlat.critChance +
+    attack.critChance * (1 + bonus.critChance + weakpointCritBonus + critFromCombo + (isHeavy ? bonus.heavyCritChance : 0)) +
+    perkFlat.critChance + passiveFlat.critChance + critPerStatusType * activeStatusTypes +
     (attack.isAoE ? 0 : punctureCritChanceBonus(stacks('puncture')))
   // headcrit doubles the weapon's *base* crit multiplier, so mods scale it but Cold's flat bonus doesn't
   const headcritFactor = isHeadshot && headcrit ? HEADCRIT_MULTIPLIER : 1
   const critMultiplier =
-    attack.critMultiplier * headcritFactor * (1 + bonus.critDamage) + (attack.isAoE ? 0 : coldCritMultiplierBonus(stacks('cold')))
+    attack.critMultiplier * headcritFactor * (1 + bonus.critDamage) + finalCritMultiplierBonus +
+    (attack.isAoE ? 0 : coldCritMultiplierBonus(stacks('cold')))
   // over 100% the lowest tier is the "normal" hit and the next tier up is the "crit" (Damage/Calculation 4.3)
   const normalCritMultiplier = 1 + Math.floor(critChance) * (critMultiplier - 1)
   const critHitMultiplier = 1 + Math.ceil(critChance) * (critMultiplier - 1)
-  const averageCritMultiplier = 1 + critChance * (critMultiplier - 1)
+  // status chance before Sagek's override, Gotva needs it here
+  const rawStatusChance =
+    attack.statusChance * (1 + bonus.statusChance + statusFromCombo) + perkFlat.statusChance + passiveFlat.statusChance +
+    tauStatusChanceBonus(stacks('tau'))
+  // Gotva Prime: a hit after a status proc has a chance to roll at a fixed crit chance instead
+  const superCritShare = critOverride ? Math.min(1, rawStatusChance) * critOverride.chance : 0
+  const superCritMultiplier = critOverride ? 1 + critOverride.critChance * (critMultiplier - 1) : 1
+  const averageCritMultiplier = (1 - superCritShare) * (1 + critChance * (critMultiplier - 1)) + superCritShare * superCritMultiplier
   // Devouring Attrition style: non-crit hits have a chance at a huge bonus. only matters below 100% crit
   const attritionBonus = Math.max(0, 1 - critChance) * nonCritChanceBonus
 
@@ -288,10 +434,16 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
   // charged attacks (wiki Damage/Calculation): effective rate = 1 / (charge time + 1 / fire rate), and fire rate
   // mods also speed up the charge (modded charge time = base / (1 + speed bonuses))
   const fireRateBonus = fireRateLocked ? 0 : bonus.fireRate
-  const moddedFireRate = attack.fireRate * (1 + fireRateBonus)
-  const fireRate = attack.chargeTime
-    ? 1 / (attack.chargeTime / Math.max(0.01, 1 + fireRateBonus) + 1 / moddedFireRate)
-    : moddedFireRate
+  const moddedFireRate = attack.fireRate * (1 + fireRateBonus) * fireRateMultiplier
+  // heavy attacks: attack speed only speeds up the swing, wind-up only gets faster from Wind Up Speed mods
+  // (wiki Attack_Speed). I treat one heavy as wind-up + one swing at the attack speed, an estimate since the
+  // data doesn't have per-weapon swing lengths
+  const windUp = isHeavy && attack.windUp ? attack.windUp / Math.max(0.01, 1 + bonus.heavyWindUpSpeed) : null
+  const fireRate = windUp !== null
+    ? 1 / (windUp + 1 / moddedFireRate)
+    : attack.chargeTime
+      ? 1 / (attack.chargeTime / Math.max(0.01, 1 + fireRateBonus) + 1 / moddedFireRate)
+      : moddedFireRate
 
   // ---- 4. target modifiers ----
   // Latron's Flensing Spikes: each Puncture stack strips another 20% of armor
@@ -328,7 +480,11 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
   const burstDps = averageShot * fireRate
 
   // ---- 5. status procs + DoTs ----
-  const statusChance = attack.statusChance * (1 + bonus.statusChance) + perkFlat.statusChance + tauStatusChanceBonus(stacks('tau'))
+  // Sagek Prime: a shot after a crit has a chance to roll at a fixed status chance instead
+  const statusOverrideShare = statusOverride ? Math.min(1, critChance) * statusOverride.chance : 0
+  const statusChance = statusOverride
+    ? (1 - statusOverrideShare) * rawStatusChance + statusOverrideShare * statusOverride.statusChance
+    : rawStatusChance
   const pelletsPerSecond = multishot * fireRate
   const procsPerSecond = statusChance * pelletsPerSecond
   const procShare = (damageType: string) => (moddedTotal > 0 ? (moddedByType[damageType] ?? 0) / moddedTotal : 0)
@@ -343,7 +499,7 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
   // procs inherit the crit of the hit that applied them, so I keep the normal/crit/average split.
   // modded base here is NOT quantized and uses the full base damage, not just that element's share.
   // procs carry the CO bonus from the hit that applied them (wiki: Blast/Electricity/Gas carry it into their radius)
-  const statusBase = baseDamage * damageScale * factionMultiplier
+  const statusBase = baseDamage * damageScale * heavyComboFactor * factionMultiplier
   const critSplit = (value: number): CritSplit => ({
     normal: value * normalCritMultiplier,
     crit: value * critHitMultiplier,
@@ -364,7 +520,11 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
         info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage) *
         (1 + debuffs.damageVulnerability) * headshotPart
       const tick = critSplit(beforeCrit * typeMultiplier(damageType, info.bypassesArmor))
-      const perProc = scaleSplit(tick, info.ticks)
+      // Status Duration stretches the DoT, at one tick per second that's more ticks (wiki Status_Duration).
+      // Blast is a single hit so it doesn't care
+      const durationScale = 1 + bonus.statusDuration + (statusDurationByType['*'] ?? 0) + (statusDurationByType[damageType] ?? 0)
+      const ticks = info.ticks > 1 ? Math.max(1, Math.floor(info.ticks * durationScale + 1e-9)) : info.ticks
+      const perProc = scaleSplit(tick, ticks)
 
       let aoe: DotRow['aoe'] = null
       if (damageType === 'blast') {
@@ -377,7 +537,7 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
         damageType,
         procsPerSecond: procRates[damageType],
         tick,
-        ticks: info.ticks,
+        ticks,
         perProc,
         dps: perProc.average * procRates[damageType],
         aoe,
@@ -386,40 +546,68 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
     })
   const dotDps = sum(dots.map((dot) => dot.dps))
 
-  // ---- 6. magazine + reload (wiki Damage/Calculation, Sustained DPS) ----
-  // sustained = burst x shots per mag / (fire rate x reload + shots per mag). melee has no magazine, and
-  // Incarnon forms run on Incarnon charge which the data doesn't have, so neither reloads here
+  // ---- 6. magazine + reload (wiki Damage/Calculation, Reload_Speed) ----
+  // melee has no magazine, and Incarnon forms run on Incarnon charge which the data doesn't have, so neither reloads here
   const reloads = weapon.category !== 'Melee' && !isIncarnonAttack && Boolean(weapon.magazineSize) && Boolean(weapon.reloadTime)
-  const magazineSize = reloads ? Math.max(1, Math.round(weapon.magazineSize! * (1 + bonus.magazineCapacity))) : null
-  const reloadTime = reloads ? weapon.reloadTime! / Math.max(0.01, 1 + bonus.reloadSpeed) : null
+  const magazineSize = reloads ? Math.max(1, Math.round(weapon.magazineSize! * (1 + bonus.magazineCapacity) * magazineMultiplier)) : null
+  // shell-by-shell weapons (Felarx, Strun, Corinth...): (start/end delay + per shell x magazine) / (1 + reload speed),
+  // so magazine mods make the reload longer
+  const shellReload = SHELL_BY_SHELL_RELOAD[weapon.name]
+  const reloadSpeedScale = Math.max(0.01, 1 + bonus.reloadSpeed)
+  const reloadTime = !reloads
+    ? null
+    : reloadOverride ?? (shellReload ? (shellReload.delay + shellReload.perShell * magazineSize!) : weapon.reloadTime!) / reloadSpeedScale
   const uptime = magazineSize && reloadTime ? magazineSize / (fireRate * reloadTime + magazineSize) : 1
-  const sustainedDps = (burstDps + dotDps) * uptime
+  const steadyStateDps = (burstDps + dotDps) * uptime
 
-  // damage dealt in the first `seconds`: first shot at t = 0, a full magazine, then a reload, repeat.
-  // DoT procs count the part of their duration that fits in the window (Blast pops after its 1.5s fuse).
-  // tight loop on purpose, the optimizer calls this thousands of times per attack
-  const shotInterval = 1 / fireRate
-  let tickingDotPerShot = 0 // damage per shot from Slash/Heat/Toxin/Electricity/Gas procs over their full 6s
-  let blastPerShot = 0
-  for (const dot of dots) {
-    const perShot = (dot.procsPerSecond / fireRate) * dot.perProc.average
-    if (dot.damageType === 'blast') blastPerShot += perShot
-    else tickingDotPerShot += perShot
+  // shots over time with procs on their own clocks (src/calc/simulate.ts)
+  const pelletsPerSecondForModel = multishot * fireRate
+  const shotModel: ShotModel = {
+    fireRate,
+    multishot,
+    magazineSize,
+    reloadTime,
+    hit,
+    critChance,
+    instantDots: detonatesDots,
+    dots: dots.map((dot) => ({
+      damageType: dot.damageType,
+      procsPerPellet: pelletsPerSecondForModel > 0 ? dot.procsPerSecond / pelletsPerSecondForModel : 0,
+      tick: dot.damageType === 'blast' ? dot.perProc : dot.tick,
+      ticks: dot.damageType === 'blast' ? 1 : dot.ticks,
+      firstTickAt: dot.damageType === 'blast' ? 1.5 : dot.damageType === 'electricity' || dot.damageType === 'gas' ? 0 : 1,
+      refreshes: dot.damageType === 'heat',
+    })),
   }
-  const damageInWindow = (seconds: number) => {
-    let total = 0
-    let time = 0
-    let roundsLeft = magazineSize ?? Infinity
-    for (let shots = 0; time < seconds && shots < 200000; shots++) {
-      const remaining = seconds - time
-      total += averageShot + tickingDotPerShot * Math.min(1, remaining / 6) + (remaining >= 1.5 ? blastPerShot : 0)
-      time += shotInterval
-      if (--roundsLeft <= 0 && reloadTime) {
-        time += reloadTime
-        roundsLeft = magazineSize!
-      }
+  const damageInWindow = (seconds: number) => expectedDamage(shotModel, seconds)
+  const simulateWindows = (windows: number[], runs?: number) => simulateDamage(shotModel, windows, runs)
+  const sustainedDps = damageInWindow(SUSTAINED_FIGHT_SECONDS) / SUSTAINED_FIGHT_SECONDS
+
+  // Harmony: the heavy's own procs land all their ticks at once, plus every Slash/Heat/Toxin/Electricity/Gas stack
+  // already on the target (from the Debuffs panel). those were put there by normal swings, so I scale the heavy's
+  // proc damage back down by the heavy multiplier and combo
+  let detonation: CalcResult['detonation'] = null
+  if (detonatesDots) {
+    const normalSwingScale = 1 / ((attack.heavyMultiplier ?? 1) * heavyComboFactor)
+    let ownProcs = 0
+    let existingStacks = 0
+    for (const dot of dots) {
+      if (dot.damageType === 'blast') continue
+      ownProcs += (dot.procsPerSecond / fireRate) * dot.perProc.average
+      existingStacks += stacks(dot.damageType) * dot.perProc.average * normalSwingScale
     }
-    return total
+    // stacks of types this heavy doesn't proc itself still detonate, using the same per-proc math
+    for (const damageType of ['slash', 'heat', 'toxin', 'electricity', 'gas']) {
+      if (stacks(damageType) <= 0 || dots.some((dot) => dot.damageType === damageType)) continue
+      const info = DOT_STATUSES[damageType]
+      const elementMultiplier = info.usesElementMods ? 1 + (elementBonus[damageType] ?? 0) : 1
+      const durationScale = 1 + bonus.statusDuration + (statusDurationByType['*'] ?? 0) + (statusDurationByType[damageType] ?? 0)
+      const perProc =
+        info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage) * (1 + debuffs.damageVulnerability) *
+        typeMultiplier(damageType, info.bypassesArmor) * averageCritMultiplier * Math.floor(info.ticks * durationScale + 1e-9)
+      existingStacks += stacks(damageType) * perProc * normalSwingScale
+    }
+    detonation = { ownProcs, existingStacks }
   }
 
   const damageTypes = Object.entries(moddedByType)
@@ -463,9 +651,34 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
     reloadTime,
     uptime,
     sustainedDps,
+    steadyStateDps,
+    shellByShell: Boolean(shellReload) && reloads,
     damageInWindow,
+    simulateWindows,
+    shotModel,
     fireRateLocked,
+    passives: activePassives,
+    detonation,
+    melee: isMelee
+      ? {
+          combo,
+          heavy: isHeavy,
+          critFromCombo,
+          statusFromCombo,
+          windUp,
+          comboAfterHeavy: isHeavy ? comboAfterSpending(weapon.name, combo, bonus.heavyEfficiency) : null,
+        }
+      : null,
     statusTypeSource: debuffs.statusTypeSource === 'debuffs' ? 'debuffs' : 'build',
     unparsed,
   }
+}
+
+// Heavy Attack Efficiency keeps that share of the combo *count* (not the multiplier), capped at 90%.
+// wiki example: 40% at 160 hits (9x) leaves 64 hits (4x)
+function comboAfterSpending(weaponName: string, combo: number, efficiency: number) {
+  const perTier = hitsPerComboTier(weaponName)
+  const hits = (combo - 1) * perTier
+  const kept = Math.floor(hits * Math.min(MAX_HEAVY_EFFICIENCY, Math.max(0, efficiency)))
+  return Math.min(maxComboFor(weaponName), 1 + Math.floor(kept / perTier))
 }

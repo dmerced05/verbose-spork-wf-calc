@@ -1,4 +1,7 @@
-import type { CalcResult } from '../calc/damage'
+import { SUSTAINED_FIGHT_SECONDS, type CalcResult } from '../calc/damage'
+
+// windows for the damage-over-time table. the Monte Carlo runs all of them in one pass
+const RANGE_WINDOWS = [3, 10, 30, SUSTAINED_FIGHT_SECONDS]
 
 const formatNumber = (value: number, digits = 1) => value.toLocaleString(undefined, { maximumFractionDigits: digits })
 // big numbers don't need decimals, keeps the proc tables readable
@@ -18,6 +21,10 @@ interface Props {
 }
 
 export function StatsPanel({ result, body, head, canHeadshot }: Props) {
+  // bad luck / good luck: 10th and 90th percentile of 300 simulated fights (crit and status rolled per pellet)
+  const ranges = result.simulateWindows(RANGE_WINDOWS)
+  const sustainedRange = ranges[RANGE_WINDOWS.indexOf(SUSTAINED_FIGHT_SECONDS)]
+  const tenSecondRange = ranges[RANGE_WINDOWS.indexOf(10)]
   // hits are single damage numbers, so they round like in game. shots/DPS are sums, so they keep formatDamage
   const hitRows = new Set(['Normal hit', 'Crit hit', 'Average hit'])
   const headRows: [string, (calc: CalcResult) => number][] = [
@@ -32,9 +39,10 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
     <section className="panel results">
       <h2>Results</h2>
       <div className="headline">
-        <div title="Direct + DoT, with magazine and reload">
+        <div title={`Average DPS over a ${SUSTAINED_FIGHT_SECONDS} s fight: reloads, status ticks as they land, Heat stacking`}>
           <span className="label">Sustained DPS</span>
           <span className="value">{formatNumber(result.sustainedDps, 0)}</span>
+          <span className="range">{formatNumber(sustainedRange.low / SUSTAINED_FIGHT_SECONDS, 0)}–{formatNumber(sustainedRange.high / SUSTAINED_FIGHT_SECONDS, 0)}</span>
         </div>
         <div title="Direct + DoT while firing nonstop (no reload)">
           <span className="label">Burst DPS</span>
@@ -43,8 +51,47 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
         <div title="Damage dealt in the first 10 seconds, reloads included">
           <span className="label">First 10 s</span>
           <span className="value small">{formatNumber(result.damageInWindow(10), 0)}</span>
+          <span className="range">{formatDamage(tenSecondRange.low)}–{formatDamage(tenSecondRange.high)}</span>
         </div>
       </div>
+
+      <h3>Damage over time <span className="muted-inline">(expected, and the 10–90% range from crit/status luck)</span></h3>
+      <table className="range-table">
+        <thead>
+          <tr><th>Window</th><th>Expected</th><th>Bad luck</th><th>Good luck</th><th>Per second</th></tr>
+        </thead>
+        <tbody>
+          {RANGE_WINDOWS.map((seconds, index) => (
+            <tr key={seconds}>
+              <td>{seconds} s</td>
+              <td>{formatDamage(result.damageInWindow(seconds))}</td>
+              <td>{formatDamage(ranges[index].low)}</td>
+              <td>{formatDamage(ranges[index].high)}</td>
+              <td>{formatDamage(result.damageInWindow(seconds) / seconds)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="proc-note">
+        Status ticks only count once they land inside the window, so long Status Duration tails don't count past the end. Heat procs refresh
+        every Heat stack, so Heat keeps stacking while you keep proccing it. If the target never died (every tick counted, no Heat stacking):
+        {' '}{formatNumber(result.steadyStateDps, 0)} DPS.
+      </p>
+      {result.melee?.heavy && (
+        <p className="proc-note">
+          DPS here is heavy after heavy at {result.melee.combo}x combo. Each heavy spends the combo (down to {result.melee.comboAfterHeavy}x),
+          so in a real fight the time spent rebuilding it isn't counted.
+        </p>
+      )}
+
+      {result.passives.length > 0 && <p className="proc-note">Passive on: {result.passives.join(', ')}</p>}
+      {result.detonation && (
+        <p className="proc-note">
+          Harmony detonation per heavy: <b>{formatDamage(result.detonation.ownProcs + result.detonation.existingStacks)}</b> ({formatDamage(result.detonation.ownProcs)} from
+          the heavy's own procs, {formatDamage(result.detonation.existingStacks)} from stacks already on the target). The own-procs part
+          is already in the DoT DPS (it just lands at once), the stacks part is extra burst.
+        </p>
+      )}
 
       <h3>Headshot vs body <span className="muted-inline">(hits rounded like in-game numbers, hover for exact)</span></h3>
       {canHeadshot ? (
@@ -93,10 +140,31 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
           <tr><td>Crit multiplier</td><td>{formatNumber(result.critMultiplier, 2)}x</td></tr>
           <tr><td>Status chance</td><td>{formatPercent(result.statusChance)}</td></tr>
           <tr><td>Multishot{result.multishotLocked ? ' (locked by Acuity)' : ''}</td><td>{formatNumber(result.multishot, 2)}</td></tr>
-          <tr><td>Fire rate{result.fireRateLocked ? ' (locked by Cannonade)' : ''}</td><td>{formatNumber(result.fireRate, 2)}</td></tr>
+          <tr>
+            <td>{result.melee ? (result.melee.windUp !== null ? 'Heavy attacks per second' : 'Attack speed') : 'Fire rate'}{result.fireRateLocked ? ' (locked by Cannonade)' : ''}</td>
+            <td>{formatNumber(result.fireRate, 2)}</td>
+          </tr>
+          {result.melee && (
+            <>
+              <tr><td>Combo multiplier{result.melee.heavy ? ' (heavy damage ×)' : ''}</td><td>{formatNumber(result.melee.combo, 1)}x</td></tr>
+              {result.melee.critFromCombo > 0 && (
+                <tr><td>Blood Rush / Gladiator crit (mod bonus)</td><td>+{formatPercent(result.melee.critFromCombo)}</td></tr>
+              )}
+              {result.melee.statusFromCombo > 0 && (
+                <tr><td>Weeping Wounds status (mod bonus)</td><td>+{formatPercent(result.melee.statusFromCombo)}</td></tr>
+              )}
+              {result.melee.windUp !== null && <tr><td>Heavy wind-up</td><td>{formatNumber(result.melee.windUp, 2)}s</td></tr>}
+              {result.melee.comboAfterHeavy !== null && (
+                <tr><td>Combo left after the heavy</td><td>{formatNumber(result.melee.comboAfterHeavy, 1)}x</td></tr>
+              )}
+            </>
+          )}
           <tr>
             <td>Magazine / reload</td>
-            <td>{result.magazineSize ? `${result.magazineSize} / ${formatNumber(result.reloadTime ?? 0, 2)}s` : 'no reload'}</td>
+            <td>
+              {result.magazineSize ? `${result.magazineSize} / ${formatNumber(result.reloadTime ?? 0, 2)}s` : 'no reload'}
+              {result.shellByShell && <span className="muted-inline"> (one shell at a time)</span>}
+            </td>
           </tr>
           <tr><td>Time spent firing</td><td>{formatPercent(result.uptime)}</td></tr>
           <tr><td>Direct / DoT DPS (burst)</td><td>{formatNumber(result.burstDps, 0)} / {formatNumber(result.dotDps, 0)}</td></tr>

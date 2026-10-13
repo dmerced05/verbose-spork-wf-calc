@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { STATUS_TYPES } from './calc/constants'
+import { GLADIATOR_MAX_PIECES, STATUS_TYPES, hitsPerComboTier, maxComboFor } from './calc/constants'
 import { calculate } from './calc/damage'
 import { arcanesById, enemies, getCompatibleArcanes, getCompatibleMods, modsById, weapons, weaponsById } from './data'
 import { estimateKill } from './calc/kill'
@@ -8,6 +8,8 @@ import { EnemyPanel } from './components/EnemyPanel'
 import { IncarnonPanel } from './components/IncarnonPanel'
 import { getIncarnonTiers, type SelectedPerk } from './calc/incarnon'
 import { DebuffsPanel } from './components/DebuffsPanel'
+import { PassivesPanel } from './components/PassivesPanel'
+import { hasBonusElement, passivesFor, type BonusElement } from './data/passives'
 import { ModSlots, TOTAL_SLOTS, EXILUS_SLOT, type ArcaneSlot, type ModSlot } from './components/ModSlots'
 import type { SlotPolarity } from './calc/capacity'
 import { SearchSelect } from './components/SearchSelect'
@@ -28,6 +30,13 @@ const emptySlots = () => Array<ModSlot | null>(TOTAL_SLOTS).fill(null)
 const defaultPolarities = (weaponPolarities: string[]): SlotPolarity[] =>
   Array.from({ length: TOTAL_SLOTS }, (_, index) => (index === EXILUS_SLOT ? null : ((weaponPolarities[index] ?? null) as SlotPolarity)))
 const defaultWeaponId = weapons.find((weapon) => weapon.name === 'Braton Prime')?.uniqueName ?? weapons[0].uniqueName
+// conditional passives start at what the leaderboard assumes (usually on)
+const defaultPassiveStacks = (weaponName: string) =>
+  Object.fromEntries(
+    passivesFor(weaponName)
+      .filter((passive) => passive.condition)
+      .map((passive) => [passive.name, passive.scenarioStacks ?? passive.maxStacks ?? 1]),
+  )
 const weaponOptions = weapons.map((weapon) => ({ id: weapon.uniqueName, label: weapon.name }))
 
 const defaultEnemy = enemies.find((enemy) => enemy.name === 'Heavy Gunner')
@@ -65,7 +74,9 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
   const [incarnonStacks, setIncarnonStacks] = useState<Record<string, number>>({}) // conditional perks start off
   const [target, setTarget] = useState(DEFAULT_TARGET)
   const [debuffs, setDebuffs] = useState(DEFAULT_DEBUFFS)
-  const [buffs, setBuffs] = useState<Buffs>({ roar: 0 })
+  const [buffs, setBuffs] = useState<Buffs>({ roar: 0, combo: 1, gladiatorWarframePieces: 0 })
+  const [passiveStacks, setPassiveStacks] = useState<Record<string, number>>(() => defaultPassiveStacks(weaponsById.get(defaultWeaponId)!.name))
+  const [bonusElement, setBonusElement] = useState<BonusElement | null>(null)
   const [loadedFrom, setLoadedFrom] = useState<string | null>(null)
 
   // "Load build" on the leaderboard: set the weapon, attack, mods, arcane and perks, and switch the target/debuffs
@@ -91,6 +102,8 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
     setCoOverride('auto')
     setIncarnonSelection(Object.fromEntries(entry.perks.map((perk) => [perk.tier, perk.name])))
     setIncarnonStacks({})
+    setPassiveStacks(defaultPassiveStacks(loadedWeapon.name))
+    setBonusElement(entry.bonusElement ?? null)
     setTarget(SCENARIO_TARGET)
     setDebuffs(SCENARIO_DEBUFFS)
     setBuffs(SCENARIO_BUFFS)
@@ -99,6 +112,9 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
 
   const weapon = weaponsById.get(weaponId)!
   const attack = weapon.attacks[attackIndex] ?? weapon.attacks[0]
+  const isMelee = weapon.category === 'Melee'
+  const maxCombo = maxComboFor(weapon.name)
+  const combo = Math.min(maxCombo, Math.max(1, buffs.combo ?? 1))
   const compatibleMods = useMemo(() => getCompatibleMods(weapon), [weapon])
   const compatibleArcanes = useMemo(() => getCompatibleArcanes(weapon), [weapon])
   const incarnonTiers = useMemo(() => getIncarnonTiers(weapon.name), [weapon])
@@ -106,6 +122,10 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
     const perk = perks.find((candidate) => candidate.name === incarnonSelection[tier])
     return perk ? [{ perk, stacks: incarnonStacks[perk.name] ?? 0 }] : []
   })
+
+  const weaponPassives = useMemo(() => passivesFor(weapon.name), [weapon])
+  const selectedPassives = weaponPassives.map((passive) => ({ passive, stacks: passiveStacks[passive.name] ?? 0 }))
+  const showBonusElement = hasBonusElement(weapon.name)
 
   const equippedMods: EquippedMod[] = slots.flatMap((slot) =>
     slot ? [{ mod: modsById.get(slot.modId)!, rank: slot.rank, conditionalStacks: slot.conditionalStacks }] : [],
@@ -115,7 +135,7 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
     : null
   const wikiCo = resolveCoBehavior(weapon, attack)
   const coBehavior = coOverride === 'auto' ? wikiCo : { mode: coOverride, scale: 1, source: 'override' as const }
-  const calcInput = { weapon, attack, mods: equippedMods, arcane: equippedArcane, coBehavior, incarnonPerks, armor: resolveArmor(target), debuffs, buffs }
+  const calcInput = { weapon, attack, mods: equippedMods, arcane: equippedArcane, coBehavior, incarnonPerks, passives: selectedPassives, bonusElement, armor: resolveArmor(target), debuffs, buffs }
   // body and head are always both calculated so the results can show them side by side,
   // the "assume headshots" toggle just picks which one drives the main numbers
   const bodyResult = calculate({ ...calcInput, target: { ...target, headshot: false } })
@@ -143,6 +163,8 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
     setCoOverride('auto')
     setIncarnonSelection({}) // perks are per weapon
     setIncarnonStacks({})
+    setPassiveStacks(defaultPassiveStacks(weaponsById.get(id)!.name))
+    setBonusElement(null)
   }
 
   return (
@@ -185,7 +207,44 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
               </select>
               {coOverride === 'auto' && wikiCo.note && <span className="muted-inline">{wikiCo.note}</span>}
             </div>
+            {isMelee && (
+              <div className="melee-row">
+                <label htmlFor="combo">
+                  Combo <b>{combo}x</b>
+                  <span className="muted-inline"> ({(combo - 1) * hitsPerComboTier(weapon.name)} hits)</span>
+                </label>
+                <input
+                  id="combo" type="range" min={1} max={maxCombo} step={1} value={combo}
+                  onChange={(event) => setBuffs({ ...buffs, combo: Number(event.target.value) })}
+                />
+                <label title="Gladiator mods on your Warframe count toward the set bonus. The ones on this weapon are counted automatically">
+                  Gladiator pieces on Warframe
+                  <input
+                    type="number" min={0} max={GLADIATOR_MAX_PIECES - 3} value={buffs.gladiatorWarframePieces ?? 0}
+                    onChange={(event) =>
+                      setBuffs({ ...buffs, gladiatorWarframePieces: Math.min(GLADIATOR_MAX_PIECES - 3, Math.max(0, Number(event.target.value))) })}
+                  />
+                </label>
+                <p className="muted">
+                  Combo multiplies Heavy Attack / Heavy Slam damage and feeds Blood Rush, Weeping Wounds and the Gladiator set
+                  (bonus × (combo − 1)) on every melee attack. Normal swings don't get the damage multiplier.
+                  {attack.heavy && ' Heavies read the combo before spending it.'}
+                </p>
+              </div>
+            )}
           </section>
+
+          {(weaponPassives.length > 0 || showBonusElement) && (
+            <PassivesPanel
+              passives={weaponPassives}
+              stacks={passiveStacks}
+              attackName={attack.name}
+              showBonusElement={showBonusElement}
+              bonusElement={bonusElement}
+              onStacksChange={setPassiveStacks}
+              onBonusElementChange={setBonusElement}
+            />
+          )}
 
           {incarnonTiers && (
             <IncarnonPanel

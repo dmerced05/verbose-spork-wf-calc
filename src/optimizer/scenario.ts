@@ -5,7 +5,7 @@ import { STATUS_TYPES } from '../calc/constants'
 import type { Buffs, Debuffs, TargetSettings } from '../types'
 
 export const SCENARIO_DESCRIPTION =
-  'Neutral target (no faction, no armor, body shots), mod/arcane conditionals at max stacks (headshot-triggered ones off), Condition Overload/Galvanized count only the build\'s own damage types, rank 30 with enough Forma (capacity ignored), no rivens.'
+  'Neutral target (no faction, no armor, body shots), mod/arcane conditionals at max stacks (headshot-triggered ones off), Condition Overload/Galvanized count only the build\'s own damage types, melee at max combo (12x) with heavy attacks ranked by single hit only, rank 30 with enough Forma (capacity ignored), no rivens.'
 
 export const SCENARIO_TARGET: TargetSettings = {
   faction: 'None',
@@ -30,4 +30,7 @@ export const SCENARIO_DEBUFFS: Debuffs = {
   statusTypeSource: 'build',
 }
 
-export const SCENARIO_BUFFS: Buffs = { roar: 0 }
+// melee at max combo (clamped per weapon: 12x, Venka Prime 13x, Dex Nikana 11x). Blood Rush builds hold max combo
+// in a real fight, and heavies are usually thrown at max combo too
+export const SCENARIO_COMBO = 13
+export const SCENARIO_BUFFS: Buffs = { roar: 0, combo: SCENARIO_COMBO, gladiatorWarframePieces: 0 }

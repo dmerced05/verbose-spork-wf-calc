@@ -1,0 +1,29 @@
+{
+  "name": "wf-calc",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build-data": "node scripts/build-data.mjs",
+    "postinstall": "node scripts/build-data.mjs",
+    "predev": "node scripts/build-data.mjs",
+    "dev": "vite",
+    "build": "node scripts/build-data.mjs && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "check": "tsx scripts/check-calc.ts && tsx scripts/smoke-render.tsx"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "warframe-items": "^1.1269.87"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

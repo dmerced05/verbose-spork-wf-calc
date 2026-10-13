@@ -57,6 +57,16 @@ export function DebuffsPanel({ debuffs, buffs, onDebuffsChange, onBuffsChange }:
       </div>
 
       <div className="form-grid">
+        <label title="What Condition Overload / Galvanized count as status types on the target">
+          CO / Galvanized status types
+          <select
+            value={debuffs.statusTypeSource ?? 'build'}
+            onChange={(event) => update({ statusTypeSource: event.target.value as Debuffs['statusTypeSource'] })}
+          >
+            <option value="build">This build's damage types</option>
+            <option value="debuffs">Statuses set above</option>
+          </select>
+        </label>
         <label className="inline" title="Hidden status, counts as a status type for Condition Overload / Galvanized">
           <input type="checkbox" checked={debuffs.liftedOrKnockedDown} onChange={(event) => update({ liftedOrKnockedDown: event.target.checked })} />
           Lifted / knocked down
@@ -103,7 +113,8 @@ export function DebuffsPanel({ debuffs, buffs, onDebuffsChange, onBuffsChange }:
         </label>
       </div>
       <p className="muted">
-        Each status type (not stack) counts once for Condition Overload / Galvanized, plus lifted/knocked down. Armor strips multiply together:
+        Condition Overload / Galvanized count status types, not stacks. By default that's the damage types this build
+        deals (base physical + modded elements), plus lifted/knocked down. Switch to "Statuses set above" to use the stacks here instead. Armor strips multiply together:
         (1 − heat) × (1 − corrosive) × (1 − 18% × auras) × (1 − other).
       </p>
     </section>

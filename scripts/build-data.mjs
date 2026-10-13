@@ -1,12 +1,15 @@
-// I slim warframe-items down to just what the calc needs, otherwise the browser
+// I slim @wfcd/items (formerly warframe-items, renamed in 2025) down to just what the calc needs, otherwise the browser
 // would download ~12MB of patchlogs and drop tables it never uses.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 
-const sourceDir = new URL('../node_modules/warframe-items/data/json/', import.meta.url)
+const sourceDir = new URL('../node_modules/@wfcd/items/data/json/', import.meta.url)
 const outDir = new URL('../src/data/', import.meta.url)
 const readJson = (name) => JSON.parse(readFileSync(new URL(`${name}.json`, sourceDir), 'utf8'))
 
-const WEAPON_TYPES = new Set(['Rifle', 'Shotgun', 'Pistol', 'Dual Pistols', 'Throwing', 'Melee'])
+// keep by category: newer data splits primaries into Rifle/Sniper/Launcher/Bow/Shotgun, and the type list keeps growing
+const WEAPON_CATEGORIES = new Set(['Primary', 'Secondary', 'Melee'])
+// productCategory tells moddable Warframe weapons apart from things like the Drifter's Sirocco (OperatorAmps)
+const MODDABLE_PRODUCT_CATEGORIES = new Set(['LongGuns', 'Pistols', 'Melee'])
 const MOD_TYPES = new Set(['Primary Mod', 'Shotgun Mod', 'Secondary Mod', 'Melee Mod'])
 
 // the export wraps damage types in color tags. usually the word follows the tag
@@ -24,7 +27,13 @@ const cleanStatLine = (line) =>
     .trim()
 
 const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('Melee')]
-  .filter((weapon) => WEAPON_TYPES.has(weapon.type) && weapon.attacks?.length)
+  .filter(
+    (weapon) =>
+      WEAPON_CATEGORIES.has(weapon.category) &&
+      MODDABLE_PRODUCT_CATEGORIES.has(weapon.productCategory) &&
+      weapon.type !== 'Zaw Component' &&
+      weapon.attacks?.length,
+  )
   .map((weapon) => ({
     uniqueName: weapon.uniqueName,
     name: weapon.name,
@@ -32,10 +41,13 @@ const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('
     category: weapon.category,
     disposition: weapon.disposition ?? null,
     multishot: weapon.multishot ?? 1,
+    trigger: weapon.trigger ?? null, // Auto, Semi, Burst, Charge, Held... (Semi-___ Cannonade needs Semi)
+    magazineSize: weapon.magazineSize ?? null,
+    reloadTime: weapon.reloadTime ?? null,
     imageName: weapon.imageName ?? null,
     polarities: weapon.polarities ?? [], // pre-installed slot polarities, fill the first slots
-    // bows are listed as "Rifle", the internal path is the only reliable tell
-    isBow: /\/Bows?\//i.test(weapon.uniqueName) || weapon.trigger === 'Charge' && /Cernos|Paris|Lenz|Dread|Daikyu|Bramma|Nagantaka/.test(weapon.name),
+    // newer data has a Bow type, the path check covers older entries still listed as Rifle
+    isBow: weapon.type === 'Bow' || /\/Bows?\//i.test(weapon.uniqueName),
 
     // I use attacks[].damage on purpose: the top-level `damage` object has
     // slash/puncture swapped on some weapons (Braton Prime for one)
@@ -43,6 +55,10 @@ const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('
       name: attack.name,
       isAoE: attack.shot_type === 'AoE',
       fireRate: attack.speed ?? weapon.fireRate ?? 1,
+      chargeTime: attack.charge_time ?? null,
+      // the data only has weapon-level multishot. Incarnon forms fire a single projectile even on shotguns
+      // (Strun's 12 pellets don't apply to its Incarnon form), so they get 1
+      multishot: /incarnon/i.test(attack.name) ? 1 : weapon.multishot ?? 1,
       critChance: (attack.crit_chance ?? 0) / 100,
       critMultiplier: attack.crit_mult ?? 1,
       statusChance: (attack.status_chance ?? 0) / 100,
@@ -61,13 +77,27 @@ const weaponMods = readJson('Mods')
   .filter((mod) => !/\/(Beginner|Intermediate)\//.test(mod.uniqueName))
 
 // the export also has unreleased /Expert/ placeholder copies that reuse a normal mod's name
-// (a 10-rank "Point Strike" at +275%). real mods have a wiki page and those don't, so when
-// a name shows up more than once I keep only the copies that have one.
+// (a 10-rank "Point Strike" at +275%). they even have wiki links now, so I go by the path: when a name
+// has a regular (non-/Expert/) version, the /Expert/ copies are dropped unless they're actually "Primed ...".
+// Galvanized mods live under /Expert/ too, their extra "SubMod" copies are dropped.
 const modKey = (mod) => `${mod.type}|${mod.name}`
-const namesWithWikiPage = new Set(weaponMods.filter((mod) => mod.wikiaUrl).map(modKey))
+const isExpert = (mod) => mod.uniqueName.includes('/Expert/')
+const namesWithRegularVersion = new Set(weaponMods.filter((mod) => !isExpert(mod)).map(modKey))
+const isPlaceholder = (mod) =>
+  (isExpert(mod) && !mod.name.startsWith('Primed') && namesWithRegularVersion.has(modKey(mod))) || /SubMod$/.test(mod.uniqueName)
+
+// a few same-named copies survive (two "Pressure Point"s: the real 5-rank +120% one and an internal 10-rank
+// +200% "HeavyKill" entry). the fake copies are always the higher-rank ones, so the lowest rank wins
+const lowestRankByName = new Map()
+for (const mod of weaponMods) {
+  if (isPlaceholder(mod)) continue
+  const key = modKey(mod)
+  if (!lowestRankByName.has(key) || mod.fusionLimit < lowestRankByName.get(key)) lowestRankByName.set(key, mod.fusionLimit)
+}
+const isFakeDuplicate = (mod) => mod.fusionLimit > lowestRankByName.get(modKey(mod))
 
 const mods = weaponMods
-  .filter((mod) => mod.wikiaUrl || !namesWithWikiPage.has(modKey(mod)))
+  .filter((mod) => !isPlaceholder(mod) && !isFakeDuplicate(mod))
   .map((mod) => ({
     uniqueName: mod.uniqueName,
     name: mod.name,
@@ -78,6 +108,9 @@ const mods = weaponMods
     baseDrain: mod.baseDrain ?? 0,
     fusionLimit: mod.fusionLimit ?? 0,
     imageName: mod.imageName ?? null,
+    // restrictions only live in the description, e.g. "Only compatible with Semi-Auto Trigger. Fire Rate cannot be modified."
+    semiOnly: /only compatible with semi-auto/i.test(mod.description ?? ''),
+    locksFireRate: /fire rate cannot be modified/i.test(mod.description ?? ''),
     // weapon exilus mods are flagged isUtility in the export
     isExilus: Boolean(mod.isUtility || mod.isExilus),
     levelStats: mod.levelStats.map((level) => level.stats.map(cleanStatLine)),

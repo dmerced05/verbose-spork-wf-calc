@@ -18,7 +18,7 @@ const expectClose = (label: string, actual: number, expected: number) => {
 
 const noDebuffs = (): Debuffs => ({
   stacks: Object.fromEntries(STATUS_TYPES.map((statusType) => [statusType, 0])),
-  heatArmorStrip: 0, corrosiveProjections: 0, otherArmorReduction: 0, damageVulnerability: 0, liftedOrKnockedDown: false,
+  heatArmorStrip: 0, corrosiveProjections: 0, otherArmorReduction: 0, damageVulnerability: 0, liftedOrKnockedDown: false, statusTypeSource: 'debuffs',
 })
 const testAttack = (damage: Record<string, number>, extra: Partial<Attack> = {}): Attack => ({
   name: 'Test', isAoE: false, fireRate: 1, critChance: 0, critMultiplier: 2, statusChance: 0, damage, ...extra,
@@ -256,6 +256,53 @@ expectClose('Flensing Spikes 3 stacks', flensing.armor.after, 400)
 // every perk line in the data parses into at least a statement, and every family's variants exist in the weapon data
 const familyProblems = INCARNON_FAMILIES.flatMap((family) => family.variants.filter((variant) => !weapons.some((weapon) => weapon.name === variant)))
 expectClose(`incarnon variants missing from weapon data: ${familyProblems.join(', ') || 'none'}`, familyProblems.length, 0)
+
+// Acuity: +90% multishot from Split Chamber is ignored, weak point bonuses only on headshots
+const acuityMod = mods.find((mod) => mod.name === 'Primary Acuity')!
+const acuityBuild = { mods: [{ mod: acuityMod, rank: acuityMod.fusionLimit, conditionalStacks: 0 }, maxed('Split Chamber')] }
+const acuityBody = run(testAttack({ slash: 100 }, { critChance: 0.2, critMultiplier: 2 }), acuityBuild)
+const acuityHead = run(testAttack({ slash: 100 }, { critChance: 0.2, critMultiplier: 2 }), { ...acuityBuild, target: headTarget })
+expectClose('Acuity locks multishot', acuityBody.multishot, 1)
+expectClose('Acuity body crit unchanged', acuityBody.critChance, 0.2)
+expectClose('Acuity head crit 20% x 4.5', acuityHead.critChance, 0.2 * 4.5)
+expectClose('Acuity head factor 3 + 1.5 x 3.5', acuityHead.headshot.factor, 8.25)
+const noAcuity = run(testAttack({ slash: 100 }), { mods: [maxed('Split Chamber')] })
+expectClose('Split Chamber alone still works', noAcuity.multishot, 1.9)
+
+// charged shots: Cernos Prime charged (0.5s charge, 1 fire rate) -> 1 / (0.5 + 1) = 0.667 shots/s
+const cernos = weapons.find((weapon) => weapon.name === 'Cernos Prime')!
+const cernosCharged = cernos.attacks.find((attack) => attack.chargeTime)!
+const cernosRate = calculate({ weapon: cernos, attack: cernosCharged, mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' } }).fireRate
+expectClose('charged fire rate', cernosRate, 1 / (cernosCharged.chargeTime! + 1 / cernosCharged.fireRate))
+// Incarnon forms fire one projectile: Strun Prime's 12 pellets don't carry over
+const strunPrime = weapons.find((weapon) => weapon.name === 'Strun Prime')!
+const strunIncarnon = strunPrime.attacks.find((attack) => attack.name === 'Incarnon Form')!
+expectClose('Strun Incarnon multishot 1', calculate({ weapon: strunPrime, attack: strunIncarnon, mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' } }).multishot, 1)
+
+// ---- magazine / reload / status types / Cannonade ----
+// Exergis: 1-round magazine, 1.6s reload, 3.33 fire rate -> uptime 1 / (3.33 x 1.6 + 1)
+const exergis = weapons.find((weapon) => weapon.name === 'Exergis')!
+const exergisRun = (extraMods: ReturnType<typeof maxed>[] = []) => calculate({ weapon: exergis, attack: exergis.attacks[0], mods: extraMods, armor: 0,
+  debuffs: { ...noDebuffs(), statusTypeSource: 'build' }, buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' } })
+const exergisPlain = exergisRun()
+expectClose('Exergis magazine 1', exergisPlain.magazineSize ?? 0, 1)
+expectClose('Exergis uptime', exergisPlain.uptime, 1 / (exergis.attacks[0].fireRate * exergis.reloadTime! + 1))
+expectClose('Exergis sustained = burst x uptime', exergisPlain.sustainedDps, exergisPlain.totalDps * exergisPlain.uptime)
+// 10s window with a 1-round mag: shots at 0, then every (1/fr + reload)
+const exergisShots = Math.ceil(10 / (1 / exergis.attacks[0].fireRate + exergis.reloadTime!))
+expectClose('Exergis 10s direct part', exergisRun().damageInWindow(10) >= exergisShots * exergisPlain.averageShot ? 1 : 0, 1)
+// status types from the build: Exergis base impact/slash/puncture/radiation = 4 types
+expectClose('Exergis own status types', exergisPlain.activeStatusTypes, 4)
+// Semi-Rifle Cannonade locks fire rate: Speed Trigger does nothing with it equipped
+const cannonade = mods.find((mod) => mod.name === 'Semi-Rifle Cannonade')!
+const torid = weapons.find((weapon) => weapon.name === 'Torid')!
+const toridRate = (withCannonade: boolean) => calculate({ weapon: torid, attack: torid.attacks[0],
+  mods: [maxed('Speed Trigger'), ...(withCannonade ? [{ mod: cannonade, rank: cannonade.fusionLimit, conditionalStacks: 0 }] : [])],
+  armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' } }).fireRate
+expectClose('Cannonade locks fire rate', toridRate(true), torid.attacks[0].fireRate)
+expectClose('Speed Trigger alone works', toridRate(false) > torid.attacks[0].fireRate ? 1 : 0, 1)
+expectClose('Cannonade semi-only flag', cannonade.semiOnly && cannonade.locksFireRate ? 1 : 0, 1)
+expectClose('Sirocco removed (Drifter amp)', weapons.some((weapon) => weapon.name === 'Sirocco') ? 1 : 0, 0)
 
 // sanity: standard Braton Prime build, element combining in slot order
 const braton = weapons.find((weapon) => weapon.name === 'Braton Prime')!

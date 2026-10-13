@@ -7,8 +7,8 @@ export interface KillEstimate {
   healthDamagePerShot: number
   shotsToStripShields: number
   shotsToKill: number // Infinity if this build can't get through
-  directTimeToKill: number // seconds, first shot at t = 0
-  sustainedTimeToKill: number // seconds, direct + DoT DPS, ignores the DoT ramp-up
+  directTimeToKill: number // seconds, first shot at t = 0, reloads included
+  sustainedTimeToKill: number // seconds, sustained direct + DoT DPS, ignores the DoT ramp-up
   oneShot: boolean
 }
 
@@ -32,16 +32,19 @@ export function estimateKill(health: number, shield: number, vsHealth: CalcResul
   }
 
   const fireRate = vsHealth.fireRate
-  const shieldDps = shieldDamagePerShot * fireRate + vsShield.dotDps
+  // reloads: every full magazine adds a reload before the next shot
+  const reloadsBefore = (shots: number) =>
+    vsHealth.magazineSize && vsHealth.reloadTime ? Math.floor((shots - 1) / vsHealth.magazineSize) * vsHealth.reloadTime : 0
+  const shieldDps = (shieldDamagePerShot * fireRate + vsShield.dotDps) * vsShield.uptime
   const sustainedTimeToKill =
-    (shield > 0 ? (shieldDps > 0 ? shield / shieldDps : Infinity) : 0) + (vsHealth.totalDps > 0 ? health / vsHealth.totalDps : Infinity)
+    (shield > 0 ? (shieldDps > 0 ? shield / shieldDps : Infinity) : 0) + (vsHealth.sustainedDps > 0 ? health / vsHealth.sustainedDps : Infinity)
 
   return {
     shieldDamagePerShot,
     healthDamagePerShot,
     shotsToStripShields,
     shotsToKill,
-    directTimeToKill: Number.isFinite(shotsToKill) ? Math.max(0, shotsToKill - 1) / fireRate : Infinity,
+    directTimeToKill: Number.isFinite(shotsToKill) ? Math.max(0, shotsToKill - 1) / fireRate + reloadsBefore(shotsToKill) : Infinity,
     sustainedTimeToKill,
     oneShot: shotsToKill === 1,
   }

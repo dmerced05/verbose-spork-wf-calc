@@ -196,3 +196,46 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .evo-detail li.inactive { opacity: 0.45; }
 .evo-tag { margin-left: 6px; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
 @media (max-width: 700px) { .evo-detail { margin-left: 0; } }
+
+/* ---- top tabs ---- */
+.app-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.app-header h1 { margin: 0; }
+.tabs, .board-tabs { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.tabs button, .board-tabs button { border: 0; background: transparent; padding: 6px 14px; border-radius: 6px; color: var(--muted); }
+.tabs button.active, .board-tabs button.active { background: rgba(212, 180, 106, 0.15); color: var(--accent); }
+.tabs button:hover, .board-tabs button:hover { color: var(--text); }
+[hidden] { display: none !important; }
+.load-banner { margin-bottom: 16px; padding: 10px 12px; border: 1px solid rgba(212, 180, 106, 0.4); border-radius: 8px; font-size: 0.85rem; color: var(--muted); }
+.load-banner b { color: var(--text); }
+
+/* ---- leaderboard ---- */
+.leaderboard { display: grid; gap: 12px; }
+.board-tabs { display: inline-flex; flex-wrap: wrap; }
+.board-description { margin: 10px 0; font-size: 0.9rem; }
+.board-filters input:not([type='checkbox']) { flex: 1; min-width: 160px; max-width: 280px; }
+.board-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.board-row {
+  display: grid; gap: 6px 16px; padding: 12px 16px;
+  grid-template-columns: 48px minmax(150px, 1.1fr) 110px minmax(0, 2.4fr) auto;
+  grid-template-areas: 'rank weapon score build load' 'rank stats stats build load';
+  align-items: center;
+}
+.board-rank { grid-area: rank; font-size: 1.1rem; color: var(--accent); font-variant-numeric: tabular-nums; }
+.board-weapon { grid-area: weapon; }
+.board-name { font-weight: 600; }
+.board-score { grid-area: score; display: grid; text-align: right; }
+.board-score .value { font-size: 1.25rem; }
+.board-stats { grid-area: stats; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 0.75rem; color: var(--muted); text-transform: capitalize; }
+.board-build { grid-area: build; display: flex; flex-wrap: wrap; gap: 4px; }
+.board-load { grid-area: load; white-space: nowrap; }
+.chip { font-size: 0.72rem; padding: 2px 7px; border-radius: 4px; border: 1px solid var(--border); background: rgba(255, 255, 255, 0.03); }
+.arcane-chip { border-color: rgba(143, 179, 255, 0.5); color: #b9cdff; }
+.perk-chip { border-color: rgba(200, 170, 255, 0.45); color: #ddd0ff; }
+.show-more { justify-self: center; }
+@media (max-width: 900px) {
+  .board-row { grid-template-columns: 40px 1fr auto; grid-template-areas: 'rank weapon score' 'rank stats stats' 'rank build build' 'rank load load'; }
+  .board-load { justify-self: start; }
+}
+.leaderboard-settings { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.leaderboard-settings > label { display: grid; gap: 6px; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.leaderboard-settings .board-tabs button { text-transform: none; letter-spacing: 0; font-size: 0.9rem; }

@@ -25,25 +25,24 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
     ['Crit hit', (calc) => calc.hit.crit],
     ['Average hit', (calc) => calc.hit.average],
     ['Average shot', (calc) => calc.averageShot],
-    ['Direct DPS', (calc) => calc.burstDps],
-    ['DoT DPS', (calc) => calc.dotDps],
-    ['Total DPS', (calc) => calc.totalDps],
+    ['Burst DPS', (calc) => calc.totalDps],
+    ['Sustained DPS', (calc) => calc.sustainedDps],
   ]
   return (
     <section className="panel results">
       <h2>Results</h2>
       <div className="headline">
-        <div>
-          <span className="label">Total DPS</span>
-          <span className="value">{formatNumber(result.totalDps, 0)}</span>
+        <div title="Direct + DoT, with magazine and reload">
+          <span className="label">Sustained DPS</span>
+          <span className="value">{formatNumber(result.sustainedDps, 0)}</span>
         </div>
-        <div>
-          <span className="label">Direct DPS</span>
-          <span className="value small">{formatNumber(result.burstDps, 0)}</span>
+        <div title="Direct + DoT while firing nonstop (no reload)">
+          <span className="label">Burst DPS</span>
+          <span className="value small">{formatNumber(result.totalDps, 0)}</span>
         </div>
-        <div>
-          <span className="label">DoT DPS</span>
-          <span className="value small">{formatNumber(result.dotDps, 0)}</span>
+        <div title="Damage dealt in the first 10 seconds, reloads included">
+          <span className="label">First 10 s</span>
+          <span className="value small">{formatNumber(result.damageInWindow(10), 0)}</span>
         </div>
       </div>
 
@@ -93,10 +92,16 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
           <tr><td>Crit chance</td><td>{formatPercent(result.critChance)}</td></tr>
           <tr><td>Crit multiplier</td><td>{formatNumber(result.critMultiplier, 2)}x</td></tr>
           <tr><td>Status chance</td><td>{formatPercent(result.statusChance)}</td></tr>
-          <tr><td>Multishot</td><td>{formatNumber(result.multishot, 2)}</td></tr>
-          <tr><td>Fire rate</td><td>{formatNumber(result.fireRate, 2)}</td></tr>
+          <tr><td>Multishot{result.multishotLocked ? ' (locked by Acuity)' : ''}</td><td>{formatNumber(result.multishot, 2)}</td></tr>
+          <tr><td>Fire rate{result.fireRateLocked ? ' (locked by Cannonade)' : ''}</td><td>{formatNumber(result.fireRate, 2)}</td></tr>
+          <tr>
+            <td>Magazine / reload</td>
+            <td>{result.magazineSize ? `${result.magazineSize} / ${formatNumber(result.reloadTime ?? 0, 2)}s` : 'no reload'}</td>
+          </tr>
+          <tr><td>Time spent firing</td><td>{formatPercent(result.uptime)}</td></tr>
+          <tr><td>Direct / DoT DPS (burst)</td><td>{formatNumber(result.burstDps, 0)} / {formatNumber(result.dotDps, 0)}</td></tr>
           <tr><td>Faction multiplier</td><td>{formatNumber(result.factionMultiplier, 2)}x</td></tr>
-          <tr><td>Status types on target</td><td>{result.activeStatusTypes}</td></tr>
+          <tr><td>Status types for CO ({result.statusTypeSource === 'build' ? 'from build' : 'from debuffs'})</td><td>{result.activeStatusTypes}</td></tr>
           {result.conditionOverload.bonus > 0 && (
             <tr>
               <td>CO-type bonus ({result.conditionOverload.mode === 'multiply' ? 'multiplicative' : 'additive'})</td>

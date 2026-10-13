@@ -60,6 +60,7 @@ export interface CalcResult {
   critTier: number // 0 = can't crit, 1 = yellow, 2 = orange, 3+ = red
   statusChance: number
   multishot: number
+  multishotLocked: boolean
   fireRate: number
   factionMultiplier: number
   activeStatusTypes: number
@@ -72,7 +73,14 @@ export interface CalcResult {
   procsPerSecond: number
   dots: DotRow[]
   dotDps: number
-  totalDps: number
+  totalDps: number // burst: direct + DoT while firing nonstop
+  magazineSize: number | null // null = no reload modeled (melee, Incarnon form)
+  reloadTime: number | null
+  uptime: number // share of time spent firing
+  sustainedDps: number // totalDps with magazine + reload
+  damageInWindow: (seconds: number) => number
+  fireRateLocked: boolean
+  statusTypeSource: 'build' | 'debuffs'
   unparsed: string[]
 }
 
@@ -83,13 +91,13 @@ const quantize = (proportion: number) => (Math.sign(proportion) * Math.floor(Mat
 export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPerks = [], target, armor, debuffs, buffs }: CalcInput): CalcResult {
   const stacks = (statusType: string) => debuffs.stacks[statusType] ?? 0
   // CO counts status *types*, not stacks. Lifted/knocked down is a hidden status that also counts
-  const activeStatusTypes =
-    Object.values(debuffs.stacks).filter((count) => count > 0).length + (debuffs.liftedOrKnockedDown ? 1 : 0)
+  const debuffStatusTypes = Object.values(debuffs.stacks).filter((count) => count > 0).length
 
   // ---- 1. collect mod effects ----
   const bonus: Record<StatKey, number> = {
     damage: 0, damagePerStatusType: 0, damagePerColdStack: 0, critChance: 0, weakpointCritChance: 0,
     critDamage: 0, multishot: 0, fireRate: 0, statusChance: 0, statusDamage: 0, headshotMultiplier: 0, weakpointDamage: 0,
+    magazineCapacity: 0, reloadSpeed: 0,
   }
   const physicalBonus: Record<string, number> = {}
   const elementBonus: Record<string, number> = {} // literal mod bonus per element, also used for DoTs
@@ -99,6 +107,8 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
   let slashOnImpactChance = 0
   let overguardMultiplier = 1
   let separateDamageMultiplier = 1 // Longbow Sharpshot style, multiplies outside the damage mods
+  let multishotLocked = false // Acuity mods
+  const fireRateLocked = mods.some(({ mod }) => mod.locksFireRate) // Semi-___ Cannonade: fire rate stays at base
   const unparsed: string[] = []
 
   const applyEffect = (effect: ModEffect, times: number) => {
@@ -120,6 +130,9 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
         break
       case 'damageMultiplier':
         separateDamageMultiplier *= 1 + effect.value
+        break
+      case 'lockMultishot':
+        multishotLocked = true
         break
       case 'damageType':
         if (PHYSICAL_TYPES.includes(effect.damageType)) {
@@ -155,7 +168,7 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
   let armorStripPerPuncture = 0
   for (const { perk, stacks: perkStacks } of incarnonPerks) {
     for (const statement of perk.statements) {
-      if (!statement.effect || !perkAppliesTo(statement.mode, isIncarnonAttack, weapon.type === 'Melee')) continue
+      if (!statement.effect || !perkAppliesTo(statement.mode, isIncarnonAttack, weapon.category === 'Melee')) continue
       const times = statement.condition ? Math.min(perkStacks, statement.maxStacks) : 1
       if (times <= 0) continue
       const effect = statement.effect
@@ -181,24 +194,10 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
     critMultiplier: attack.critMultiplier + perkBase.critMultiplier,
     statusChance: attack.statusChance + perkBase.statusChance,
   }
-  weapon = { ...weapon, multishot: weapon.multishot + perkBase.multishot }
-
-  // Condition Overload style bonuses (CO, Galvanized per-status, Secondary Shiver per Cold stack).
-  // additive weapons: base x [(1 + mods) x other multipliers + CO]
-  // multiplicative weapons: base x (1 + mods) x (1 + CO) x other multipliers
-  const co = coBehavior ?? resolveCoBehavior(weapon, attack)
-  const coBonus =
-    co.mode === 'none'
-      ? 0
-      : (bonus.damagePerStatusType * activeStatusTypes + bonus.damagePerColdStack * Math.min(stacks('cold'), 10)) * co.scale
-  const damageScale =
-    co.mode === 'multiply'
-      ? (1 + bonus.damage) * (1 + coBonus) * separateDamageMultiplier
-      : (1 + bonus.damage) * separateDamageMultiplier + coBonus
+  weapon = { ...weapon, multishot: (attack.multishot ?? weapon.multishot) + perkBase.multishot }
 
   // ---- 2. damage type proportions + quantization ----
   const baseDamage = sum(Object.values(attack.damage))
-  const moddedBaseDamage = baseDamage * damageScale
   const proportions: Record<string, number> = {}
   const addProportion = (damageType: string, amount: number) => {
     proportions[damageType] = (proportions[damageType] ?? 0) + amount
@@ -229,6 +228,29 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
     if (!second) addProportion(first, elementAmounts[first])
     else addProportion(COMBINED_ELEMENTS[[first, second].sort().join('+')], elementAmounts[first] + elementAmounts[second])
   }
+
+  // which status types the target has, for CO / Galvanized. by default it's the build's own damage types
+  // (base physical + modded elements), so a gun can't count statuses it never applies
+  const buildStatusTypes = attack.statusChance > 0
+    ? Object.entries(proportions).filter(([damageType, proportion]) => damageType !== 'true' && quantize(proportion) > 0).length
+    : 0
+  const activeStatusTypes =
+    (debuffs.statusTypeSource === 'debuffs' ? debuffStatusTypes : buildStatusTypes) + (debuffs.liftedOrKnockedDown ? 1 : 0)
+
+  // Condition Overload style bonuses (CO, Galvanized per-status, Secondary Shiver per Cold stack).
+  // additive weapons: base x [(1 + mods) x other multipliers + CO]
+  // multiplicative weapons: base x (1 + mods) x (1 + CO) x other multipliers
+  const co = coBehavior ?? resolveCoBehavior(weapon, attack)
+  const coBonus =
+    co.mode === 'none'
+      ? 0
+      : (bonus.damagePerStatusType * activeStatusTypes + bonus.damagePerColdStack * Math.min(stacks('cold'), 10)) * co.scale
+  const damageScale =
+    co.mode === 'multiply'
+      ? (1 + bonus.damage) * (1 + coBonus) * separateDamageMultiplier
+      : (1 + bonus.damage) * separateDamageMultiplier + coBonus
+
+  const moddedBaseDamage = baseDamage * damageScale
 
   // each final type (sums included) is quantized on its own, then scaled by modded base damage
   const moddedByType: Record<string, number> = {}
@@ -261,8 +283,15 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
   const attritionBonus = Math.max(0, 1 - critChance) * nonCritChanceBonus
 
   const factionMultiplier = 1 + factionBonus
-  const multishot = weapon.type === 'Melee' ? 1 : weapon.multishot * (1 + bonus.multishot)
-  const fireRate = attack.fireRate * (1 + bonus.fireRate)
+  // Acuity: multishot mods/arcanes don't apply, the weapon keeps its base (Incarnon base multishot perks still count)
+  const multishot = weapon.category === 'Melee' ? 1 : weapon.multishot * (multishotLocked ? 1 : 1 + bonus.multishot)
+  // charged attacks (wiki Damage/Calculation): effective rate = 1 / (charge time + 1 / fire rate), and fire rate
+  // mods also speed up the charge (modded charge time = base / (1 + speed bonuses))
+  const fireRateBonus = fireRateLocked ? 0 : bonus.fireRate
+  const moddedFireRate = attack.fireRate * (1 + fireRateBonus)
+  const fireRate = attack.chargeTime
+    ? 1 / (attack.chargeTime / Math.max(0.01, 1 + fireRateBonus) + 1 / moddedFireRate)
+    : moddedFireRate
 
   // ---- 4. target modifiers ----
   // Latron's Flensing Spikes: each Puncture stack strips another 20% of armor
@@ -357,6 +386,42 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
     })
   const dotDps = sum(dots.map((dot) => dot.dps))
 
+  // ---- 6. magazine + reload (wiki Damage/Calculation, Sustained DPS) ----
+  // sustained = burst x shots per mag / (fire rate x reload + shots per mag). melee has no magazine, and
+  // Incarnon forms run on Incarnon charge which the data doesn't have, so neither reloads here
+  const reloads = weapon.category !== 'Melee' && !isIncarnonAttack && Boolean(weapon.magazineSize) && Boolean(weapon.reloadTime)
+  const magazineSize = reloads ? Math.max(1, Math.round(weapon.magazineSize! * (1 + bonus.magazineCapacity))) : null
+  const reloadTime = reloads ? weapon.reloadTime! / Math.max(0.01, 1 + bonus.reloadSpeed) : null
+  const uptime = magazineSize && reloadTime ? magazineSize / (fireRate * reloadTime + magazineSize) : 1
+  const sustainedDps = (burstDps + dotDps) * uptime
+
+  // damage dealt in the first `seconds`: first shot at t = 0, a full magazine, then a reload, repeat.
+  // DoT procs count the part of their duration that fits in the window (Blast pops after its 1.5s fuse).
+  // tight loop on purpose, the optimizer calls this thousands of times per attack
+  const shotInterval = 1 / fireRate
+  let tickingDotPerShot = 0 // damage per shot from Slash/Heat/Toxin/Electricity/Gas procs over their full 6s
+  let blastPerShot = 0
+  for (const dot of dots) {
+    const perShot = (dot.procsPerSecond / fireRate) * dot.perProc.average
+    if (dot.damageType === 'blast') blastPerShot += perShot
+    else tickingDotPerShot += perShot
+  }
+  const damageInWindow = (seconds: number) => {
+    let total = 0
+    let time = 0
+    let roundsLeft = magazineSize ?? Infinity
+    for (let shots = 0; time < seconds && shots < 200000; shots++) {
+      const remaining = seconds - time
+      total += averageShot + tickingDotPerShot * Math.min(1, remaining / 6) + (remaining >= 1.5 ? blastPerShot : 0)
+      time += shotInterval
+      if (--roundsLeft <= 0 && reloadTime) {
+        time += reloadTime
+        roundsLeft = magazineSize!
+      }
+    }
+    return total
+  }
+
   const damageTypes = Object.entries(moddedByType)
     .map(([damageType, modded]) => ({
       damageType,
@@ -374,6 +439,7 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
     critTier: Math.ceil(critChance),
     statusChance,
     multishot,
+    multishotLocked,
     fireRate,
     factionMultiplier,
     activeStatusTypes,
@@ -393,6 +459,13 @@ export function calculate({ weapon, attack, mods, arcane, coBehavior, incarnonPe
     dots,
     dotDps,
     totalDps: burstDps + dotDps,
+    magazineSize,
+    reloadTime,
+    uptime,
+    sustainedDps,
+    damageInWindow,
+    fireRateLocked,
+    statusTypeSource: debuffs.statusTypeSource === 'debuffs' ? 'debuffs' : 'build',
     unparsed,
   }
 }

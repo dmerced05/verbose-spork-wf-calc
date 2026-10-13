@@ -13,6 +13,8 @@ export type StatKey =
   | 'statusDamage'
   | 'headshotMultiplier'
   | 'weakpointDamage' // Primary/Secondary Acuity, added to the weak point multiplier (x1.5 on heads)
+  | 'magazineCapacity'
+  | 'reloadSpeed'
 
 export type ModEffect =
   | { kind: 'stat'; stat: StatKey; value: number }
@@ -22,6 +24,7 @@ export type ModEffect =
   | { kind: 'slashOnImpact'; value: number } // Internal Bleeding
   | { kind: 'overguardMultiplier'; value: number } // Secondary Fortifier
   | { kind: 'damageMultiplier'; value: number } // separate multiplier, e.g. Longbow Sharpshot's next shot bonus
+  | { kind: 'lockMultishot' } // Primary/Pistol Acuity: multishot mods stop working
 
 export interface ConditionalEffect {
   trigger: string // "On Kill:", "On Toxin Status Effect:", "While Overshields Active:" ...
@@ -51,6 +54,8 @@ const STAT_PATTERNS: [RegExp, StatKey][] = [
   [/^([+-][\d.]+)% Status Damage$/, 'statusDamage'],
   [/^([+-][\d.]+)% (?:to Headshot Multiplier|Headshot Damage)$/, 'headshotMultiplier'],
   [/^([+-][\d.]+)% Weak Point Damage$/, 'weakpointDamage'],
+  [/^([+-][\d.]+)% Magazine Capacity$/, 'magazineCapacity'],
+  [/^([+-][\d.]+)% Reload Speed$/, 'reloadSpeed'],
 ]
 
 export function parseStatLine(line: string): ModEffect | null {
@@ -93,8 +98,20 @@ const cleanConditionalBody = (body: string) => {
   return /^\d/.test(cleaned) ? `+${cleaned}` : cleaned // "60% Corrosive" -> "+60% Corrosive"
 }
 
-// works for mods and arcanes, both use the same levelStats text format
+// parsing is regex-heavy and the optimizer calls the calc millions of times, so results are cached
+// per levelStats array (each mod/arcane has its own) and rank
+const parseCache = new WeakMap<string[][], Map<number, ParsedUpgrade>>()
+
 export function parseUpgrade(levelStats: string[][], rank: number): ParsedUpgrade {
+  let byRank = parseCache.get(levelStats)
+  if (!byRank) parseCache.set(levelStats, (byRank = new Map()))
+  let parsed = byRank.get(rank)
+  if (!parsed) byRank.set(rank, (parsed = parseUpgradeUncached(levelStats, rank)))
+  return parsed
+}
+
+// works for mods and arcanes, both use the same levelStats text format
+function parseUpgradeUncached(levelStats: string[][], rank: number): ParsedUpgrade {
   const parsed: ParsedUpgrade = { effects: [], conditionals: [], unparsed: [] }
   const lines = levelStats[Math.min(Math.max(rank, 0), levelStats.length - 1)] ?? []
   // arcanes repeat their passive lines: once inside the full description and once on their own.
@@ -148,10 +165,19 @@ export function parseUpgrade(levelStats: string[][], rank: number): ParsedUpgrad
       const effect = parseStatLine(segment)
       if (effect) parsed.effects.push(effect)
       else parsed.unparsed.push(segment)
+      // Acuity tacks its drawback onto the crit line: "+350% Weak Point Critical Chance. Multishot cannot be modified."
+      if (/Multishot cannot be modified/i.test(segment)) parsed.effects.push({ kind: 'lockMultishot' })
     }
   }
   return parsed
 }
 
-export const maxConditionalStacks = (levelStats: string[][], rank: number) =>
-  Math.max(0, ...parseUpgrade(levelStats, rank).conditionals.map((conditional) => conditional.maxStacks))
+export const maxConditionalStacks = (levelStats: string[][], rank: number, includeTrigger: (trigger: string) => boolean = () => true) =>
+  Math.max(
+    0,
+    ...parseUpgrade(levelStats, rank)
+      .conditionals.filter((conditional) => includeTrigger(conditional.trigger))
+      .map((conditional) => conditional.maxStacks),
+  )
+
+export const isHeadshotTrigger = (trigger: string) => /headshot|weak ?point/i.test(trigger)

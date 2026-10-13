@@ -1,7 +1,7 @@
 # verbose-spork-wf-calc
 calculator for warframe
 
-React + Vite + TypeScript. Item data comes from [warframe-items](https://github.com/WFCD/warframe-items), trimmed at build time.
+React + Vite + TypeScript. Item data comes from [@wfcd/items](https://github.com/WFCD/warframe-items) (the package was renamed from `warframe-items`, which stopped updating in April 2025), trimmed at build time.
 
 ## Running it
 
@@ -10,9 +10,11 @@ npm install      # also generates src/data/*.json
 npm run dev      # http://localhost:5173
 npm run check    # calc sanity check + render smoke test
 npm run build
+npm run leaderboard  # re-run the optimizer and rewrite public/leaderboard.json (~1 min)
+npm run deploy       # build + publish to GitHub Pages (gh-pages branch)
 ```
 
-Bump data after a patch with `npm update warframe-items` (dev/build regenerate the JSON automatically).
+Bump data after a patch with `npm update @wfcd/items` (dev/build regenerate the JSON automatically).
 
 ## How the math works
 
@@ -62,10 +64,40 @@ Enemy_Level_Scaling curves for the selected faction (smoothstep blend between 70
 Steel Path = +100 levels and x2.5 health/shields (armor isn't multiplied since U36). Shows shots to kill and time to kill from
 average damage, toxin skips shields, no overflow from shields into health. "With DoTs" divides by direct + DoT DPS.
 
+Status types for Condition Overload / Galvanized default to the build's own damage types (a weapon with Impact/Puncture/Slash
+that's modded into three elements counts 6), switchable to the debuff stacks in the Debuffs panel.
+Magazine Capacity / Reload Speed mods are parsed, results show sustained DPS, burst DPS and damage in the first 10 s.
+Semi-___ Cannonade: semi-auto only and locks fire rate (both read from the mod's description in the data).
+
 Debuffs: every status type has its stack count, plus Heat strip stage, Corrosive Projection auras, other armor strip %, generic vulnerability %, and Roar.
 Armor strips multiply: (1 − heat) × (1 − corrosive) × (1 − 18% × auras) × (1 − other). Enemy presets level-scale armor (clamped 200–2700).
 
 `npm run check` tests against the wiki's examples: quantization, Roar + Bane = 477, Roar Slash tick = 78.75, Bleed tick = 297.82, Gas tick = 3699.07, Blast proc = 72.075, Viral ×4.25, armor strip, Cold crit 3.86.
+
+## Leaderboard
+
+The page has two tabs: Calculator and Leaderboard. The leaderboard is precomputed, the site never runs the optimizer:
+`npm run leaderboard` runs `scripts/build-leaderboard.ts`, which optimizes every weapon attack for every ranking and writes
+`public/leaderboard.json` (committed, fetched only when the tab opens). After a data update: `npm run leaderboard`, then deploy.
+
+One leaderboard, ranked by a setting (`src/optimizer/objectives.ts`, each one optimized separately):
+- Sustained DPS: direct + status DoTs with magazine and reload (`burst x mag / (fire rate x reload + mag)`, wiki Damage/Calculation)
+- Damage in a time window (3 / 10 / 30 s): simulates shots from t = 0 with reloads, DoTs count the part that fits in the window
+- Single damage instance: one hit of one projectile / one melee swing, crits averaged, no DoTs
+
+Settings on the page: Rank by, time window, Primary/Secondary/Melee, search, and "Include Incarnon forms". Incarnon forms run on
+Incarnon charge which isn't in the data, so they never reload here, which is why they can be toggled off.
+
+- Scenario (`src/optimizer/scenario.ts`): no faction, no armor, body shots, conditionals at max stacks (headshot-triggered ones off),
+  Condition Overload/Galvanized count only the build's own damage types (base physical + modded elements), capacity ignored, no rivens
+- Search (`src/optimizer/optimize.ts`): mod pool = compatible mods with an effect that can raise that ranking (`modPool.ts`, fire rate /
+  magazine / reload only for the DPS-type rankings), beam search over 8 slots (width 8), single-mod swaps, best Incarnon perk per tier,
+  best arcane, elemental slot order. Heuristic, so check odd results in the calculator ("Load build" applies the scenario too)
+- Conflicts: Primed/Amalgam/Archon/Umbral/Sacrificial/Spectral variants conflict with their base mod, plus `EXCLUSIVE_GROUPS` in `modPool.ts`
+- Not optimized: Exilus slot, polarities/capacity. Event-only attacks (reload explosions, turret expiry) are skipped
+- Each attack is scored on its own (an impact + its explosion aren't summed). Incarnon forms count as 1 projectile. Charged attacks use
+  `1 / (charge time + 1 / fire rate)`
+- Not moddable weapons (anything outside LongGuns/Pistols/Melee in the data, e.g. the Drifter's Sirocco) are excluded entirely
 
 ## Layout
 
@@ -78,13 +110,17 @@ src/calc/damage.ts        the pipeline above
 src/calc/target.ts        health/shield/armor level scaling, Steel Path, armor strip, armor DR
 src/calc/kill.ts          shots / time to kill
 src/calc/capacity.ts      mod drain + capacity (polarity match halves, mismatch +25%, both rounded up)
-src/components/           Weapon/Mod/Target/Debuffs/Stats panels. ModSlots is the in-game style 2x4 grid + exilus
+src/optimizer/            leaderboard scenario, objectives, mod pool + conflicts, beam search optimizer
+scripts/build-leaderboard.ts  runs the optimizer on every attack across CPU cores, writes public/leaderboard.json
+src/App.tsx               Calculator / Leaderboard tabs. src/Calculator.tsx is the calculator page
+src/components/           Weapon/Mod/Target/Debuffs/Stats/Leaderboard panels. ModSlots is the in-game style 2x4 grid + exilus
 ```
 
 ## Data quirks I've hit
 
 - Top-level `damage` on weapons has slash/puncture swapped sometimes, so I read `attacks[].damage` instead
-- The export has unreleased `/Expert/` copies of normal mods that reuse the name (a 10-rank "Point Strike" at +275%). when a name repeats I keep only the copies with a wiki page
+- The export has unreleased `/Expert/` copies of normal mods that reuse the name (a 10-rank "Point Strike" at +275%). build-data drops /Expert/ copies when a regular version exists (unless they're "Primed ..."), plus Galvanized "SubMod" duplicates
+- Primaries are split into Rifle/Sniper/Launcher/Bow/Shotgun types, so weapons are kept by category. Sniper/Bow/Assault Rifle mods only show for those types
 - Primed Bane mods aren't in the export under their own name, so only regular Banes show up
 - Weapon exilus mods are flagged `isUtility` in the export, not `isExilus`
 - Some weapon base damage doesn't match in game, e.g. Cernos Prime charged shot is 165.6 impact in the export but 289.8 in the arsenal

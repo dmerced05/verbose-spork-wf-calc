@@ -4,6 +4,8 @@ export interface Attack {
   name: string
   isAoE: boolean
   fireRate: number
+  chargeTime?: number | null // seconds, charged attacks only
+  multishot?: number // per attack, falls back to the weapon's
   critChance: number // fraction, 0.3 = 30%
   critMultiplier: number
   statusChance: number // fraction
@@ -13,10 +15,13 @@ export interface Attack {
 export interface Weapon {
   uniqueName: string
   name: string
-  type: string // Rifle, Shotgun, Pistol, Dual Pistols, Throwing, Melee
+  type: string // Rifle, Sniper, Launcher, Bow, Shotgun, Pistol, Dual Pistols, Throwing, Melee
   category: string
   disposition: number | null
   multishot: number
+  trigger?: string | null // Auto, Semi, Burst, Charge, Held, ...
+  magazineSize?: number | null
+  reloadTime?: number | null // seconds
   imageName: string | null
   polarities: string[]
   isBow: boolean
@@ -34,6 +39,8 @@ export interface Mod {
   fusionLimit: number // max rank
   imageName: string | null
   isExilus: boolean
+  semiOnly?: boolean // Semi-___ Cannonade
+  locksFireRate?: boolean // Semi-___ Cannonade: fire rate mods stop working
   levelStats: string[][] // stat lines per rank, index 0 = rank 0
 }
 
@@ -89,6 +96,8 @@ export interface Debuffs {
   otherArmorReduction: number // fraction, any other % armor strip
   damageVulnerability: number // fraction, generic "takes X% more damage" multiplier
   liftedOrKnockedDown: boolean // hidden status, counts as a status type for Condition Overload
+  // what Condition Overload / Galvanized count: the build's own damage types (default) or the stacks set above
+  statusTypeSource: 'build' | 'debuffs'
 }
 
 export interface Buffs {

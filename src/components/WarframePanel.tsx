@@ -3,22 +3,20 @@
 // one of which can be swapped for a Helminth ability, then the allies' abilities (cast at the teammate strength)
 import { useEffect, useMemo, useState } from 'react'
 import type { SlotPolarity } from '../calc/capacity'
-import { GLADIATOR_MAX_PIECES } from '../calc/constants'
+import { setSummary } from '../calc/modSets'
 import { warframeStateFor, warframeTotals, type WarframeBuild } from '../calc/warframeStats'
 import { arcanes, arcanesById, getWarframeMods, helminthAbilities, isAuraMod, modsById, warframeBaseName, warframes, warframesById } from '../data'
 import {
   SUBSUMABLE, WARFRAME_ABILITIES, abilitiesById, abilityApplies, canSubsumeInto, effectsFor, modeledAbility, modeledVariants, scaledValue,
   helpsAllies, type AbilityCast, type AbilityEffect, type CastBy, type DefenseEffect, type WarframeAbility, type WarframeState,
 } from '../data/warframeAbilities'
-import type { Buffs, Warframe, WarframeAbilityInfo } from '../types'
+import type { Warframe, WarframeAbilityInfo } from '../types'
 import { AURA_SLOT_START, EXILUS_SLOT, ModSlots, TOTAL_SLOTS, type ArcaneSlot, type ModSlot } from './ModSlots'
 import { SearchSelect } from './SearchSelect'
 
 interface Props {
-  buffs: Buffs
   isMelee: boolean
   weaponCategory: string // Primary / Secondary / Melee, which abilities apply
-  onBuffsChange: (buffs: Buffs) => void
   onWarframeChange: (state: WarframeState, corrosiveProjections: number) => void
 }
 
@@ -84,7 +82,7 @@ const subsumeByKey = new Map(SUBSUME_OPTIONS.map((option) => [option.key, option
 // abilities an ally can bring (passives can't be shared)
 const ALLY_OPTIONS = WARFRAME_ABILITIES.filter(helpsAllies)
 
-export function WarframePanel({ buffs, isMelee, weaponCategory, onBuffsChange, onWarframeChange }: Props) {
+export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Props) {
   const [frameId, setFrameId] = useState(defaultFrameId)
   const frame = warframesById.get(frameId)!
   const baseName = warframeBaseName(frame.name)
@@ -267,15 +265,13 @@ export function WarframePanel({ buffs, isMelee, weaponCategory, onBuffsChange, o
           Extra armor
           <input type="number" min={0} step={10} value={extraArmor} onChange={(event) => setExtraArmor(Math.max(0, Number(event.target.value)))} />
         </label>
-        <label title="Gladiator mods on your Warframe count toward the set bonus with the ones on your melee weapon (+10% crit chance per piece per combo multiplier)">
-          Gladiator pieces
-          <input
-            type="number" min={0} max={GLADIATOR_MAX_PIECES - 3} value={buffs.gladiatorWarframePieces ?? 0}
-            onChange={(event) => onBuffsChange({ ...buffs, gladiatorWarframePieces: Math.min(GLADIATOR_MAX_PIECES - 3, Math.max(0, Number(event.target.value))) })}
-          />
-        </label>
       </div>
       {totals.lines.length > 0 && <p className="proc-note">From mods: {totals.lines.join(' · ')}</p>}
+      {setSummary(totals.setPieces).length > 0 && (
+        <p className="proc-note" title="Set pieces on the Warframe count together with the ones on the weapon in the calculator. The weapon side shows in the results">
+          Sets on the frame: {setSummary(totals.setPieces).map((set) => `${set.name} ${set.count}/${set.pieces}: ${set.text}`).join(' · ')}
+        </p>
+      )}
 
       <h3>Survivability</h3>
       <div className="survivability">
@@ -290,6 +286,13 @@ export function WarframePanel({ buffs, isMelee, weaponCategory, onBuffsChange, o
             ))}
             <tr className="total"><td>Damage reduction on health</td><td /><td>{percent(totals.healthDr)}</td></tr>
             <tr className="total"><td>Damage reduction on shields</td><td /><td>{totals.shields > 0 ? percent(totals.shieldDr) : '–'}</td></tr>
+            {totals.damageCap && (
+              <tr className={totals.damageCap.active ? 'total' : 'inactive-row'} title="Magnetic Status and Ability Nullifying Effects disable this protection">
+                <td>{totals.damageCap.source}: max {totals.damageCap.perSecond.toLocaleString()} damage/s</td>
+                <td className="muted-inline">armor above {totals.damageCap.armorNeeded.toLocaleString()}</td>
+                <td>{totals.damageCap.active ? 'on' : 'off (not enough armor)'}</td>
+              </tr>
+            )}
             <tr className="total" title="health / (1 − health DR) + shields / (1 − shield DR). Toxin skips shields, so vs Toxin it's only the health part">
               <td>Effective health</td><td className="muted-inline">raw {(totals.health + totals.shields).toLocaleString()}</td><td>{Math.round(totals.effectiveHealth).toLocaleString()}</td>
             </tr>

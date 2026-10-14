@@ -1,4 +1,5 @@
 import { DAMAGE_TYPES } from './constants'
+import { specialLine, type SpecialLine } from './specialLines'
 
 export type StatKey =
   | 'damage'
@@ -37,6 +38,8 @@ export type ModEffect =
   | { kind: 'heavyScaledCritChance'; value: number; heavyFactor: number } // "(x2 for Heavy Attacks)"
   | { kind: 'duplicateOnCrit'; value: number } // Melee Duplicate: crits strike a second time
   | { kind: 'frameStat'; stat: FrameStat; value: number } // Warframe stats (mods and Warframe arcanes), see warframeStats.ts
+  | { kind: 'flatStat'; stat: 'critChance' | 'statusChance'; value: number } // "+20 Final Status Chance", added after mods
+  | { kind: 'forcedProcChance'; damageType: string; value: number } // extra proc chance on every hit, outside the damage split
 
 // armor/health are flat ("+900 Armor"), the *Percent ones % of base, damageResistance is one multiplicative DR source
 export type FrameStat = 'armor' | 'armorPercent' | 'health' | 'healthPercent' | 'shieldPercent' | 'strength' | 'damageResistance'
@@ -199,7 +202,18 @@ function parseUpgradeUncached(levelStats: string[][], rank: number): ParsedUpgra
   const splitSegments = (line: string) => line.split(/\\n|\n/).map((segment) => segment.trim()).filter(Boolean)
   const standaloneLines = new Set(lines.filter((line) => splitSegments(line).length === 1).map((line) => line.trim()))
 
+  const addSpecial = (special: SpecialLine, fallbackTrigger: string | null) => {
+    if ('ignore' in special) return
+    const trigger = special.trigger ?? fallbackTrigger
+    for (const effect of special.effects) {
+      if (trigger) parsed.conditionals.push({ trigger, effect, maxStacks: special.maxStacks ?? 1 })
+      else parsed.effects.push(effect)
+    }
+  }
   const addConditional = (trigger: string, rawBody: string) => {
+    // whole bodies the normal patterns can't read (Clip Delegation, Biotic Rounds...), src/calc/specialLines.ts
+    const special = specialLine(rawBody) ?? specialLine(cleanConditionalBody(rawBody))
+    if (special && !('ignore' in special)) return addSpecial(special, trigger)
     // "+180% Melee Damage to Melee Weapons" -> melee only, and the phrase goes so the stat parses
     const scopeMatch = SCOPES.find(([pattern]) => pattern.test(rawBody))
     // Arcane Blade Charger just says "+300% Melee Damage"
@@ -211,9 +225,13 @@ function parseUpgradeUncached(levelStats: string[][], rank: number): ParsedUpgra
     const stackPercentCap = body.match(/(?:Stacks|,) up to ([\d.]+)%/)
     const parts = cleanConditionalBody(body).split(/\s+and\s+(?=[+-]?\d)/)
     for (const part of parts) {
+      if (!part) continue
       const effect = parseStatLine(/^\d/.test(part) ? `+${part}` : part)
       if (!effect) {
-        parsed.unparsed.push(`${trigger} ${part}`)
+        // utility parts ("+6% Ammo Efficiency") are dropped, odd damage ones get their rule
+        const partSpecial = specialLine(part)
+        if (partSpecial) addSpecial(partSpecial, trigger)
+        else parsed.unparsed.push(`${trigger} ${part}`)
         continue
       }
       // "next shot" bonuses (Longbow Sharpshot) are their own multiplier, the CO wiki page lists them
@@ -271,7 +289,9 @@ function parseUpgradeUncached(levelStats: string[][], rank: number): ParsedUpgra
         continue
       }
       const effect = parseStatLine(segment)
+      const special = effect ? null : specialLine(segment)
       if (effect) parsed.effects.push(effect)
+      else if (special) addSpecial(special, null)
       else parsed.unparsed.push(segment)
       // Acuity tacks its drawback onto the crit line: "+350% Weak Point Critical Chance. Multishot cannot be modified."
       if (/Multishot cannot be modified/i.test(segment)) parsed.effects.push({ kind: 'lockMultishot' })

@@ -284,6 +284,15 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
         </>
       )}
 
+      {result.setBonuses.length > 0 && (
+        <>
+          <h3>Mod sets (weapon + Warframe)</h3>
+          <ul className="set-bonuses">
+            {result.setBonuses.map((set) => <li key={set.set}><b>{set.name} {set.count}/{set.pieces}</b>: {set.text}</li>)}
+          </ul>
+        </>
+      )}
+
       {/* every conditional the numbers above assume, so nothing reads as free damage */}
       <div className="requirements">
         <h3>This build assumes</h3>

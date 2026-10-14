@@ -233,6 +233,8 @@ export interface WarframeState {
   teammateStrength: number // for allies' abilities
   armor: number // for Primary Bulwark
   casts: AbilityCast[]
+  setPieces?: Record<string, number> // mod set pieces on the Warframe (Gladiator, Vigilante, Nira's...), see src/calc/modSets.ts
+  health?: number // for Dreadful Killshot style "per X Warframe Health" bonuses
   arcanes?: { arcaneId: string; rank: number; conditionalStacks: number }[] // the frame's arcanes, some buff weapons (Arcane Avenger)
   auraDamage?: { melee: number; rifle: number; sniper: number; pistol: number; shotgun: number }
   weakpointCritChance?: number

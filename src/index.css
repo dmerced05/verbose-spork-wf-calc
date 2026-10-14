@@ -370,3 +370,6 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .requirements ul { margin: 0; padding-left: 18px; }
 .requirements li, .requirements p { color: #ff8f8f; font-size: 0.8rem; margin: 2px 0; }
 .kit-stacks { margin-top: 2px; }
+.survivability tr.inactive-row td { color: var(--muted); }
+.set-bonuses { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--muted); }
+.set-bonuses b { color: var(--text); }

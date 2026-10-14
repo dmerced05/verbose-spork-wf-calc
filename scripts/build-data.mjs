@@ -163,6 +163,8 @@ const mods = weaponMods
     locksFireRate: /fire rate cannot be modified/i.test(mod.description ?? ''),
     // weapon exilus mods are flagged isUtility in the export
     isExilus: Boolean(mod.isUtility || mod.isExilus),
+    // mod sets (Umbra, Gladiator, Vigilante...): "/Lotus/Upgrades/Mods/Sets/Umbra/UmbraSetMod" -> "Umbra"
+    modSet: mod.modSet ? mod.modSet.split('/').pop().replace(/SetMod$/, '') : null,
     levelStats: mod.levelStats.map((level) => level.stats.map(cleanStatLine)),
   }))
   .sort((a, b) => a.name.localeCompare(b.name))
@@ -226,6 +228,15 @@ const helminthAbilities = (readJson('Warframes').find((frame) => frame.name === 
 
 mkdirSync(outDir, { recursive: true })
 writeFileSync(new URL('warframes.json', outDir), JSON.stringify(warframes))
+
+// mod set bonuses: the set's text per number of pieces equipped, named after its mods ("Umbral", "Vigilante", "Amar's")
+const allMods = readJson('Mods')
+const modSets = Object.fromEntries(allMods.filter((mod) => mod.type === 'Mod Set Mod').map((set) => {
+  const key = set.uniqueName.split('/').pop().replace(/SetMod$/, '')
+  const members = [...new Set(allMods.filter((mod) => mod.modSet === set.uniqueName).map((mod) => mod.name))].sort()
+  return [key, { name: members[0]?.split(' ')[0] ?? key, pieces: set.numUpgradesInSet, stats: set.stats.map(cleanStatLine), members }]
+}))
+writeFileSync(new URL('modSets.json', outDir), JSON.stringify(modSets))
 writeFileSync(new URL('helminth.json', outDir), JSON.stringify(helminthAbilities))
 writeFileSync(new URL('arcanes.json', outDir), JSON.stringify(arcanes))
 writeFileSync(new URL('weapons.json', outDir), JSON.stringify(weapons))

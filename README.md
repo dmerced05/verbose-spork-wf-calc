@@ -225,6 +225,26 @@ added in with crit mods since the wiki doesn't say how they stack.
 ability/augment that has to be up (and its condition: frozen target, invisible, standing in a Dashwire...), the combo when
 something reads it, headshots, and the status types CO-style mods count.
 
+Mod sets (`src/calc/modSets.ts`, set text from the export in `src/data/modSets.json`): pieces count across the Warframe and the
+weapon in the calculator (companion and other weapons aren't modeled). In the numbers:
+- Umbral: "Enhance mods in this set", Fiber/Vitality +30% / +80% of their values with 2 / 3 pieces, Intensify +25% / +75%
+- Sacrificial: both pieces = +25% of all stats (Steel +275% crit, Pressure +137.5%, x1.4125 Sentients)
+- Gladiator: frame pieces counted automatically now (the manual box is gone)
+- Vigilante: 5% per piece to enhance a primary crit by one tier, i.e. + chance x min(1, crit chance) effective crit chance
+- Nira's: +150% slam damage per piece, added with Seismic Wave
+The rest (Augur, Boreal, Proton, companion sets...) are listed with their text but don't change weapon damage.
+
+Weapon augments the normal stat patterns can't read have a rule each in `src/calc/specialLines.ts` (values read from the line, so
+ranks scale): Biotic Rounds, Leaded Gas, Burning Hate, Clip Delegation, Combat Reload, Critical Mutation, Critical Precision, Deadly
+Maneuvers, Double Tap (20 stacks of +20% next shot), Dreadful Killshot (stacks from the Warframe panel's health), Entropy Burst /
+Napalm Grenades (final status chance), Exposing Harpoon, Eximus Advantage, Flux Overdrive (the middle of its range), Hata-Satya
+(100 hits = half a magazine), Necrophagic Vigor, Range Advantage, Sentient Surge (3 Tendrils assumed), Spring-Loaded Broadhead,
+Unseen Dread, Prototype Shock Coils (+20% Electricity proc chance), Lasting Purity, Volatile Variant, Precision Strike. Pure
+utility lines (ammo, accuracy, projectile speed, punch through...) are dropped. Stance-class mods (Whips, Polearms, Dual Daggers,
+Thrown) now show up on those weapons, and weapon-named augments go on their weapon whatever type the export files them under
+(Range Advantage on the Akjagara and Clip Delegation on the Sobek are "Primary Mods"). Still not in the numbers: on-death explosions (Acid Shells, Vulcan Blitz...), Sentient
+Incision, Static Discharge, alt-fire modes (Wild Frenzy, Spontaneous Singularity, Vile Discharge), Meticulous Aim's body shot penalty.
+
 Every box on the calculator folds up: click its title.
 
 Debuffs: every status has a stack count up to its cap. Slash/Heat/Toxin/Electricity have no cap (the box goes to 999), so

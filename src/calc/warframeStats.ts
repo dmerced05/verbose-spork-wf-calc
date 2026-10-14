@@ -7,6 +7,7 @@ import { warframeBaseName } from '../data'
 import { abilitiesById, type AbilityCast, type WarframeState } from '../data/warframeAbilities'
 import type { Arcane, Mod, Warframe } from '../types'
 import { parseUpgrade, type FrameStat, type ModEffect } from './parseMod'
+import { countSets, setEnhancement, type SetPieces } from './modSets'
 
 export interface EquippedWarframeMod {
   mod: Mod
@@ -47,6 +48,9 @@ export interface WarframeTotals {
   healthDr: number // total vs health (armor included)
   shieldDr: number // total vs shields (no armor)
   effectiveHealth: number // health / (1 - healthDr) + shields / (1 - shieldDr)
+  // Arcane Persistence's hit cap (needs armor above the threshold, Magnetic and nullifiers turn it off)
+  damageCap: { source: string; armorNeeded: number; perSecond: number; active: boolean } | null
+  setPieces: SetPieces // mod set pieces on the frame, they count with the weapon's for set bonuses
   // weapon damage from squad auras (Steel Charge, Rifle Amp, ...), by weapon group
   auraDamage: { melee: number; rifle: number; sniper: number; pistol: number; shotgun: number }
   weakpointCritChance: number // Worthy Comradery
@@ -78,22 +82,26 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
     else scaling[stat] += total
     lines.push(`${source}: ${stat === 'armor' || stat === 'health' ? `+${Math.round(total)} ${stat}` : `${total >= 0 ? '+' : ''}${Math.round(total * 1000) / 10}% ${stat.replace('Percent', '').replace('damageResistance', 'DR')}`}`)
   }
-  const addUpgrade = (name: string, levelStats: string[][], rank: number, stacks: number) => {
+  const addUpgrade = (name: string, levelStats: string[][], rank: number, stacks: number, enhance = 1) => {
     const parsed = parseUpgrade(levelStats, rank)
     const frameStat = (effect: ModEffect) => (effect.kind === 'frameStat' ? effect : null)
     for (const effect of parsed.effects) {
       const stat = frameStat(effect)
-      if (stat) addFrameStat(name, stat.stat, stat.value, 1)
+      if (stat) addFrameStat(name, stat.stat, stat.value, enhance)
     }
     for (const conditional of parsed.conditionals) {
       const stat = frameStat(conditional.effect)
       const active = Math.min(stacks, conditional.maxStacks)
-      if (stat && active > 0) addFrameStat(name, stat.stat, stat.value, active)
+      if (stat && active > 0) addFrameStat(name, stat.stat, stat.value, active * enhance)
     }
   }
 
+  // mod sets on the frame (Umbra enhances its own mods: Fiber/Vitality x1.3 / x1.8, Intensify x1.25 / x1.75 with 2 / 3 pieces)
+  const setPieces = countSets(build.mods.map(({ mod }) => mod))
   for (const { mod, rank, conditionalStacks } of build.mods) {
-    addUpgrade(mod.name, mod.levelStats, rank, conditionalStacks ?? 0)
+    const enhance = setEnhancement(mod, setPieces)
+    addUpgrade(mod.name, mod.levelStats, rank, conditionalStacks ?? 0, enhance)
+    if (enhance !== 1) lines.push(`${mod.name}: x${enhance} from its set`)
     // the lines the parser doesn't do: auras and a couple of strength oddballs
     const stats = mod.levelStats[Math.min(rank, mod.levelStats.length - 1)] ?? []
     for (const text of segments(stats)) {
@@ -123,7 +131,16 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
       }
     }
   }
-  for (const { arcane, rank, conditionalStacks } of build.arcanes) addUpgrade(arcane.name, arcane.levelStats, rank, conditionalStacks)
+  // Arcane Persistence: "Remove all Shields. If Armor is above 700: Cannot be hit for more than 500 Damage/s"
+  let shieldsRemovedBy: string | null = null
+  let damageCap: WarframeTotals['damageCap'] = null
+  for (const { arcane, rank, conditionalStacks } of build.arcanes) {
+    addUpgrade(arcane.name, arcane.levelStats, rank, conditionalStacks)
+    const text = segments(arcane.levelStats[Math.min(rank, arcane.levelStats.length - 1)] ?? []).join(' ')
+    if (/Remove all Shields/i.test(text)) shieldsRemovedBy = arcane.name
+    const cap = text.match(/If Armor is above ([\d,]+): Cannot be hit for more than ([\d,]+) Damage\/s/i)
+    if (cap) damageCap = { source: arcane.name, armorNeeded: Number(cap[1].replace(/,/g, '')), perSecond: Number(cap[2].replace(/,/g, '')), active: false }
+  }
 
   const abilityStrength = Math.max(0, 1 + scaling.strength)
 
@@ -148,7 +165,9 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
 
   const armor = Math.max(0, Math.round(build.frame.armor * (1 + scaling.armorPercent) + flat.armor))
   const health = Math.max(1, Math.round(build.frame.health * (1 + scaling.healthPercent) + flat.health))
-  const shields = Math.max(0, Math.round(build.frame.shield * (1 + scaling.shieldPercent)))
+  const shields = shieldsRemovedBy ? 0 : Math.max(0, Math.round(build.frame.shield * (1 + scaling.shieldPercent)))
+  if (shieldsRemovedBy) lines.push(`${shieldsRemovedBy}: shields removed`)
+  if (damageCap) damageCap.active = armor > damageCap.armorNeeded
 
   if ((build.otherDr ?? 0) > 0) drSources.push({ label: 'Other DR', value: build.otherDr!, on: 'both' })
   const allSources: DrSource[] = [
@@ -162,7 +181,7 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
 
   return {
     abilityStrength, armor, health, shields,
-    drSources: allSources, healthDr, shieldDr, effectiveHealth,
+    drSources: allSources, healthDr, shieldDr, effectiveHealth, damageCap, setPieces,
     auraDamage, weakpointCritChance, corrosiveProjections, lines,
   }
 }
@@ -174,6 +193,8 @@ export function warframeStateFor(build: WarframeBuild, totals: WarframeTotals): 
     abilityStrength: totals.abilityStrength,
     teammateStrength: build.teammateStrength,
     armor: totals.armor,
+    health: totals.health,
+    setPieces: totals.setPieces,
     casts: build.casts,
     arcanes: build.arcanes.map(({ arcane, rank, conditionalStacks }) => ({ arcaneId: arcane.uniqueName, rank, conditionalStacks })),
     auraDamage: totals.auraDamage,

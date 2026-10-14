@@ -566,6 +566,11 @@ expectClose('subsumed Null Star capped at 75%', defense('Rhino', ['Intensify', '
 expectClose('Vitality +100% health', defense('Rhino', ['Vitality'], []).health, frameNamed('Rhino').health * 2)
 const guardian = arcanes.find((arcane) => arcane.name === 'Arcane Guardian')!
 expectClose('Arcane Guardian +900 flat armor', defense('Rhino', [], [], { arcanes: [{ arcane: guardian, rank: 5, conditionalStacks: 1 }] }).armor, frameNamed('Rhino').armor + 900)
+const persistence = arcanes.find((arcane) => arcane.name === 'Arcane Persistence')!
+const persistent = defense('Valkyr', ['Steel Fiber'], [], { arcanes: [{ arcane: persistence, rank: 5, conditionalStacks: 0 }] })
+expectClose('Arcane Persistence sets shields to 0', persistent.shields, 0)
+expectClose('Arcane Persistence cap on above 700 armor (500/s at max rank)', persistent.damageCap?.active && persistent.damageCap.perSecond === 500 ? 1 : 0, 1)
+expectClose('no shields = effective health is just health', persistent.effectiveHealth, persistent.health / (1 - persistent.healthDr))
 // Warframe arcanes on weapons: Arcane Avenger is flat crit after mods (wiki: 25% x (1 + 120%) + 60% + 45%), Arcane Fury melee only
 const frameArcane = (name: string) => ({ arcaneId: arcanes.find((arcane) => arcane.name === name)!.uniqueName, rank: 5, conditionalStacks: 1 })
 const withFrameArcane = (name: string): CalcInput['buffs'] => ({ roar: 0, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 1, armor: 0, casts: [], arcanes: [frameArcane(name)] } })
@@ -608,6 +613,43 @@ expectClose('Shock Trooper forces 1 electricity proc per hit', shockExample.dots
 // two of the same buff: only the strongest
 const twoRoars: CalcInput['buffs'] = { roar: 0, warframe: { frameName: 'Rhino', abilityStrength: 2, teammateStrength: 1, armor: 0, casts: [{ id: 'roar', by: 'self' }, { id: 'roar', by: 'ally' }] } }
 expectClose('two Roars: only the strongest applies', run(plainShotAttack, { buffs: twoRoars, target: grineerTarget }).factionMultiplier, 2)
+
+// ---- mod sets (src/calc/modSets.ts) ----
+// Umbra: 3 pieces = Vitality/Fiber x1.8, Intensify x1.75 (Umbral Fiber wiki: +180% Armor with 3)
+const umbra3 = defense('Rhino', ['Umbral Vitality', 'Umbral Fiber', 'Umbral Intensify'], [])
+expectClose('Umbral 3/3: +180% health', umbra3.health, Math.round(frameNamed('Rhino').health * 2.8))
+expectClose('Umbral 3/3: +180% armor', umbra3.armor, Math.round(frameNamed('Rhino').armor * 2.8))
+expectClose('Umbral 3/3: Intensify +44% x1.75', umbra3.abilityStrength, 1 + 0.44 * 1.75)
+expectClose('Umbral 2/3: Fiber x1.3', defense('Rhino', ['Umbral Vitality', 'Umbral Fiber'], []).armor, Math.round(frameNamed('Rhino').armor * 2.3))
+// Sacrificial: both pieces x1.25 (+220% -> +275% crit chance)
+expectClose('Sacrificial set: Steel +275% crit', runMelee(swing, { mods: [meleeMod('Sacrificial Steel'), meleeMod('Sacrificial Pressure')] }).critChance, 0.2 * (1 + 2.2 * 1.25))
+expectClose('Sacrificial set: Pressure +137.5% damage', runMelee(testAttack({ slash: 100 }), { mods: [meleeMod('Sacrificial Steel'), meleeMod('Sacrificial Pressure')] }).hit.normal, 100 * (1 + 1.1 * 1.25))
+// Gladiator pieces on the frame count with the weapon's
+const frameSets = (setPieces: Record<string, number>): CalcInput['buffs'] => ({ roar: 0, combo: 12, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 1, armor: 0, casts: [], setPieces } })
+expectClose('Gladiator: 1 on weapon + 2 on frame', runMelee(swing, { mods: [meleeMod('Gladiator Might')], buffs: frameSets({ Gladiator: 2 }) }).critChance, 0.2 * (1 + 0.3 * 11))
+// Vigilante: 5% per piece chance to bump a crit a tier, on primaries
+const primaryWeapon = { ...testWeapon(testAttack({ impact: 100 })), category: 'Primary' }
+const vigilanteCrit = run(testAttack({ impact: 100 }, { critChance: 0.5 }), { weapon: primaryWeapon, mods: [maxed('Vigilante Armaments')], buffs: frameSets({ Vigilante: 1 }) }).critChance
+expectClose('Vigilante 2 pieces: +10% of crits enhanced', vigilanteCrit, 0.5 + 0.1 * 0.5)
+// Nira's: +150% slam damage per piece, added with Seismic Wave
+const slamAttack = testAttack({ impact: 100 }, { name: 'Slam Attack' })
+expectClose("Nira's 2 pieces + Seismic Wave: x(1 + 2 + 3)", runMelee(slamAttack, { mods: [meleeMod('Seismic Wave')], buffs: frameSets({ Nira: 2 }) }).hit.normal, 100 * 6)
+// ---- weapon augments (src/calc/specialLines.ts) ----
+const latronGun = named('Latron')
+const doubleTap = mods.find((mod) => mod.name === 'Double Tap')!
+expectClose('Double Tap: 20 stacks of +20% next shot', calculate({ weapon: latronGun, attack: latronGun.attacks[0], mods: [{ mod: doubleTap, rank: doubleTap.fusionLimit, conditionalStacks: 20 }], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: grineerTarget }).hit.normal /
+  calculate({ weapon: latronGun, attack: latronGun.attacks[0], mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: grineerTarget }).hit.normal, 5)
+const basmu = named('Basmu')
+const killshot = mods.find((mod) => mod.name === 'Dreadful Killshot')!
+const basmuRun = (health: number) => calculate({ weapon: basmu, attack: basmu.attacks[0], mods: [{ mod: killshot, rank: killshot.fusionLimit, conditionalStacks: 18 }], armor: 0, debuffs: noDebuffs(),
+  buffs: { roar: 0, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 1, armor: 0, casts: [], health } }, target: grineerTarget })
+expectClose('Dreadful Killshot: 600 health = 8 stacks = +160%', basmuRun(600).hit.normal / basmuRun(74).hit.normal, 2.6)
+const napalm = mods.find((mod) => mod.name === 'Napalm Grenades')!
+const penta = named('Penta')
+expectClose('Napalm Grenades: +30 final status chance', calculate({ weapon: penta, attack: penta.attacks[0], mods: [{ mod: napalm, rank: napalm.fusionLimit, conditionalStacks: 0 }], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: grineerTarget }).statusChance, penta.attacks[0].statusChance + 0.3)
+expectClose('Range Advantage (filed as a Primary Mod) fits the Akjagara', getCompatibleMods(named('Akjagara')).some((mod) => mod.name === 'Range Advantage') ? 1 : 0, 1)
+expectClose('Clip Delegation (Primary Mod) fits the Sobek shotgun', getCompatibleMods(named('Sobek')).some((mod) => mod.name === 'Clip Delegation') ? 1 : 0, 1)
+expectClose("Nira's Contempt fits whips", getCompatibleMods(named('Lecta')).some((mod) => mod.name === "Nira's Contempt") ? 1 : 0, 1)
 
 // requirement list
 const deadheadArcane = arcanes.find((arcane) => arcane.name === 'Primary Deadhead')!

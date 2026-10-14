@@ -52,12 +52,19 @@ const SUBTYPE_COMPAT: Record<string, (weapon: Weapon) => boolean> = {
   // melee class mods. the export has no melee class field, so glaives come from build-data's list and daggers from the path
   'Thrown Melee': (weapon) => Boolean(weapon.isGlaive),
   Daggers: (weapon) => /\/Melee\/Dagger\//i.test(weapon.uniqueName),
+  // stance-class mods (Nira's Contempt, Boreal's Contempt, Amar's Contempt). no class field, so by name
+  Whips: (weapon) => ['Atterax', 'Galvacord', 'Lecta', 'Secura Lecta', 'Scoliac', 'Mios'].includes(weapon.name),
+  Polearms: (weapon) => ['Cassowar', 'Edun', 'Guandao', 'Guandao Prime', 'Kesheg', 'Lesion', 'Orthos', 'Orthos Prime', 'Serro', 'Sydon', 'Vaykor Sydon', 'Tonbo'].includes(weapon.name),
+  'Dual Daggers': (weapon) => ['Ether Daggers', 'Fang', 'Fang Prime', 'Nepheri'].includes(weapon.name),
+  Thrown: (weapon) => weapon.type === 'Throwing',
 }
 
 export function getCompatibleMods(weapon: Weapon): Mod[] {
   const modType = modTypeFor(weapon)
   return mods.filter((mod) => {
-    if (mod.type !== modType) return false
+    // weapon augments are filed under odd types sometimes (Range Advantage for the Akjagara is a "Primary Mod", Clip Delegation for
+    // the Sobek shotgun too), so a mod naming this weapon goes on it whatever its type
+    if (mod.type !== modType) return mod.type !== 'Warframe Mod' && Boolean(mod.compatName) && !GENERIC_COMPAT.has(mod.compatName!) && !SUBTYPE_COMPAT[mod.compatName!] && weapon.name.startsWith(mod.compatName!)
     // Semi-___ Cannonade: "Only compatible with Semi-Auto Trigger" (from the mod's description)
     if (mod.semiOnly && weapon.trigger !== 'Semi') return false
     if (!mod.compatName || GENERIC_COMPAT.has(mod.compatName)) return true

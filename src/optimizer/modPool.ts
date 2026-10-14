@@ -19,6 +19,9 @@ const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, na
     case 'slashOnImpact':
     case 'damageMultiplier':
     case 'heavyScaledCritChance':
+    case 'flatStat':
+    case 'forcedProcChance':
+    case 'duplicateOnCrit':
       return true
     case 'stat':
       if (effect.value <= 0) return false

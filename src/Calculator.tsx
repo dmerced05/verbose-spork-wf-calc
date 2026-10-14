@@ -296,7 +296,7 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
           />
 
           <WarframePanel
-            buffs={buffs} isMelee={isMelee} weaponCategory={weapon.category} onBuffsChange={setBuffs}
+            isMelee={isMelee} weaponCategory={weapon.category}
             onWarframeChange={(state, corrosive) => { setWarframeState(state); setWarframeCorrosive(corrosive) }}
           />
           <TargetPanel target={target} onChange={setTarget} />

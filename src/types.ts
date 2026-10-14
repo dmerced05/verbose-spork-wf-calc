@@ -48,6 +48,7 @@ export interface Mod {
   isExilus: boolean
   semiOnly?: boolean // Semi-___ Cannonade
   locksFireRate?: boolean // Semi-___ Cannonade: fire rate mods stop working
+  modSet?: string | null // "Umbra", "Gladiator", "Vigilante"... (src/calc/modSets.ts)
   levelStats: string[][] // stat lines per rank, index 0 = rank 0
 }
 

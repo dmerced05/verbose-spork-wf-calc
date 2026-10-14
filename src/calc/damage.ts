@@ -11,6 +11,7 @@ import {
 } from './constants'
 import { parseUpgrade, scopeApplies, type ModEffect, type StatKey } from './parseMod'
 import { arcanesById } from '../data'
+import { NIRA_SLAM_PER_PIECE, VIGILANTE_ENHANCE_PER_PIECE, addPieces, countSets, setEnhancement, setSummary } from './modSets'
 import { resolveCoBehavior, type CoBehavior } from './conditionOverload'
 import { perkAppliesTo, type SelectedPerk } from './incarnon'
 import { armorDamageMultiplier, effectiveArmor } from './target'
@@ -106,6 +107,7 @@ export interface CalcResult {
   fireRateLocked: boolean
   passives: string[] // names of the passives that are on for this attack
   abilities: string[] // Warframe abilities that apply to this weapon
+  setBonuses: ReturnType<typeof setSummary> // mod sets with pieces equipped (weapon + Warframe)
   requirements: string[] // every conditional the numbers assume (kills, headshots, buffs up, frozen target...)
   heavyCombo: { combo: HeavyCombo; mode: HeavyMode; multiplier: number } | null // multi-hit heavy, what got scored
   detonation: { ownProcs: number; existingStacks: number } | null // Harmony heavy: DoT damage dealt at once, per heavy
@@ -164,6 +166,7 @@ export function calculate({
   let separateDamageMultiplier = 1 // Longbow Sharpshot style, multiplies outside the damage mods
   let multishotLocked = false // Acuity mods
   let duplicateOnCritChance = 0 // Melee Duplicate
+  const modFlat = { critChance: 0, statusChance: 0 } // "+20 Final Status Chance" (Entropy Burst, Napalm Grenades)
   const fireRateLocked = mods.some(({ mod }) => mod.locksFireRate) // Semi-___ Cannonade: fire rate stays at base
   const unparsed: string[] = []
   // elements added on top of the weapon's own (Melee Exposure's Corrosive, Tonkkatt's Heat, Lesion's Toxin): they add
@@ -192,10 +195,16 @@ export function calculate({
         overguardMultiplier *= effect.value
         break
       case 'damageMultiplier':
-        separateDamageMultiplier *= 1 + effect.value
+        separateDamageMultiplier *= 1 + effect.value * times
         break
       case 'lockMultishot':
         multishotLocked = true
+        break
+      case 'flatStat':
+        modFlat[effect.stat] += effect.value * times
+        break
+      case 'forcedProcChance':
+        forcedProcsPerPellet[effect.damageType] = (forcedProcsPerPellet[effect.damageType] ?? 0) + effect.value * times
         break
       case 'duplicateOnCrit':
         duplicateOnCritChance += effect.value * times
@@ -215,9 +224,13 @@ export function calculate({
     }
   }
 
+  // mod sets: pieces on this weapon + on the Warframe (src/calc/modSets.ts)
+  const setPieces = addPieces(countSets(mods.map(({ mod }) => mod)), buffs.warframe?.setPieces)
+
   // mods and the arcane use the same stat text, so they go through the same parser
   const upgrades = [
-    ...mods.map(({ mod, rank, conditionalStacks }) => ({ name: mod.name, levelStats: mod.levelStats, rank, conditionalStacks })),
+    // set members get their set's enhancement (Umbra, Sacrificial: "Enhance mods in this set")
+    ...mods.map(({ mod, rank, conditionalStacks }) => ({ name: mod.name, levelStats: mod.levelStats, rank, conditionalStacks, enhance: setEnhancement(mod, setPieces) })),
     ...(arcane ? [{ name: arcane.arcane.name, levelStats: arcane.arcane.levelStats, rank: arcane.rank, conditionalStacks: arcane.conditionalStacks, isArcane: true }] : []),
     // the Warframe's arcanes (Arcane Avenger, Arcane Fury...), their weapon lines only count on the weapon type they name
     ...(buffs.warframe?.arcanes ?? []).flatMap(({ arcaneId, rank, conditionalStacks }) => {
@@ -231,7 +244,9 @@ export function calculate({
   for (const upgrade of upgrades) {
     const parsed = parseUpgrade(upgrade.levelStats, upgrade.rank)
     // arcane elements (Melee Exposure) are separate elements, see separateElements
-    const apply = (effect: ModEffect, times: number) => {
+    const enhance = 'enhance' in upgrade ? upgrade.enhance : 1
+    const apply = (effect: ModEffect, rawTimes: number) => {
+      const times = rawTimes * enhance
       if ('isFrameArcane' in upgrade && effect.kind === 'stat' && effect.stat === 'critChance') frameArcaneFlatCrit += effect.value * times
       else if ('isArcane' in upgrade && effect.kind === 'damageType' && !PHYSICAL_TYPES.includes(effect.damageType)) {
         separateElements[effect.damageType] = (separateElements[effect.damageType] ?? 0) + effect.value * times
@@ -246,6 +261,11 @@ export function calculate({
       const warframeArmor = buffs.warframe?.armor ?? 0
       if (armorThreshold && warframeArmor > 0) {
         activeStacks = Math.min(conditional.maxStacks, Math.max(0, warframeArmor - Number(armorThreshold[1].replace(/,/g, ''))))
+      }
+      // Dreadful Killshot: "for every 75 Warframe Health", from the Warframe panel when there is one
+      const healthStep = conditional.trigger.match(/^Warframe health per ([\d,]+)/)
+      if (healthStep && (buffs.warframe?.health ?? 0) > 0) {
+        activeStacks = Math.min(conditional.maxStacks, Math.floor(buffs.warframe!.health! / Number(healthStep[1].replace(/,/g, ''))))
       }
       if (activeStacks > 0) {
         apply(conditional.effect, activeStacks)
@@ -429,7 +449,7 @@ export function calculate({
   }
   const gladiatorPieces = Math.min(
     GLADIATOR_MAX_PIECES,
-    mods.filter(({ mod }) => mod.name.startsWith('Gladiator ')).length + (buffs.gladiatorWarframePieces ?? 0),
+    (setPieces.Gladiator ?? 0) + (buffs.gladiatorWarframePieces ?? 0),
   )
   const critFromCombo = isMelee ? (bonus.critChancePerCombo + GLADIATOR_CRIT_PER_PIECE * gladiatorPieces) * comboSteps : 0
   const statusFromCombo = isMelee ? bonus.statusChancePerCombo * comboSteps : 0
@@ -437,7 +457,8 @@ export function calculate({
   if (isHeavy) bonus.damage += bonus.heavyDamage
   // Seismic Wave / Power Throw are their own multipliers (wiki: multiplicative with Pressure Point), only on those attacks.
   // Power Throw counts on the throw itself, the wiki doesn't say it reaches the explosion so I leave that out
-  if (isMelee && /slam/i.test(attack.name)) separateDamageMultiplier *= 1 + bonus.slamDamage
+  // Nira's set: +150% slam damage per piece, "additive to" Seismic Wave
+  if (isMelee && /slam/i.test(attack.name)) separateDamageMultiplier *= 1 + bonus.slamDamage + NIRA_SLAM_PER_PIECE * Math.min(3, setPieces.Nira ?? 0)
   if (isMelee && /throw$/i.test(attack.name)) separateDamageMultiplier *= 1 + bonus.throwDamage
   const heavyComboFactor = isHeavy ? combo : 1
 
@@ -571,10 +592,14 @@ export function calculate({
   const headMultiplier = target.headshotMultiplier ?? headMultiplierFor(target.faction)
   const headcrit = target.headcrit ?? hasHeadcrits(target.faction)
   const weakpointCritBonus = isHeadshot ? bonus.weakpointCritChance : 0
-  const critChance =
+  const critBeforeVigilante =
     attack.critChance * (1 + bonus.critChance + weakpointCritBonus + critFromCombo + (isHeavy ? bonus.heavyCritChance : 0)) +
-    perkFlat.critChance + passiveFlat.critChance + frameArcaneFlatCrit + critPerStatusType * activeStatusTypes + abilityFlatCritChance +
+    perkFlat.critChance + passiveFlat.critChance + modFlat.critChance + frameArcaneFlatCrit + critPerStatusType * activeStatusTypes + abilityFlatCritChance +
     (attack.isAoE ? 0 : punctureCritChanceBonus(stacks('puncture')))
+  // Vigilante set: "X% chance to enhance Critical Hits from Primary Weapons", a crit that gets enhanced goes up one tier, which
+  // averages out the same as that much more crit chance on every hit that crits
+  const vigilanteChance = weapon.category === 'Primary' ? VIGILANTE_ENHANCE_PER_PIECE * Math.min(6, setPieces.Vigilante ?? 0) : 0
+  const critChance = critBeforeVigilante + vigilanteChance * Math.min(1, Math.max(0, critBeforeVigilante))
   // headcrit doubles the weapon's *base* crit multiplier, so mods scale it but Cold's flat bonus doesn't
   const headcritFactor = isHeadshot && headcrit ? HEADCRIT_MULTIPLIER : 1
   const critMultiplier =
@@ -585,7 +610,7 @@ export function calculate({
   const critHitMultiplier = 1 + Math.ceil(critChance) * (critMultiplier - 1)
   // status chance before Sagek's override, Gotva needs it here
   const rawStatusChance =
-    attack.statusChance * (1 + bonus.statusChance + statusFromCombo) + perkFlat.statusChance + passiveFlat.statusChance +
+    attack.statusChance * (1 + bonus.statusChance + statusFromCombo) + perkFlat.statusChance + passiveFlat.statusChance + modFlat.statusChance +
     tauStatusChanceBonus(stacks('tau'))
   // Gotva Prime: a hit after a status proc has a chance to roll at a fixed crit chance instead
   const superCritShare = critOverride ? Math.min(1, rawStatusChance) * critOverride.chance : 0
@@ -848,6 +873,7 @@ export function calculate({
     passives: activePassives,
     abilities: activeAbilities,
     requirements,
+    setBonuses: setSummary(setPieces),
     heavyCombo,
     detonation,
     melee: isMelee

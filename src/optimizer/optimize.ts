@@ -58,7 +58,7 @@ function* permutations<T>(items: T[]): Generator<T[]> {
 export function optimizeAttack(
   weapon: Weapon, attack: Attack, objective: Objective, allowFireRateMods = true, heavyMode: HeavyMode = 'biggestHit',
 ): OptimizedBuild {
-  const pool = damageModPool(getCompatibleMods(weapon), objective.usesFireRate, Boolean(attack.heavy), allowFireRateMods).map((mod) => equipMod(mod, weapon.category === 'Melee'))
+  const pool = damageModPool(getCompatibleMods(weapon), objective.usesFireRate, { isHeavy: Boolean(attack.heavy), name: attack.name }, allowFireRateMods).map((mod) => equipMod(mod, weapon.category === 'Melee'))
   // "no fire rate mods" rankings skip fire rate arcanes too
   const arcaneOptions = getCompatibleArcanes(weapon)
     .filter((option) => allowFireRateMods || !raisesFireRate(option.levelStats))

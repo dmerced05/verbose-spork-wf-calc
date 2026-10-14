@@ -6,7 +6,12 @@ import type { Mod } from '../types'
 // effects that can raise damage in the neutral scenario. faction banes, headshot/weak point bonuses and
 // utility stats can't, so mods with only those never make the pool
 const HEAVY_ONLY_STATS = ['heavyCritChance', 'heavyDamage', 'heavyWindUpSpeed']
-const usefulEffect = (effect: ModEffect, includeFireRate: boolean, isHeavy: boolean) => {
+// which attack the pool is for: heavy-only stats need a heavy, Seismic Wave a slam, Power Throw a throw
+export interface PoolAttack {
+  isHeavy: boolean
+  name: string
+}
+const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, name }: PoolAttack) => {
   // magazine/reload mods only matter for sustained/time-window objectives
   switch (effect.kind) {
     case 'damageType':
@@ -20,6 +25,8 @@ const usefulEffect = (effect: ModEffect, includeFireRate: boolean, isHeavy: bool
       if (['fireRate', 'magazineCapacity', 'reloadSpeed'].includes(effect.stat)) return includeFireRate
       if (effect.stat === 'heavyWindUpSpeed') return isHeavy && includeFireRate
       if (HEAVY_ONLY_STATS.includes(effect.stat)) return isHeavy
+      if (effect.stat === 'slamDamage') return /slam/i.test(name)
+      if (effect.stat === 'throwDamage') return /throw$/i.test(name)
       // heavy efficiency only changes what's left after the hit, not the hit itself
       return !['headshotMultiplier', 'weakpointDamage', 'weakpointCritChance', 'heavyEfficiency'].includes(effect.stat)
     default:
@@ -27,7 +34,9 @@ const usefulEffect = (effect: ModEffect, includeFireRate: boolean, isHeavy: bool
   }
 }
 
-export function damageModPool(compatibleMods: Mod[], includeFireRate: boolean, isHeavy = false, allowFireRateMods = true): Mod[] {
+export function damageModPool(
+  compatibleMods: Mod[], includeFireRate: boolean, attack: PoolAttack = { isHeavy: false, name: '' }, allowFireRateMods = true,
+): Mod[] {
   // one per name (the highest-rank copy), like the in-game rule that same-named mods don't stack
   const byName = new Map<string, Mod>()
   for (const mod of compatibleMods) {
@@ -40,7 +49,7 @@ export function damageModPool(compatibleMods: Mod[], includeFireRate: boolean, i
     if (parsed.effects.some((effect) => effect.kind === 'lockMultishot')) return false
     if (!allowFireRateMods && raisesFireRate(mod.levelStats, mod.fusionLimit)) return false
     return [...parsed.effects, ...parsed.conditionals.map((conditional) => conditional.effect)].some((effect) =>
-      usefulEffect(effect, includeFireRate, isHeavy),
+      usefulEffect(effect, includeFireRate, attack),
     )
   })
 }

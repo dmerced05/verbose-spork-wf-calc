@@ -96,7 +96,8 @@ Combo slider (1x-12x, Venka Prime 13x, Dex Nikana 11x at 11 hits per tier) and G
 - Combo only multiplies damage on Heavy Attacks and Heavy Slams (wiki Heavy_Attack):
   `[base x (1 + damage mods) x (1 + elemental mods)] x heavy multiplier x combo`, then crits. Bleed from a heavy scales with it too
 - The export has no Heavy Attack entry, just `heavyAttackDamage` (= total x the class multiplier) and `windUp`, so build-data adds a
-  "Heavy Attack" with the normal attack's damage split scaled up to that. Glaives list it at 1x, so they don't get one
+  "Heavy Attack" with the normal attack's damage split scaled up to that. Glaives list it at 1x, so they don't get one (their heavy
+  is the detonation, see Glaives)
 - Blood Rush / Weeping Wounds / Gladiator set: `bonus x (combo - 1)` added in with the other crit/status mods
   (Blood_Rush: 20% x (1 + 1.2 + 0.4 x 3) = 68% at 4x). Applies to every melee attack, not just heavies
 - "(x2 for Heavy Attacks)" (True Steel, Sacrificial Steel, Galvanized Steel): heavies get the doubled value instead of the normal
@@ -104,6 +105,24 @@ Combo slider (1x-12x, Venka Prime 13x, Dex Nikana 11x at 11 hits per tier) and G
 - Killing Blow / Melee Assimilation "Damage on Heavy Attack" add to damage mods on heavies, Melee Animosity adds heavy crit (420% cap)
 - Heavy rate = wind-up / (1 + Wind Up Speed) + one swing at attack speed (Attack_Speed: attack speed doesn't shorten the wind-up)
 - Heavy Attack Efficiency keeps that share of the combo count, capped at 90% (40% at 9x leaves 4x), shown as "Combo left"
+- Slams: Seismic Wave "+200% Slam Attack Damage" is its own multiplier on Slam / Heavy Slam (wiki: "multiplicative to base damage")
+- Melee Duplicate: a crit strikes a second time (separate damage instance, rerolls crit + status, forced procs come along). Counted as
+  `1 + min(1, crit chance) x 100%` strikes per attack: in DPS, procs and Whole attack, not in the single-hit number
+
+### Glaives (detonation = heavy attack)
+
+- A Heavy Attack while the glaive is in flight detonates it, "an explosion that deals Heavy Attack damage" (wiki Heavy_Attack). That's
+  the export's (Charged) Throw Recall Explosion rows, so build-data marks them `heavy`: x combo, Killing Blow, True Steel family x2,
+  Melee Animosity. No wind-up ("the Heavy attack input does not initiate an attack animation")
+- Forced procs per glaive from each wiki page's Recall Explosion row (`GLAIVE_DETONATION_PROCS` in build-data): Glaive Prime Impact +
+  Slash, Cerata Toxin + Impact, Xoris Impact + Electricity, Pathocysts Impact + Viral, Orvius Cold, Falcor Electricity, the rest Impact.
+  Glaive Prime's forced Slash is most of its damage (the overframe detonation guide says the same)
+- CO doesn't apply ("Condition Overload does not affect the explosion"), headshot x1 (AoE)
+- Thrown Melee mods now fit glaives (the export has no melee class, so the glaive list in build-data decides; Daggers go by path).
+  Power Throw: +100% x 3 stacks, its own multiplier (wiki: multiplicative with Pressure Point) on the throw itself. The wiki doesn't
+  say it reaches the explosion, so it doesn't here
+- Not modeled: the explosion hitting a whole group (one target only), Volatile bounce explosions as a rotation, Corrupt Charge /
+  initial combo (the scenario sits at 12x anyway)
 
 ## Weapon passives
 
@@ -149,7 +168,8 @@ on their own either: you still need status chance and your own elements for proc
 
 Pick a Warframe (`src/data/warframes.json` from the export: base armor/energy/shields, slot + aura polarities) and mod it like
 the in-game screen: 2x4 grid, aura slot, exilus slot (Jade has two aura slots), Orokin Reactor, capacity with aura bonus
-(matching polarity x2, mismatch -20%). Only that frame's augments show up. From the equipped mods (`src/calc/warframeStats.ts`):
+(matching polarity x2, mismatch -20%). Only that frame's augments show up, plus the augments of a subsumed ability (picked by the
+"<Ability> Augment:" text). The mod search only opens when you click a slot (click it again, Close or Esc to hide it). From the equipped mods (`src/calc/warframeStats.ts`):
 - Ability Strength: 100% + "+X% Ability Strength" mods (Intensify, Blind Rage, Transient Fortitude...), Growing Power assumed up,
   Power Donation -30%, plus an "Extra Ability Strength %" box for Archon Shards / arcanes
 - armor: base x (1 + armor mods) + extra flat armor. Feeds Primary Bulwark (0 = use the arcane's own stack setting)
@@ -158,8 +178,15 @@ the in-game screen: 2x4 grid, aura slot, exilus slot (Jade has two aura slots), 
   Debuffs panel's count (max 4)
 - Gladiator pieces on the Warframe
 
-Abilities (`src/data/warframeAbilities.ts`), max-rank wiki values x Ability Strength (linear): your frame's own abilities use your
-strength, the others count as a teammate's and use "Teammate strength %". Passives (Excalibur's) only work on that frame.
+Under the mods: the frame's 4 abilities (names/descriptions from the export) and its passive. Any one slot can be swapped for a
+Helminth ability (each frame's "Subsumable to Helminth" ability, `SUBSUMABLE`, plus the Helminth's own). Damage buffs (Roar,
+Eclipse, Xata's Whisper) only go on frames that already have one, replacing that one (Roar wiki: "Subsumed Roar can only replace
+Vex Armor, Resupply, Eclipse, Amp, ..."). Then "Allies' abilities": a dropdown that adds abilities cast by a teammate.
+
+Abilities (`src/data/warframeAbilities.ts`), max-rank wiki values x Ability Strength (linear): your own and your subsumed ability use
+your strength (so your Warframe mods scale them), allies' use "Ally strength %". Subsumed ones use the Helminth value where the wiki
+gives one: Roar 30%, Eclipse 30%, Nourish 45% Viral, Warcry 30%, Wrathful Advance 100%. Freeze Force needs the augment equipped
+when it's yours. Passives (Excalibur's) only work on that frame.
 - Roar (Rhino) +50% faction damage, additive with banes, counts twice on status ticks
 - Solar Eclipse (Mirage) x(1 + 200%), its own multiplier, not multiplied into additive Condition Overload
 - Vex Armor (Chroma) +275% Fury, added in with Serration
@@ -169,6 +196,36 @@ strength, the others count as a teammate's and use "Teammate strength %". Passiv
   Electric Shield also doubles crit damage
 - Warcry (Valkyr) +50% attack speed, Wrathful Advance (Kullervo) +200% crit after mods, Excalibur passive +10% damage / attack speed
 The leaderboard scenario has no Warframe, so none of this changes the rankings.
+
+Warframe arcanes: two slots under the mod grid (the same arcane can't go in twice). Their weapon lines count only on the
+weapon type they name ("to Melee Weapons", "to Pistols", "on Secondary Weapon", "(Excludes Shotguns)"...), the
+"21% chance for" part is the slot's on/off stack. Arcane Avenger is flat crit after mods (wiki: "adds 45 percentage points to a
+weapon's critical chance after other bonuses"). Their Warframe lines (Arcane Guardian +900 armor, Molt Augmented strength,
+Arcane Blessing health, Double Back damage resistance) feed the frame's stats.
+
+Survivability (`warframeTotals`): health / shields / armor from base x (1 + % mods + % from abilities) + flat (arcanes, extra
+armor). Abilities that add defense: Warcry +50% armor (wiki: "Base Armor x (1 + Armor Mods + Warcry Modifier x (1 + Strength
+Mods))", allies too), Vex Armor's Scorn +350%, Elemental Ward (Cold) +145%, Null Star 12 x 5% DR (cap 90%, 75% subsumed, only
+Nova). Damage reduction: armor / (armor + 300) on health only, shields' innate 50% (toggle, from the wiki's example), Null Star,
+Adaptation, Double Back and an "Other DR %" box, all multiplied together ("Sources of damage reduction (including armor) stack
+multiplicatively with each other"). Effective health = health / (1 - health DR) + shields / (1 - shield DR).
+
+Damage augments (each needs its mod equipped when it's your own frame; allies are assumed to have it): Fireball Frenzy, Shock
+Trooper, Smite Infusion, Venom Dose (+100% element x strength, added parallel to your elements and not merged, takes its share of the procs, also boosts
+that element's DoT; Smite Infusion wiki example: 100 Impact + Hellfire + 110% strength = 100 Impact / 90 Heat / 110 Radiation, procs
+100/300, 90/300, 110/300). Shock Trooper is the exception: its Electricity takes no proc share and every hit forces an Electricity
+proc instead. The same buff twice doesn't stack, only the strongest counts, Thermal Transfer (pick the cast on the card: hold = +75% Heat,
+tap = +75% Cold, both = Blast "equaling the sum" = +150%; x strength, doesn't combine, Heat/Cold also boost their DoTs like a mod),
+Biting Frost (+200% crit chance / +100% crit damage on frozen targets), Empowered Quiver (+100% crit damage), Smoke Shadow (+150%
+crit chance), Teeming Virulence (+200% crit chance, primaries), Thrall Pact (+25% primary damage per Thrall). The crit ones are
+added in with crit mods since the wiki doesn't say how they stack.
+
+"This build assumes" (red, under the results): every conditional the numbers lean on. Mod/arcane triggers with their stacks
+(Galvanized "on Kill", Deadhead "on Weak Point Kill", Bulwark's armor), weapon passive and Incarnon conditions, each Warframe
+ability/augment that has to be up (and its condition: frozen target, invisible, standing in a Dashwire...), the combo when
+something reads it, headshots, and the status types CO-style mods count.
+
+Every box on the calculator folds up: click its title.
 
 Debuffs: every status has a stack count up to its cap. Slash/Heat/Toxin/Electricity have no cap (the box goes to 999), so
 Harmony can detonate 100 Heat stacks. "Max all" puts the uncapped ones at 10.
@@ -197,10 +254,17 @@ The page has two tabs: Calculator and Leaderboard. The leaderboard is precompute
 Every attack (component) of every weapon gets its own listing (Normal Attack, Slam, Heavy Slam, Heavy Attack, alt-fire,
 Incarnon form...), each optimized on its own. "Best attack per weapon only" collapses it back to one row per weapon.
 
+Attack-type filter (`src/optimizer/attackKinds.ts`, chips on the page, double-click one to show only it): melee normal attacks,
+heavy attacks (incl. glaive detonations), slams (incl. heavy slams), throws / other melee, gun primary fire, alt-fire, explosions / AoE (the data's AoE flag
+or an explosion-style name), Incarnon forms. The export has no attack-type field, so alt-fire is guessed from the name; anything
+on a gun that isn't recognised counts as primary fire. The filter applies before ranking, so #1 is the best of the picked types.
+
 One leaderboard, ranked by a setting (`src/optimizer/objectives.ts`, each one optimized separately):
 - Sustained DPS: average over a 60 s fight (see Damage over time above)
 - Damage in a time window (3 / 10 / 30 s): simulates shots from t = 0 with reloads, DoTs count the part that fits in the window
 - Single damage instance: one hit of one projectile / one melee swing, crits averaged, no DoTs
+- Whole attack (hit + procs): everything one attack does to one target, every pellet / Melee Duplicate strike plus the full DoT of
+  each proc it lands (forced ones included). Made for heavies and glaive detonations, which live on their procs
 
 The DPS-type rankings are optimized twice, with and without fire rate / attack speed mods (and arcanes), switched by "Allow fire rate
 mods". If the search happens to find a better build without them, that build is used for the "allowed" board too.
@@ -213,7 +277,8 @@ Incarnon charge which isn't in the data, so they never reload here, which is why
   melee kills on a gun (Dexterity) and armor thresholds (Bulwark, +1%/armor past 1,000) at half. When two arcanes tie, the one with
   headshot multiplier / reload speed wins (reload counts half for single hit), so Deadhead and Merciless beat Dexterity,
   Condition Overload/Galvanized count only the build's own damage types (base physical + modded elements), capacity ignored, no rivens,
-  melee at max combo. Heavy attacks/heavy slams only compete in Single damage instance, since they spend the combo they need
+  melee at max combo. Heavy attacks/heavy slams/glaive detonations only compete in Single damage instance and Whole attack, since they
+  spend the combo they need
 - Search (`src/optimizer/optimize.ts`): mod pool = compatible mods with an effect that can raise that ranking (`modPool.ts`, fire rate /
   magazine / reload only for the DPS-type rankings), beam search over 8 slots (width 8), single-mod swaps, best Incarnon perk per tier,
   best arcane, elemental slot order. Heuristic, so check odd results in the calculator ("Load build" applies the scenario too)
@@ -285,9 +350,9 @@ Classes not in the table hit once and keep the export's number
 ## Not modeled yet
 
 - Rivens, bow ×2 fire rate
-- Melee: slide attacks (Maiming Strike), Slam Damage multiplier, the class-specific heavy splits (Nikana heavies being pure bleed,
+- Melee: slide attacks (Maiming Strike), the class-specific heavy splits (Nikana heavies being pure bleed,
   Dagger 250% impact + 250% bleed, ...), combo duration / initial combo / combo count chance, Tennokai, a heavy-attack DPS loop
   that rebuilds combo between heavies
 - Arcanes that aren't stat lines: Cascadia Empowered (+750 flat per proc), Secondary Encumber/Enervate/Surge/Kinship/Outburst,
-  Melee Duplicate/Doughty/Retaliation, Primary Plated Round, Longbow Sharpshot treated as additive damage (unverified)
+  Melee Doughty/Retaliation, Primary Plated Round, Longbow Sharpshot treated as additive damage (unverified)
 - Electricity chain and Blast/Gas AoE on other enemies

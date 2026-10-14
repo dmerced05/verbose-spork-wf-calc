@@ -22,7 +22,8 @@ export interface ArcaneSlot {
 export const NORMAL_SLOT_COUNT = 8
 export const EXILUS_SLOT = 8
 export const TOTAL_SLOTS = 9
-const ARCANE_SLOT = 100 // only used for selection, the arcane lives in its own state
+// arcane slots are selected as 100, 101... (only for selection, the arcanes live in their own state)
+const ARCANE_SLOT = 100
 // Warframes: aura slots come after the exilus (index 9, Jade's second aura 10)
 export const AURA_SLOT_START = TOTAL_SLOTS
 
@@ -33,17 +34,16 @@ interface Props {
   weaponName: string // shown in the header ("Upgrades: Braton Prime")
   capacityLabel?: string // 'Orokin Catalyst' for weapons, 'Orokin Reactor' for Warframes
   auraCount?: number // Warframes: 1 aura slot (Jade 2)
-  showArcane?: boolean // weapons have an arcane slot
   isAura?: (mod: Mod) => boolean
   isMelee: boolean // melee-kill triggers (Dexterity) start at half stacks on guns
   compatibleMods: Mod[]
   compatibleArcanes: Arcane[]
   slots: (ModSlot | null)[]
-  arcaneSlot: ArcaneSlot | null
+  arcaneSlots: (ArcaneSlot | null)[] // weapons have one arcane slot, Warframes two, [] = none
   polarities: SlotPolarity[]
   hasCatalyst: boolean
   onSlotsChange: (slots: (ModSlot | null)[]) => void
-  onArcaneChange: (arcaneSlot: ArcaneSlot | null) => void
+  onArcanesChange: (arcaneSlots: (ArcaneSlot | null)[]) => void
   onPolaritiesChange: (polarities: SlotPolarity[]) => void
   onCatalystChange: (hasCatalyst: boolean) => void
 }
@@ -53,7 +53,8 @@ const statLinesAt = (levelStats: string[][], rank: number) =>
   (levelStats[rank] ?? levelStats.at(-1) ?? [])
     // arcanes repeat passive lines inside the full description, so only show the first block
     .slice(0, 1).concat((levelStats[rank] ?? []).slice(1).filter((line) => !(levelStats[rank]?.[0] ?? '').includes(line)))
-    .map((line) => line.replace(/\\n/g, ' '))
+    .map((line) => line.replace(/\\n/g, ' ').replace(/\s*\+1 Arcane Revive/g, '').trim())
+    .filter(Boolean)
 
 function ModArt({ imageName }: { imageName: string | null }) {
   if (!imageName) return null
@@ -187,16 +188,21 @@ function ArcaneCard({ slot, selected, onSelect, onRemove }: ArcaneCardProps) {
 
 export function ModSlots(props: Props) {
   const {
-    weaponName, isMelee, compatibleMods, compatibleArcanes, slots, arcaneSlot, polarities, hasCatalyst,
-    onSlotsChange, onArcaneChange, onPolaritiesChange, onCatalystChange,
-    capacityLabel = 'Orokin Catalyst', auraCount = 0, showArcane = true, isAura = () => false,
+    weaponName, isMelee, compatibleMods, compatibleArcanes, slots, arcaneSlots, polarities, hasCatalyst,
+    onSlotsChange, onArcanesChange, onPolaritiesChange, onCatalystChange,
+    capacityLabel = 'Orokin Catalyst', auraCount = 0, isAura = () => false,
   } = props
   const isAuraIndex = (index: number) => index >= AURA_SLOT_START && index < AURA_SLOT_START + auraCount
-  const [selectedSlot, setSelectedSlot] = useState(0)
+  // nothing selected = no mod browser. clicking a slot opens it, clicking it again (or Close / Esc) hides it
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null)
+  const toggleSlot = (index: number) => setSelectedSlot(selectedSlot === index ? null : index)
   const [search, setSearch] = useState('')
-  const arcaneSelected = selectedSlot === ARCANE_SLOT
+  const arcaneIndex = selectedSlot !== null && selectedSlot >= ARCANE_SLOT ? selectedSlot - ARCANE_SLOT : null
+  const arcaneSelected = arcaneIndex !== null
+  const arcaneSlot = arcaneIndex !== null ? arcaneSlots[arcaneIndex] ?? null : null
+  const setArcane = (index: number, next: ArcaneSlot | null) => onArcanesChange(arcaneSlots.map((slot, other) => (other === index ? next : slot)))
   const exilusSelected = selectedSlot === EXILUS_SLOT
-  const auraSelected = isAuraIndex(selectedSlot)
+  const auraSelected = selectedSlot !== null && isAuraIndex(selectedSlot)
 
   // auras add to the capacity, every other slot uses it
   const auraBonus = slots.reduce((total, slot, index) => {
@@ -234,7 +240,7 @@ export function ModSlots(props: Props) {
   // being filled doesn't count, since picking a new one replaces it
   const equippedExcept = (skipIndex: number) =>
     slots.flatMap((slot, index) => (slot && index !== skipIndex ? [modsById.get(slot.modId)!] : []))
-  const othersForSelected = equippedExcept(selectedSlot)
+  const othersForSelected = equippedExcept(selectedSlot ?? -1)
   const blockerFor = (mod: Mod) => blockingMod(mod, othersForSelected)
 
   // name matches first (starts-with before contains), then things that only match on a stat line
@@ -253,7 +259,7 @@ export function ModSlots(props: Props) {
       .sort((a, b) => a.rank - b.rank)
       .map(({ item }) => item)
 
-  const browserMods = arcaneSelected
+  const browserMods = arcaneSelected || selectedSlot === null
     ? []
     : bySearch(uniqueMods.filter((mod) =>
         // aura slots only take auras, exilus only exilus mods, auras go nowhere else
@@ -262,9 +268,12 @@ export function ModSlots(props: Props) {
         // incompatible ones stay listed (greyed out, at the end) so it's clear why they can't go in
         .map((mod) => ({ mod, blocker: blockerFor(mod) }))
         .sort((a, b) => Number(Boolean(a.blocker)) - Number(Boolean(b.blocker)))
-  const browserArcanes = arcaneSelected ? bySearch(compatibleArcanes.filter((arcane) => arcane.uniqueName !== arcaneSlot?.arcaneId)) : []
+  // the same arcane can't go in twice
+  const equippedArcaneIds = new Set(arcaneSlots.flatMap((slot) => (slot ? [slot.arcaneId] : [])))
+  const browserArcanes = arcaneSelected ? bySearch(compatibleArcanes.filter((arcane) => !equippedArcaneIds.has(arcane.uniqueName))) : []
 
   const equipMod = (mod: Mod) => {
+    if (selectedSlot === null) return
     updateSlot(selectedSlot, { modId: mod.uniqueName, rank: mod.fusionLimit, conditionalStacks: defaultConditionalStacks(mod.levelStats, mod.fusionLimit, { isMelee, bodyShots: false }) })
     // jump to the next empty normal slot so filling a build is quick
     if (!exilusSelected && !auraSelected) {
@@ -274,20 +283,31 @@ export function ModSlots(props: Props) {
   }
   const equipArcane = (arcane: Arcane) => {
     const maxRank = maxRankOf(arcane.levelStats)
-    onArcaneChange({ arcaneId: arcane.uniqueName, rank: maxRank, conditionalStacks: defaultConditionalStacks(arcane.levelStats, maxRank, { isMelee, bodyShots: false }) })
+    if (arcaneIndex === null) return
+    setArcane(arcaneIndex, { arcaneId: arcane.uniqueName, rank: maxRank, conditionalStacks: defaultConditionalStacks(arcane.levelStats, maxRank, { isMelee, bodyShots: false }) })
   }
 
   // the selected thing's controls (rank, conditional stacks) work the same for mods and the arcane
-  const selectedMod = !arcaneSelected && slots[selectedSlot] ? modsById.get(slots[selectedSlot]!.modId) : undefined
+  const selectedMod = !arcaneSelected && selectedSlot !== null && slots[selectedSlot] ? modsById.get(slots[selectedSlot]!.modId) : undefined
   const selectedArcane = arcaneSelected && arcaneSlot ? arcanesById.get(arcaneSlot.arcaneId) : undefined
-  const selectedState = arcaneSelected ? arcaneSlot : slots[selectedSlot]
+  const selectedState = arcaneSelected ? arcaneSlot : selectedSlot !== null ? slots[selectedSlot] : null
   const selectedItem = selectedMod ?? selectedArcane
   const selectedMaxRank = selectedMod ? selectedMod.fusionLimit : selectedArcane ? maxRankOf(selectedArcane.levelStats) : 0
   const updateSelected = (changes: { rank?: number; conditionalStacks?: number }) => {
-    if (arcaneSelected && arcaneSlot) onArcaneChange({ ...arcaneSlot, ...changes })
-    else if (slots[selectedSlot]) updateSlot(selectedSlot, { ...slots[selectedSlot]!, ...changes })
+    if (arcaneIndex !== null && arcaneSlot) setArcane(arcaneIndex, { ...arcaneSlot, ...changes })
+    else if (selectedSlot !== null && slots[selectedSlot]) updateSlot(selectedSlot, { ...slots[selectedSlot]!, ...changes })
   }
   const selectedMaxStacks = selectedItem && selectedState ? maxConditionalStacks(selectedItem.levelStats, selectedState.rank) : 0
+
+  const renderArcaneCard = (index: number) => (
+    <ArcaneCard
+      key={`arcane-${index}`}
+      slot={arcaneSlots[index]}
+      selected={arcaneIndex === index}
+      onSelect={() => toggleSlot(ARCANE_SLOT + index)}
+      onRemove={() => setArcane(index, null)}
+    />
+  )
 
   const renderModCard = (index: number) => (
     <ModCard
@@ -301,7 +321,7 @@ export function ModSlots(props: Props) {
       isExilusSlot={index === EXILUS_SLOT}
       isAuraSlot={isAuraIndex(index)}
       selected={selectedSlot === index}
-      onSelect={() => setSelectedSlot(index)}
+      onSelect={() => toggleSlot(index)}
       onCyclePolarity={() => cyclePolarity(index)}
       onRemove={() => updateSlot(index, null)}
     />
@@ -321,7 +341,7 @@ export function ModSlots(props: Props) {
           <span className={`capacity ${usedCapacity > capacity ? 'over' : ''}`}>
             Capacity <b>{capacity - usedCapacity}/{capacity}</b>
           </span>
-          <button onClick={() => { onSlotsChange(Array(TOTAL_SLOTS + auraCount).fill(null)); onArcaneChange(null) }}>Clear</button>
+          <button onClick={() => { onSlotsChange(Array(TOTAL_SLOTS + auraCount).fill(null)); onArcanesChange(arcaneSlots.map(() => null)) }}>Clear</button>
         </div>
       </div>
 
@@ -329,17 +349,12 @@ export function ModSlots(props: Props) {
         <div className="mod-grid">{Array.from({ length: NORMAL_SLOT_COUNT }, (_, index) => renderModCard(index))}</div>
         <div className={`side-column ${auraCount > 1 ? 'double-aura' : ''}`}>
           {Array.from({ length: auraCount }, (_, offset) => renderModCard(AURA_SLOT_START + offset))}
-          {showArcane && (
-            <ArcaneCard
-              slot={arcaneSlot}
-              selected={arcaneSelected}
-              onSelect={() => setSelectedSlot(ARCANE_SLOT)}
-              onRemove={() => onArcaneChange(null)}
-            />
-          )}
+          {arcaneSlots.length === 1 && renderArcaneCard(0)}
           {renderModCard(EXILUS_SLOT)}
         </div>
       </div>
+      {/* Warframes: two arcane slots in their own row under the grid */}
+      {arcaneSlots.length > 1 && <div className="arcane-row">{arcaneSlots.map((_, index) => renderArcaneCard(index))}</div>}
 
       {selectedItem && selectedState && (
         <div className="selected-mod row">
@@ -370,15 +385,18 @@ export function ModSlots(props: Props) {
         </div>
       )}
 
-      <div className="mod-browser">
+      {selectedSlot === null && <p className="muted-inline slot-hint">Click a slot to add or change a mod.</p>}
+      {selectedSlot !== null && (
+      <div className="mod-browser" onKeyDown={(event) => event.key === 'Escape' && setSelectedSlot(null)}>
         <div className="row spread">
-          <input className="mod-search" placeholder={arcaneSelected ? 'Search arcanes' : 'Search mods or stats'} value={search} onChange={(event) => setSearch(event.target.value)} />
+          <input autoFocus className="mod-search" placeholder={arcaneSelected ? 'Search arcanes' : 'Search mods or stats'} value={search} onChange={(event) => setSearch(event.target.value)} />
           <span className="muted-inline">
             {arcaneSelected
-              ? `${browserArcanes.length} arcanes · filling arcane slot`
+              ? `${browserArcanes.length} arcanes · filling arcane slot${arcaneSlots.length > 1 ? ` ${arcaneIndex! + 1}` : ''}`
               : `${browserMods.length} mods · filling ${
                   exilusSelected ? 'Exilus slot (exilus mods only)' : auraSelected ? 'aura slot (auras only)' : `slot ${selectedSlot + 1}`
                 }`}
+            <button className="link-button" onClick={() => setSelectedSlot(null)}>Close</button>
           </span>
         </div>
         <div className="browser-grid">
@@ -411,6 +429,7 @@ export function ModSlots(props: Props) {
           ))}
         </div>
       </div>
+      )}
     </section>
   )
 }

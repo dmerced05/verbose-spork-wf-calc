@@ -177,6 +177,16 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
     setBonusElement(null)
   }
 
+  // every box folds up: click its title to collapse/expand it. done on the DOM (one class on the panel) so the panels
+  // themselves don't need to know, nested ones (the Warframe's mod grid) fold on their own
+  const togglePanel = (event: React.MouseEvent) => {
+    const target = event.target as Element
+    if (target.closest('input, select, button, a, label')) return
+    const title = target.closest('h2')
+    const panel = title?.closest('.panel')
+    if (panel) panel.classList.toggle('collapsed')
+  }
+
   return (
     <>
       {loadedFrom && (
@@ -186,7 +196,7 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
           <button className="link-button" onClick={() => setLoadedFrom(null)}>dismiss</button>
         </div>
       )}
-      <div className="layout">
+      <div className="layout" onClick={togglePanel}>
         <div className="build">
           <section className="panel">
             <h2>Weapon</h2>
@@ -276,8 +286,8 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
             compatibleMods={compatibleMods}
             compatibleArcanes={compatibleArcanes}
             slots={slots}
-            arcaneSlot={arcaneSlot}
-            onArcaneChange={setArcaneSlot}
+            arcaneSlots={[arcaneSlot]}
+            onArcanesChange={(next) => setArcaneSlot(next[0] ?? null)}
             polarities={polarities}
             hasCatalyst={hasCatalyst}
             onSlotsChange={setSlots}
@@ -286,7 +296,7 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
           />
 
           <WarframePanel
-            buffs={buffs} isMelee={isMelee} onBuffsChange={setBuffs}
+            buffs={buffs} isMelee={isMelee} weaponCategory={weapon.category} onBuffsChange={setBuffs}
             onWarframeChange={(state, corrosive) => { setWarframeState(state); setWarframeCorrosive(corrosive) }}
           />
           <TargetPanel target={target} onChange={setTarget} />

@@ -48,6 +48,30 @@ function withHeavyAttack(weapon, attacks) {
   return [...attacks, heavy]
 }
 
+// glaives: a Heavy Attack while the glaive is in flight detonates it ("an explosion that deals Heavy Attack damage",
+// wiki Heavy_Attack), and that's the Recall Explosion rows. so they're heavies (combo multiplier, Killing Blow,
+// True Steel x2) with no wind-up animation ("the Heavy attack input does not initiate an attack animation").
+// the forced procs are from each weapon's wiki attack table (Forced Procs on the Recall Explosions), the export
+// doesn't have them. bounce explosions (Volatile Rebound) aren't heavies and have no forced procs
+const GLAIVE_DETONATION_PROCS = {
+  Glaive: ['impact'],
+  'Glaive Prime': ['impact', 'slash'],
+  Cerata: ['toxin', 'impact'],
+  Xoris: ['impact', 'electricity'],
+  Orvius: ['cold'],
+  Pathocyst: ['impact', 'viral'],
+  'Coda Pathocyst': ['impact', 'viral'],
+  Falcor: ['electricity'],
+  Halikar: ['impact'],
+  'Halikar Wraith': ['impact'],
+  Kestrel: ['impact'],
+  'Kestrel Prime': ['impact'],
+}
+const glaiveDetonation = (weapon, attack) =>
+  weapon.name in GLAIVE_DETONATION_PROCS && /Recall Explosion$/.test(attack.name)
+    ? { heavy: true, windUp: null, forcedProcs: GLAIVE_DETONATION_PROCS[weapon.name] }
+    : {}
+
 const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('Melee')]
   .filter(
     (weapon) =>
@@ -70,6 +94,7 @@ const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('
     polarities: weapon.polarities ?? [], // pre-installed slot polarities, fill the first slots
     // newer data has a Bow type, the path check covers older entries still listed as Rifle
     isBow: weapon.type === 'Bow' || /\/Bows?\//i.test(weapon.uniqueName),
+    ...(weapon.name in GLAIVE_DETONATION_PROCS ? { isGlaive: true } : {}),
 
     // I use attacks[].damage on purpose: the top-level `damage` object has
     // slash/puncture swapped on some weapons (Braton Prime for one)
@@ -91,6 +116,7 @@ const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('
       ),
       // heavy slams use up the combo and get its multiplier too (wiki Heavy_Attack)
       ...(weapon.category === 'Melee' && /heavy slam/i.test(attack.name) ? { heavy: true } : {}),
+      ...glaiveDetonation(weapon, attack),
     }))),
   }))
   .sort((a, b) => a.name.localeCompare(b.name))
@@ -155,14 +181,18 @@ const enemies = readJson('Enemy')
   }))
   .sort((a, b) => a.name.localeCompare(b.name))
 
-// weapon arcanes only (the arcane slot on primaries/secondaries/melee)
-const WEAPON_ARCANE_TYPES = new Set(['Primary Arcane', 'Secondary Arcane', 'Melee Arcane', 'Bow Arcane', 'Shotgun Arcane'])
+// weapon arcanes (the arcane slot on primaries/secondaries/melee) and Warframe arcanes (the frame's two slots; the plain
+// "Arcane" type is the old revive/bleedout ones, they go on Warframes too). the export lists some Warframe arcanes several
+// times with only one copy having levelStats, so it's one per name
+const ARCANE_TYPES = new Set(['Primary Arcane', 'Secondary Arcane', 'Melee Arcane', 'Bow Arcane', 'Shotgun Arcane', 'Warframe Arcane', 'Arcane'])
+const seenArcanes = new Set()
 const arcanes = readJson('Arcanes')
-  .filter((arcane) => WEAPON_ARCANE_TYPES.has(arcane.type) && arcane.levelStats?.length)
+  .filter((arcane) => ARCANE_TYPES.has(arcane.type) && arcane.levelStats?.length)
+  .filter((arcane) => !seenArcanes.has(arcane.name) && seenArcanes.add(arcane.name))
   .map((arcane) => ({
     uniqueName: arcane.uniqueName,
     name: arcane.name,
-    type: arcane.type,
+    type: arcane.type === 'Arcane' ? 'Warframe Arcane' : arcane.type,
     rarity: arcane.rarity ?? null,
     imageName: arcane.imageName ?? null,
     levelStats: arcane.levelStats.map((level) => level.stats.map(cleanStatLine)),
@@ -183,13 +213,20 @@ const warframes = readJson('Warframes')
     auraPolarities: [frame.aura ?? null].flat().map((polarity) => (polarity === 'aura' ? 'universal' : polarity)),
     polarities: frame.polarities ?? [],
     exilusPolarity: frame.exilusPolarity ?? null,
-    passive: frame.passiveDescription ?? null,
+    passive: frame.passiveDescription ? frame.passiveDescription.replace(/<[^>]+>/g, '').replace(/ {2,}/g, ' ').trim() : null,
     imageName: frame.imageName ?? null,
+    // the four abilities, for the ability list under the mods and the Helminth picker
+    abilities: (frame.abilities ?? []).map((ability) => ({ name: ability.name, description: (ability.description ?? '').replace(/<[^>]+>/g, '').replace(/ {2,}/g, ' ').trim(), imageName: ability.imageName ?? null })),
   }))
   .sort((a, b) => a.name.localeCompare(b.name))
 
+// the Helminth's own abilities (Marked For Death, Empower...), offered next to the subsumed ones
+const helminthAbilities = (readJson('Warframes').find((frame) => frame.name === 'Helminth')?.abilities ?? [])
+  .map((ability) => ({ name: ability.name, description: (ability.description ?? '').replace(/<[^>]+>/g, '').replace(/ {2,}/g, ' ').trim(), imageName: ability.imageName ?? null }))
+
 mkdirSync(outDir, { recursive: true })
 writeFileSync(new URL('warframes.json', outDir), JSON.stringify(warframes))
+writeFileSync(new URL('helminth.json', outDir), JSON.stringify(helminthAbilities))
 writeFileSync(new URL('arcanes.json', outDir), JSON.stringify(arcanes))
 writeFileSync(new URL('weapons.json', outDir), JSON.stringify(weapons))
 writeFileSync(new URL('mods.json', outDir), JSON.stringify(mods))

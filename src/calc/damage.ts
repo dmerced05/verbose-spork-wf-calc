@@ -9,13 +9,14 @@ import {
   BANE_TARGET, BLAST_DETONATION_MULTIPLIER, GLADIATOR_CRIT_PER_PIECE, GLADIATOR_MAX_PIECES, MAX_HEAVY_EFFICIENCY, hitsPerComboTier, maxComboFor, HEADCRIT_MULTIPLIER, WEAK_POINT_BONUS_RATE_ON_HEAD, hasHeadcrits, headMultiplierFor, COMBINED_ELEMENTS, DOT_STATUSES, FACTION_DAMAGE_MODIFIERS, PHYSICAL_TYPES, PRIMARY_ELEMENTS,
   coldCritMultiplierBonus, magneticMultiplier, punctureCritChanceBonus, tauStatusChanceBonus, viralMultiplier,
 } from './constants'
-import { parseUpgrade, type ModEffect, type StatKey } from './parseMod'
+import { parseUpgrade, scopeApplies, type ModEffect, type StatKey } from './parseMod'
+import { arcanesById } from '../data'
 import { resolveCoBehavior, type CoBehavior } from './conditionOverload'
 import { perkAppliesTo, type SelectedPerk } from './incarnon'
 import { armorDamageMultiplier, effectiveArmor } from './target'
 import { hasBonusElement, type BonusElement, type WeaponPassive } from '../data/passives'
 import { SHELL_BY_SHELL_RELOAD } from '../data/reloads'
-import { WARFRAME_ABILITIES, abilityApplies, scaledValue, strengthFor } from '../data/warframeAbilities'
+import { abilitiesById, abilityApplies, castStacks, effectsFor, scaledValue, strengthFor, type AbilityCast } from '../data/warframeAbilities'
 import { biggestHit, comboTotal, heavyComboFor, type HeavyCombo, type HeavyMode } from '../data/heavyAttacks'
 import { expectedDamage, simulateDamage, type DamageRange, type ShotModel } from './simulate'
 
@@ -86,6 +87,8 @@ export interface CalcResult {
   armor: { before: number; after: number; damageMultiplier: number }
   hit: { normal: number; crit: number; average: number } // per projectile vs target
   averageShot: number
+  attackTotal: number // one attack: every pellet/duplicate + the full DoT of its procs
+  duplicateStrikes: number // Melee Duplicate: average strikes per attack (1 without it)
   burstDps: number
   procsPerSecond: number
   dots: DotRow[]
@@ -103,6 +106,7 @@ export interface CalcResult {
   fireRateLocked: boolean
   passives: string[] // names of the passives that are on for this attack
   abilities: string[] // Warframe abilities that apply to this weapon
+  requirements: string[] // every conditional the numbers assume (kills, headshots, buffs up, frozen target...)
   heavyCombo: { combo: HeavyCombo; mode: HeavyMode; multiplier: number } | null // multi-hit heavy, what got scored
   detonation: { ownProcs: number; existingStacks: number } | null // Harmony heavy: DoT damage dealt at once, per heavy
   melee: {
@@ -148,7 +152,7 @@ export function calculate({
     critDamage: 0, multishot: 0, fireRate: 0, statusChance: 0, statusDamage: 0, headshotMultiplier: 0, weakpointDamage: 0,
     magazineCapacity: 0, reloadSpeed: 0,
     critChancePerCombo: 0, statusChancePerCombo: 0, heavyCritChance: 0, heavyDamage: 0, heavyWindUpSpeed: 0, heavyEfficiency: 0,
-    statusDuration: 0,
+    statusDuration: 0, slamDamage: 0, throwDamage: 0,
   }
   const physicalBonus: Record<string, number> = {}
   const elementBonus: Record<string, number> = {} // literal mod bonus per element, also used for DoTs
@@ -159,6 +163,7 @@ export function calculate({
   let overguardMultiplier = 1
   let separateDamageMultiplier = 1 // Longbow Sharpshot style, multiplies outside the damage mods
   let multishotLocked = false // Acuity mods
+  let duplicateOnCritChance = 0 // Melee Duplicate
   const fireRateLocked = mods.some(({ mod }) => mod.locksFireRate) // Semi-___ Cannonade: fire rate stays at base
   const unparsed: string[] = []
   // elements added on top of the weapon's own (Melee Exposure's Corrosive, Tonkkatt's Heat, Lesion's Toxin): they add
@@ -166,6 +171,8 @@ export function calculate({
   // your procs and don't proc on their own. you still need status chance + your own elements for procs
   const separateElements: Record<string, number> = {}
   const forcedProcsPerPellet: Record<string, number> = {} // guaranteed procs on every hit (Reconifex's Heat rounds)
+  // the attack's own forced procs (glaive detonations, from build-data)
+  for (const damageType of attack.forcedProcs ?? []) forcedProcsPerPellet[damageType] = (forcedProcsPerPellet[damageType] ?? 0) + 1
 
   const applyEffect = (effect: ModEffect, times: number) => {
     switch (effect.kind) {
@@ -190,6 +197,9 @@ export function calculate({
       case 'lockMultishot':
         multishotLocked = true
         break
+      case 'duplicateOnCrit':
+        duplicateOnCritChance += effect.value * times
+        break
       case 'heavyScaledCritChance':
         // normal attacks get the value, heavies get value x factor, so the extra part only counts on heavies
         bonus.critChance += effect.value * times
@@ -209,17 +219,27 @@ export function calculate({
   const upgrades = [
     ...mods.map(({ mod, rank, conditionalStacks }) => ({ name: mod.name, levelStats: mod.levelStats, rank, conditionalStacks })),
     ...(arcane ? [{ name: arcane.arcane.name, levelStats: arcane.arcane.levelStats, rank: arcane.rank, conditionalStacks: arcane.conditionalStacks, isArcane: true }] : []),
+    // the Warframe's arcanes (Arcane Avenger, Arcane Fury...), their weapon lines only count on the weapon type they name
+    ...(buffs.warframe?.arcanes ?? []).flatMap(({ arcaneId, rank, conditionalStacks }) => {
+      const frameArcane = arcanesById.get(arcaneId)
+      return frameArcane ? [{ name: frameArcane.name, levelStats: frameArcane.levelStats, rank, conditionalStacks, isFrameArcane: true }] : []
+    }),
   ]
+  // everything the build's numbers assume is happening in the fight (shown in red under the results)
+  const requirements: string[] = []
+  let frameArcaneFlatCrit = 0 // Arcane Avenger: "adds 45 percentage points to a weapon's critical chance after other bonuses"
   for (const upgrade of upgrades) {
     const parsed = parseUpgrade(upgrade.levelStats, upgrade.rank)
     // arcane elements (Melee Exposure) are separate elements, see separateElements
     const apply = (effect: ModEffect, times: number) => {
-      if ('isArcane' in upgrade && effect.kind === 'damageType' && !PHYSICAL_TYPES.includes(effect.damageType)) {
+      if ('isFrameArcane' in upgrade && effect.kind === 'stat' && effect.stat === 'critChance') frameArcaneFlatCrit += effect.value * times
+      else if ('isArcane' in upgrade && effect.kind === 'damageType' && !PHYSICAL_TYPES.includes(effect.damageType)) {
         separateElements[effect.damageType] = (separateElements[effect.damageType] ?? 0) + effect.value * times
       } else applyEffect(effect, times)
     }
     parsed.effects.forEach((effect) => apply(effect, 1))
     for (const conditional of parsed.conditionals) {
+      if (!scopeApplies(conditional.scope, weapon)) continue
       let activeStacks = Math.min(upgrade.conditionalStacks, conditional.maxStacks)
       // Primary Bulwark: with a Warframe armor set in the Warframe panel, its stacks come from that (1 stack = 1 armor past 1,000)
       const armorThreshold = conditional.trigger.match(/^Warframe armor past ([\d,]+)/)
@@ -227,9 +247,14 @@ export function calculate({
       if (armorThreshold && warframeArmor > 0) {
         activeStacks = Math.min(conditional.maxStacks, Math.max(0, warframeArmor - Number(armorThreshold[1].replace(/,/g, ''))))
       }
-      if (activeStacks > 0) apply(conditional.effect, activeStacks)
+      if (activeStacks > 0) {
+        apply(conditional.effect, activeStacks)
+        const label = `${upgrade.name}: ${conditional.trigger.replace(/:$/, '').replace(/^On /, 'on ').replace(/^When /, 'when ').replace(/^While /, 'while ')}` +
+          (conditional.maxStacks > 1 ? ` (${activeStacks}/${conditional.maxStacks} stacks)` : '')
+        if (!requirements.includes(label)) requirements.push(label)
+      }
     }
-    unparsed.push(...parsed.unparsed.map((line) => `${upgrade.name}: ${line}`))
+    if (!('isFrameArcane' in upgrade)) unparsed.push(...parsed.unparsed.map((line) => `${upgrade.name}: ${line}`))
   }
 
   // ---- weapon passives (hand-kept table, see src/data/passives.ts) ----
@@ -252,6 +277,7 @@ export function calculate({
     const times = passive.condition ? Math.min(chosenStacks, passive.maxStacks ?? 1) : 1
     if (times <= 0) continue
     activePassives.push(passive.name)
+    if (passive.condition) requirements.push(`${passive.name} (weapon passive): ${passive.condition}${(passive.maxStacks ?? 1) > 1 ? ` (${times}/${passive.maxStacks} stacks)` : ''}`)
     for (const effect of passive.effects) {
       switch (effect.kind) {
         case 'mod':
@@ -309,6 +335,7 @@ export function calculate({
   let abilityCritDamageScale = 1 // Electric Shield, multiplies every other crit damage source
   let extraHitFraction = 0 // Xata's Whisper: a separate Void hit worth this share of the weapon's damage
   const uncombinedElements: Record<string, number> = {} // Freeze Force / Electric Shield: don't combine, do proc
+  const statusElementBonus: Record<string, number> = {} // uncombined ability elements that still count for their DoT
   const activeAbilities: string[] = []
   const warframe = buffs.warframe
   if (warframe) {
@@ -322,12 +349,27 @@ export function calculate({
               : aura.rifle + (weapon.type === 'Sniper' ? aura.sniper : 0)
     }
     bonus.weakpointCritChance += warframe.weakpointCritChance ?? 0
-    for (const ability of WARFRAME_ABILITIES) {
-      if (!warframe.abilities[ability.id] || !abilityApplies(ability, weapon.category === 'Melee')) continue
-      if (ability.selfOnly && ability.warframe !== warframe.frameName) continue
-      activeAbilities.push(ability.name)
-      for (const effect of ability.effects) {
-        const value = scaledValue(ability, effect.value, strengthFor(ability, warframe))
+    // the same buff twice doesn't stack, the strongest one applies (Shock Trooper wiki: "Multiple Shock Troopers don't stack.
+    // The one with the highest Ability Strength applies")
+    const strongest = new Map<string, AbilityCast>()
+    for (const cast of warframe.casts) {
+      const current = strongest.get(cast.id)
+      if (!current || strengthFor(cast, warframe) > strengthFor(current, warframe)) strongest.set(cast.id, cast)
+    }
+    for (const cast of strongest.values()) {
+      const ability = abilitiesById.get(cast.id)
+      if (!ability || !abilityApplies(ability, weapon.category)) continue
+      // passives only work on that frame, cast by you
+      if (ability.selfOnly && (cast.by !== 'self' || ability.warframe !== warframe.frameName)) continue
+      const times = castStacks(ability, cast)
+      if (times <= 0 || effectsFor(ability, cast.by).length === 0) continue
+      const caster = cast.by === 'helminth' ? 'your subsumed' : cast.by === 'ally' ? 'an ally\'s' : 'your'
+      activeAbilities.push(`${ability.name}${cast.by === 'helminth' ? ' (subsumed)' : cast.by === 'ally' ? ' (ally)' : ''}`)
+      // passives (no ability to cast) just need their condition
+      const needs = ability.ability ? `${caster} ${ability.ability} up${ability.condition ? `, ${ability.condition}` : ''}` : ability.condition ?? `playing ${ability.warframe}`
+      requirements.push(`${ability.name}: ${needs}${ability.stacks ? ` (${times} ${ability.stacks.label})` : ''}`)
+      for (const effect of effectsFor(ability, cast.by)) {
+        const value = scaledValue(ability, effect.value, strengthFor(cast, warframe)) * times
         switch (effect.kind) {
           case 'factionDamage':
             factionBonus += value
@@ -339,8 +381,17 @@ export function calculate({
             bonus.damage += value
             break
           case 'element':
+            // Shock Trooper: extra Electricity that doesn't dilute your procs, plus a guaranteed Electricity proc per hit
+            if (effect.forcedProc) {
+              separateElements[effect.damageType] = (separateElements[effect.damageType] ?? 0) + value
+              forcedProcsPerPellet[effect.damageType] = (forcedProcsPerPellet[effect.damageType] ?? 0) + 1
+              if (effect.boostsStatus) statusElementBonus[effect.damageType] = (statusElementBonus[effect.damageType] ?? 0) + value
+              break
+            }
             if (effect.combines) applyEffect({ kind: 'damageType', damageType: effect.damageType, value }, 1)
             else uncombinedElements[effect.damageType] = (uncombinedElements[effect.damageType] ?? 0) + value
+            // Thermal Transfer: "the Heat bonus is additive with other Heat bonuses for status"
+            if (!effect.combines && effect.boostsStatus) statusElementBonus[effect.damageType] = (statusElementBonus[effect.damageType] ?? 0) + value
             break
           case 'extraHit':
             extraHitFraction += value
@@ -353,6 +404,12 @@ export function calculate({
             break
           case 'critDamageMultiplier':
             abilityCritDamageScale *= 1 + value
+            break
+          case 'critChanceMod':
+            bonus.critChance += value
+            break
+          case 'critDamageMod':
+            bonus.critDamage += value
         }
       }
     }
@@ -366,6 +423,10 @@ export function calculate({
   const isHeavy = isMelee && Boolean(attack.heavy)
   const combo = isMelee ? Math.min(maxComboFor(weapon.name), Math.max(1, buffs.combo ?? 1)) : 1
   const comboSteps = combo - 1
+  // the combo only matters if something reads it
+  if (isMelee && combo > 1 && (Boolean(attack.heavy) || bonus.critChancePerCombo > 0 || bonus.statusChancePerCombo > 0 || mods.some(({ mod }) => mod.name.startsWith('Gladiator ')))) {
+    requirements.push(`Melee combo at ${combo}x${attack.heavy ? ' (spent by the heavy)' : ''}`)
+  }
   const gladiatorPieces = Math.min(
     GLADIATOR_MAX_PIECES,
     mods.filter(({ mod }) => mod.name.startsWith('Gladiator ')).length + (buffs.gladiatorWarframePieces ?? 0),
@@ -374,6 +435,10 @@ export function calculate({
   const statusFromCombo = isMelee ? bonus.statusChancePerCombo * comboSteps : 0
   // Killing Blow style "Melee Damage on Heavy Attack" just adds to the damage mods
   if (isHeavy) bonus.damage += bonus.heavyDamage
+  // Seismic Wave / Power Throw are their own multipliers (wiki: multiplicative with Pressure Point), only on those attacks.
+  // Power Throw counts on the throw itself, the wiki doesn't say it reaches the explosion so I leave that out
+  if (isMelee && /slam/i.test(attack.name)) separateDamageMultiplier *= 1 + bonus.slamDamage
+  if (isMelee && /throw$/i.test(attack.name)) separateDamageMultiplier *= 1 + bonus.throwDamage
   const heavyComboFactor = isHeavy ? combo : 1
 
   // ---- Kuva / Tenet / Coda bonus element: an innate element worth X% of base damage ----
@@ -394,6 +459,10 @@ export function calculate({
       if (!statement.effect || !perkAppliesTo(statement.mode, isIncarnonAttack, weapon.category === 'Melee')) continue
       const times = statement.condition ? Math.min(perkStacks, statement.maxStacks) : 1
       if (times <= 0) continue
+      if (statement.condition) {
+        const label = `${perk.name} (Incarnon): ${statement.condition.replace(/:$/, '')}${statement.maxStacks > 1 ? ` (${times}/${statement.maxStacks} stacks)` : ''}`
+        if (!requirements.includes(label)) requirements.push(label)
+      }
       const effect = statement.effect
       if (effect.kind === 'base') perkBase[effect.stat] += effect.value * times
       else if (effect.kind === 'flat') perkFlat[effect.stat] += effect.value * times
@@ -474,6 +543,9 @@ export function calculate({
     co.mode === 'none'
       ? 0
       : (bonus.damagePerStatusType * activeStatusTypes + bonus.damagePerColdStack * Math.min(stacks('cold'), 10)) * co.scale
+  if (coBonus > 0 || (damagePerStatusTypePassive > 0 && activeStatusTypes > 0) || (critPerStatusType > 0 && activeStatusTypes > 0)) {
+    requirements.push(`Target already has ${activeStatusTypes} status type${activeStatusTypes === 1 ? '' : 's'} on it (Condition Overload style bonuses)`)
+  }
   const damageScale =
     co.mode === 'multiply'
       ? (1 + bonus.damage) * (1 + coBonus) * separateDamageMultiplier
@@ -494,13 +566,14 @@ export function calculate({
   // Puncture and Cold add flat after mods, and don't apply to AoE
   // AoE can't headshot. weak point crit chance (Primary Acuity, Cascadia Accuracy) only counts on headshots
   const isHeadshot = target.headshot && !attack.isAoE
+  if (isHeadshot) requirements.push('Headshots on every hit')
   // null/undefined = follow the faction, so stale or missing settings can't silently turn headcrits off
   const headMultiplier = target.headshotMultiplier ?? headMultiplierFor(target.faction)
   const headcrit = target.headcrit ?? hasHeadcrits(target.faction)
   const weakpointCritBonus = isHeadshot ? bonus.weakpointCritChance : 0
   const critChance =
     attack.critChance * (1 + bonus.critChance + weakpointCritBonus + critFromCombo + (isHeavy ? bonus.heavyCritChance : 0)) +
-    perkFlat.critChance + passiveFlat.critChance + critPerStatusType * activeStatusTypes + abilityFlatCritChance +
+    perkFlat.critChance + passiveFlat.critChance + frameArcaneFlatCrit + critPerStatusType * activeStatusTypes + abilityFlatCritChance +
     (attack.isAoE ? 0 : punctureCritChanceBonus(stacks('puncture')))
   // headcrit doubles the weapon's *base* crit multiplier, so mods scale it but Cold's flat bonus doesn't
   const headcritFactor = isHeadshot && headcrit ? HEADCRIT_MULTIPLIER : 1
@@ -571,7 +644,11 @@ export function calculate({
     crit: vsTargetNoCrit * critHitMultiplier,
     average: vsTargetNoCrit * (averageCritMultiplier + attritionBonus),
   }
-  const averageShot = hit.average * multishot
+  // Melee Duplicate: "base (yellow) Critical Hits inflict a second instance of damage", the duplicate rerolls crit and
+  // status (wiki). so a crit is worth one more hit and its procs. it's a separate instance, so hit.* stays one hit
+  const strikes = isMelee ? 1 + Math.min(1, critChance) * duplicateOnCritChance : 1
+  const hitsPerAttack = multishot * strikes
+  const averageShot = hit.average * hitsPerAttack
   const burstDps = averageShot * fireRate
 
   // ---- 5. status procs + DoTs ----
@@ -580,7 +657,7 @@ export function calculate({
   const statusChance = statusOverride
     ? (1 - statusOverrideShare) * rawStatusChance + statusOverrideShare * statusOverride.statusChance
     : rawStatusChance
-  const pelletsPerSecond = multishot * fireRate
+  const pelletsPerSecond = hitsPerAttack * fireRate
   const procsPerSecond = statusChance * pelletsPerSecond
   // proc weighting skips the separate elements (Melee Exposure etc.), they add damage but no proc share
   const procWeight: Record<string, number> = {}
@@ -619,7 +696,7 @@ export function calculate({
   const dots: DotRow[] = Object.entries(DOT_STATUSES)
     .filter(([damageType]) => (procRates[damageType] ?? 0) > 0)
     .map(([damageType, info]) => {
-      const elementMultiplier = info.usesElementMods ? 1 + (elementBonus[damageType] ?? 0) : 1
+      const elementMultiplier = info.usesElementMods ? 1 + (elementBonus[damageType] ?? 0) + (statusElementBonus[damageType] ?? 0) : 1
       const headshotPart = !isHeadshot ? 1 : info.fullHeadshot ? headshotFactor : 1 + bonus.headshotMultiplier
       const beforeCrit =
         info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage) *
@@ -666,10 +743,10 @@ export function calculate({
   const steadyStateDps = (burstDps + dotDps) * uptime
 
   // shots over time with procs on their own clocks (src/calc/simulate.ts)
-  const pelletsPerSecondForModel = multishot * fireRate
+  const pelletsPerSecondForModel = hitsPerAttack * fireRate
   const shotModel: ShotModel = {
     fireRate,
-    multishot,
+    multishot: hitsPerAttack,
     magazineSize,
     reloadTime,
     hit,
@@ -705,7 +782,7 @@ export function calculate({
     for (const damageType of ['slash', 'heat', 'toxin', 'electricity', 'gas']) {
       if (stacks(damageType) <= 0 || dots.some((dot) => dot.damageType === damageType)) continue
       const info = DOT_STATUSES[damageType]
-      const elementMultiplier = info.usesElementMods ? 1 + (elementBonus[damageType] ?? 0) : 1
+      const elementMultiplier = info.usesElementMods ? 1 + (elementBonus[damageType] ?? 0) + (statusElementBonus[damageType] ?? 0) : 1
       const durationScale = 1 + bonus.statusDuration + (statusDurationByType['*'] ?? 0) + (statusDurationByType[damageType] ?? 0)
       const perProc =
         info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage) * (1 + debuffs.damageVulnerability) *
@@ -714,6 +791,10 @@ export function calculate({
     }
     detonation = { ownProcs, existingStacks }
   }
+
+  // everything one attack does: every pellet/duplicate plus the full DoT of each proc it lands (glaive detonations live on
+  // their forced Slash, heavy Harmony on its procs). ticks that land later still count, unlike the single-hit score
+  const attackTotal = averageShot + sum(dots.map((dot) => (fireRate > 0 ? dot.procsPerSecond / fireRate : 0) * dot.perProc.average))
 
   const damageTypes = Object.entries(moddedByType)
     .map(([damageType, modded]) => ({
@@ -747,6 +828,8 @@ export function calculate({
     armor: { before: armor, after: armorAfter, damageMultiplier: armorMultiplier },
     hit,
     averageShot,
+    attackTotal,
+    duplicateStrikes: strikes,
     burstDps,
     procsPerSecond,
     dots,
@@ -764,6 +847,7 @@ export function calculate({
     fireRateLocked,
     passives: activePassives,
     abilities: activeAbilities,
+    requirements,
     heavyCombo,
     detonation,
     melee: isMelee

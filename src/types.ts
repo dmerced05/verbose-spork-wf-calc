@@ -15,6 +15,7 @@ export interface Attack {
   heavy?: boolean // Heavy Attack / Heavy Slam: x combo multiplier, uses up the combo
   windUp?: number | null // heavy attack wind-up in seconds
   heavyMultiplier?: number // Heavy Attack only: how much bigger than the normal attack it is
+  forcedProcs?: string[] // guaranteed procs on every hit (glaive detonations: "Explosion inflicts a guaranteed Impact and Slash proc")
 }
 
 export interface Weapon {
@@ -30,6 +31,7 @@ export interface Weapon {
   imageName: string | null
   polarities: string[]
   isBow: boolean
+  isGlaive?: boolean // takes "Thrown Melee" mods (Power Throw, Volatile Rebound...)
   attacks: Attack[]
 }
 
@@ -60,6 +62,13 @@ export interface Warframe {
   polarities: string[]
   exilusPolarity: string | null
   passive: string | null
+  imageName: string | null
+  abilities: WarframeAbilityInfo[] // the frame's 4 abilities, in order
+}
+
+export interface WarframeAbilityInfo {
+  name: string
+  description: string
   imageName: string | null
 }
 

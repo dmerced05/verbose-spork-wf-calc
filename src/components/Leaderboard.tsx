@@ -3,6 +3,15 @@ import { FULL_HEAVY_BOARD, TIME_WINDOWS, boardKey, objectiveById, type Objective
 import { raisesFireRate } from '../calc/parseMod'
 import { modsById, weaponsById } from '../data'
 import { biggestHit, comboTotal, heavyBreakdownText, heavyComboFor } from '../data/heavyAttacks'
+import { ATTACK_KINDS, attackKind, type AttackKind } from '../optimizer/attackKinds'
+
+// attack kind of an entry, looked up from the weapon data (null if the weapon isn't in this data version)
+const kindOf = (entry: LeaderboardEntry): AttackKind | null => {
+  const weapon = weaponsById.get(entry.weaponId)
+  const attack = weapon?.attacks.find((option) => option.name === entry.attack)
+  return weapon && attack ? attackKind(weapon, attack) : null
+}
+const KIND_LABEL = Object.fromEntries(ATTACK_KINDS.map((kind) => [kind.id, kind.label])) as Record<AttackKind, string>
 import { expandLeaderboard, type Leaderboard as LeaderboardData, type LeaderboardEntry, type LeaderboardFile } from '../optimizer/leaderboardTypes'
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 2 })
@@ -10,11 +19,12 @@ const percent = (value: number) => `${Math.round(value * 100)}%`
 const CATEGORIES = ['All', 'Primary', 'Secondary', 'Melee']
 const PAGE_SIZE = 50
 
-type RankBy = 'sustained' | 'window' | 'single'
+type RankBy = 'sustained' | 'window' | 'single' | 'attack'
 const RANK_BY: { id: RankBy; label: string }[] = [
   { id: 'sustained', label: 'Sustained DPS' },
   { id: 'window', label: 'Damage in a time window' },
   { id: 'single', label: 'Single damage instance' },
+  { id: 'attack', label: 'Whole attack (hit + procs)' },
 ]
 
 interface Props {
@@ -32,6 +42,15 @@ export function Leaderboard({ onLoadBuild }: Props) {
   const [allowFireRate, setAllowFireRate] = useState(true)
   const [bestPerWeapon, setBestPerWeapon] = useState(false)
   const [fullHeavy, setFullHeavy] = useState(false)
+  const [kinds, setKinds] = useState<Set<AttackKind>>(() => new Set(ATTACK_KINDS.map((kind) => kind.id)))
+  const toggleKind = (kind: AttackKind) => {
+    const next = new Set(kinds)
+    if (next.has(kind)) next.delete(kind)
+    else next.add(kind)
+    setKinds(next)
+    setLimit(PAGE_SIZE)
+  }
+  const onlyKind = (kind: AttackKind) => { setKinds(new Set([kind])); setLimit(PAGE_SIZE) }
   const [category, setCategory] = useState('All')
   const [search, setSearch] = useState('')
   const [limit, setLimit] = useState(PAGE_SIZE)
@@ -61,7 +80,9 @@ export function Leaderboard({ onLoadBuild }: Props) {
       const full = new Map((data.boards[FULL_HEAVY_BOARD] ?? []).map((entry) => [`${entry.weaponId}|${entry.attack}`, entry]))
       entries = entries.map((entry) => full.get(`${entry.weaponId}|${entry.attack}`) ?? entry)
     }
-    entries = entries.filter((entry) => includeIncarnon || !entry.incarnonForm)
+    // attack-kind filter goes before ranking, so "#1" with only Heavy attacks picked means the best heavy
+    const allKinds = kinds.size === ATTACK_KINDS.length
+    entries = entries.filter((entry) => (includeIncarnon || !entry.incarnonForm) && (allKinds || kinds.has(kindOf(entry) ?? 'primaryFire')))
     if (bestPerWeapon) {
       const best = new Map<string, LeaderboardEntry>()
       for (const entry of entries) {
@@ -71,7 +92,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
       entries = [...best.values()]
     }
     return [...entries].sort((a, b) => b.score - a.score).map((entry, index) => ({ entry, rank: index + 1 }))
-  }, [data, key, includeIncarnon, bestPerWeapon, rankBy, fullHeavy])
+  }, [data, key, includeIncarnon, bestPerWeapon, rankBy, fullHeavy, kinds])
 
   const rows = useMemo(() => {
     const searchText = search.trim().toLowerCase()
@@ -155,6 +176,23 @@ export function Leaderboard({ onLoadBuild }: Props) {
           </label>
           <span className="muted-inline">{rows.length} {bestPerWeapon ? 'weapons' : 'attacks'}</span>
         </div>
+        <div className="kind-filter">
+          <span className="muted-inline">Attack types:</span>
+          {ATTACK_KINDS.map((kind) => (
+            <button
+              key={kind.id}
+              className={`kind-chip ${kinds.has(kind.id) ? 'on' : ''} ${kind.melee ? 'melee' : 'gun'}`}
+              onClick={() => toggleKind(kind.id)}
+              onDoubleClick={() => onlyKind(kind.id)}
+              title="Click to toggle, double-click to show only this type"
+            >
+              {kind.label}
+            </button>
+          ))}
+          {kinds.size < ATTACK_KINDS.length && (
+            <button className="link-button" onClick={() => { setKinds(new Set(ATTACK_KINDS.map((kind) => kind.id))); resetPaging() }}>all</button>
+          )}
+        </div>
         <p className="muted">
           Every weapon attack, each optimized on its own, in one fixed scenario: {data.scenario}
           Incarnon forms don't reload here (their charge isn't in the data). Shell-by-shell weapons (Felarx, Struns, Corinth, Zarr)
@@ -170,6 +208,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
               <div className="board-name">{entry.weaponName}</div>
               <div className="muted-inline">
                 {entry.attack} · {entry.type}
+                {kindOf(entry) && <span className="kind-tag"> · {KIND_LABEL[kindOf(entry)!].toLowerCase()}</span>}
               </div>
               {(() => {
                 // multi-hit heavies: hover for the wiki/arsenal hit list, click for this build's damage per hit

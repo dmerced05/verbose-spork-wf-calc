@@ -22,6 +22,8 @@ export type StatKey =
   | 'heavyWindUpSpeed'
   | 'heavyEfficiency' // how much combo a heavy attack keeps
   | 'statusDuration' // longer DoTs = more ticks
+  | 'slamDamage' // Seismic Wave, its own multiplier on slams ("multiplicative to base damage")
+  | 'throwDamage' // Power Throw, its own multiplier on glaive throws ("multiplicative to ... Pressure Point")
 
 export type ModEffect =
   | { kind: 'stat'; stat: StatKey; value: number }
@@ -33,12 +35,55 @@ export type ModEffect =
   | { kind: 'damageMultiplier'; value: number } // separate multiplier, e.g. Longbow Sharpshot's next shot bonus
   | { kind: 'lockMultishot' } // Primary/Pistol Acuity: multishot mods stop working
   | { kind: 'heavyScaledCritChance'; value: number; heavyFactor: number } // "(x2 for Heavy Attacks)"
+  | { kind: 'duplicateOnCrit'; value: number } // Melee Duplicate: crits strike a second time
+  | { kind: 'frameStat'; stat: FrameStat; value: number } // Warframe stats (mods and Warframe arcanes), see warframeStats.ts
+
+// armor/health are flat ("+900 Armor"), the *Percent ones % of base, damageResistance is one multiplicative DR source
+export type FrameStat = 'armor' | 'armorPercent' | 'health' | 'healthPercent' | 'shieldPercent' | 'strength' | 'damageResistance'
+
+// Warframe arcanes that buff one weapon type ("+180% Melee Damage to Melee Weapons", "+120% Fire Rate to Pistols")
+export type WeaponScope = 'melee' | 'primary' | 'primaryNoShotgun' | 'secondary' | 'shotgun' | 'sniper' | 'guns'
 
 export interface ConditionalEffect {
   trigger: string // "On Kill:", "On Toxin Status Effect:", "While Overshields Active:" ...
   effect: ModEffect
   maxStacks: number
+  scope?: WeaponScope // only on that weapon type (Warframe arcanes)
 }
+
+// the scope phrases Warframe arcanes use, checked on the raw text before it gets cleaned
+const SCOPES: [RegExp, WeaponScope][] = [
+  [/ to Primary Weapons \(Excludes Shotguns\)/i, 'primaryNoShotgun'],
+  [/ to Primary and Secondary weapons/i, 'guns'],
+  [/ to Primary Weapons| Primary Weapon(?= Damage)/i, 'primary'],
+  [/ to Melee Weapons/i, 'melee'],
+  [/ to Pistols| on Secondary Weapon/i, 'secondary'],
+  [/ to Shotguns/i, 'shotgun'],
+  [/ to Sniper Rifles/i, 'sniper'],
+]
+export function scopeApplies(scope: WeaponScope | undefined, weapon: { category: string; type: string }) {
+  switch (scope) {
+    case undefined: return true
+    case 'melee': return weapon.category === 'Melee'
+    case 'primary': return weapon.category === 'Primary'
+    case 'primaryNoShotgun': return weapon.category === 'Primary' && weapon.type !== 'Shotgun'
+    case 'secondary': return weapon.category === 'Secondary'
+    case 'shotgun': return weapon.type === 'Shotgun'
+    case 'sniper': return weapon.type === 'Sniper'
+    case 'guns': return weapon.category !== 'Melee'
+  }
+}
+
+const FRAME_STAT_PATTERNS: [RegExp, FrameStat][] = [
+  [/^\+([\d,.]+) Armor$/, 'armor'],
+  [/^([+-][\d.]+)% Armor$/, 'armorPercent'],
+  [/^\+([\d,.]+) Max Health$/, 'health'],
+  [/^([+-][\d.]+)% Health$/, 'healthPercent'],
+  [/^([+-][\d.]+)% Shield Capacity$/, 'shieldPercent'],
+  [/^([+-][\d.]+)% Ability Strength$/, 'strength'],
+  // Adaptation is per damage type, against one kind of enemy that's all of it
+  [/^([+-][\d.]+)% (?:[Dd]amage [Rr]esistance|Resistance to that Damage Type)$/, 'damageResistance'],
+]
 
 export interface ParsedUpgrade {
   effects: ModEffect[]
@@ -62,6 +107,8 @@ const STAT_PATTERNS: [RegExp, StatKey][] = [
   [/^([+-][\d.]+)% Heavy Attack Wind Up Speed$/, 'heavyWindUpSpeed'],
   [/^([+-][\d.]+)% Heavy Attack Efficiency$/, 'heavyEfficiency'],
   [/^([+-][\d.]+)% Status Duration$/, 'statusDuration'],
+  [/^([+-][\d.]+)% Slam Attack Damage$/, 'slamDamage'],
+  [/^([+-][\d.]+)% Throw Damage$/, 'throwDamage'],
   [/^([+-][\d.]+)% Critical Damage$/, 'critDamage'],
   [/^([+-][\d.]+)% Multishot$/, 'multishot'],
   [/^([+-][\d.]+)% (?:Fire Rate|Attack Speed)(?: \(x[\d.]+ for Bows\))?$/, 'fireRate'],
@@ -99,6 +146,17 @@ export function parseStatLine(line: string): ModEffect | null {
   const slashOnImpactMatch = line.match(/^Impact Status Effects have ([\d.]+)% chance to apply a Slash Status Effect/)
   if (slashOnImpactMatch) return { kind: 'slashOnImpact', value: percent(slashOnImpactMatch[1]) }
 
+  const duplicateMatch = line.match(/^\+?([\d.]+)% chance for your attack to strike a second time$/)
+  if (duplicateMatch) return { kind: 'duplicateOnCrit', value: percent(duplicateMatch[1]) }
+
+  for (const [pattern, stat] of FRAME_STAT_PATTERNS) {
+    const match = line.match(pattern)
+    if (match) {
+      const number = Number(match[1].replace(/,/g, ''))
+      return { kind: 'frameStat', stat, value: stat === 'armor' || stat === 'health' ? number : number / 100 }
+    }
+  }
+
   const overguardMatch = line.match(/^Deals x([\d.]+) Extra Damage to Overguard\.?$/)
   if (overguardMatch) return { kind: 'overguardMultiplier', value: Number(overguardMatch[1]) }
 
@@ -113,6 +171,8 @@ const cleanConditionalBody = (body: string) => {
     .replace(/\s+on (?:your )?next shot\.?$/i, '')
     .replace(/\s+on Melee strikes/i, '')
     .replace(/\s+for [\d.]+s\.?.*$/, '')
+    .replace(/\.?\s*Stacks up to .*$/i, '') // Molt Augmented / Arcane Blessing: "+24 Max Health. Stacks up to 50x."
+    .replace(/^[\d.]+% chance (?:for|to) (?=[+-]?\d)/i, '') // Warframe arcanes: "21% chance for +45% Critical Chance", the stack toggle is the proc
     .replace(/\.$/, '')
     .trim()
   return /^\d/.test(cleaned) ? `+${cleaned}` : cleaned // "60% Corrosive" -> "+60% Corrosive"
@@ -139,8 +199,14 @@ function parseUpgradeUncached(levelStats: string[][], rank: number): ParsedUpgra
   const splitSegments = (line: string) => line.split(/\\n|\n/).map((segment) => segment.trim()).filter(Boolean)
   const standaloneLines = new Set(lines.filter((line) => splitSegments(line).length === 1).map((line) => line.trim()))
 
-  const addConditional = (trigger: string, body: string) => {
-    const stackCount = body.match(/Stacks up to (\d+)x/)
+  const addConditional = (trigger: string, rawBody: string) => {
+    // "+180% Melee Damage to Melee Weapons" -> melee only, and the phrase goes so the stat parses
+    const scopeMatch = SCOPES.find(([pattern]) => pattern.test(rawBody))
+    // Arcane Blade Charger just says "+300% Melee Damage"
+    const scope = scopeMatch?.[1] ?? (/\bMelee Damage\b/.test(rawBody) ? 'melee' : undefined)
+    const body = scopeMatch ? rawBody.replace(scopeMatch[0], '') : rawBody
+    // "Stacks up to 3x", or Power Throw's "On Consecutive throw (Max stacks 3):"
+    const stackCount = body.match(/Stacks up to (\d+)x/) ?? trigger.match(/Max stacks (\d+)/i)
     // Cascadia Flare: "+12% ... Stacks up to 480%", Melee Animosity: "42% Critical Chance on your next Heavy Attack, up to 420%"
     const stackPercentCap = body.match(/(?:Stacks|,) up to ([\d.]+)%/)
     const parts = cleanConditionalBody(body).split(/\s+and\s+(?=[+-]?\d)/)
@@ -160,7 +226,7 @@ function parseUpgradeUncached(levelStats: string[][], rank: number): ParsedUpgra
       if (stackPercentCap && 'value' in effect && effect.value > 0) {
         maxStacks = Math.round(percent(stackPercentCap[1]) / effect.value)
       }
-      parsed.conditionals.push({ trigger, effect, maxStacks })
+      parsed.conditionals.push({ trigger, effect, maxStacks, ...(scope ? { scope } : {}) })
     }
   }
 
@@ -170,6 +236,15 @@ function parseUpgradeUncached(levelStats: string[][], rank: number): ParsedUpgra
 
     for (const segment of segments) {
       if (segments.length > 1 && standaloneLines.has(segment)) continue // it gets parsed on its own line
+      if (/^\+1 Arcane Revive$/.test(segment)) continue
+      // Arcane Double Back: "Gain +25% damage resistance for 4s per Dodge, Double Jump and Bullet Jump. Stacks up to 3x."
+      const movementDr = segment.match(/^Gain \+?([\d.]+)% damage resistance for [\d.]+s per (.+?)\. Stacks up to (\d+)x/i)
+      if (movementDr) {
+        parsed.conditionals.push({
+          trigger: `Per ${movementDr[2]}:`, effect: { kind: 'frameStat', stat: 'damageResistance', value: percent(movementDr[1]) }, maxStacks: Number(movementDr[3]),
+        })
+        continue
+      }
       if (segment.endsWith(':')) {
         trigger = segment
         continue

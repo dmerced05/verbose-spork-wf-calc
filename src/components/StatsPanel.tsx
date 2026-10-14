@@ -162,7 +162,13 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
           <tr><td>Normal hit</td><td><DamageNumber value={result.hit.normal} /></td></tr>
           <tr><td>Crit hit ({CRIT_TIER_NAMES[Math.min(result.critTier, 3)]})</td><td><DamageNumber value={result.hit.crit} /></td></tr>
           <tr><td>Average hit</td><td><DamageNumber value={result.hit.average} /></td></tr>
-          <tr><td>Average shot (× multishot)</td><td>{formatNumber(result.averageShot)}</td></tr>
+          <tr>
+            <td>{result.duplicateStrikes > 1 ? `Average attack (× ${formatNumber(result.duplicateStrikes, 2)} strikes, Melee Duplicate)` : 'Average shot (× multishot)'}</td>
+            <td>{formatNumber(result.averageShot)}</td>
+          </tr>
+          <tr title="Every pellet/strike plus the full DoT of each proc this one attack lands (forced procs included)">
+            <td>Whole attack (hit + its procs)</td><td>{formatNumber(result.attackTotal)}</td>
+          </tr>
         </tbody>
       </table>
 
@@ -277,6 +283,18 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
           ))}
         </>
       )}
+
+      {/* every conditional the numbers above assume, so nothing reads as free damage */}
+      <div className="requirements">
+        <h3>This build assumes</h3>
+        {result.requirements.length > 0 ? (
+          <ul>
+            {result.requirements.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        ) : (
+          <p>Nothing conditional, these numbers hold on any hit.</p>
+        )}
+      </div>
 
       {result.unparsed.length > 0 && (
         <>

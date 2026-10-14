@@ -1,7 +1,7 @@
 // checks the calc against worked examples from the wiki. run with: npm run check
 import { calculate, type CalcInput } from '../src/calc/damage'
 import { STATUS_TYPES } from '../src/calc/constants'
-import { arcanes, mods, warframes, weapons } from '../src/data'
+import { arcanes, getCompatibleMods, mods, warframes, weapons } from '../src/data'
 import { warframeTotals } from '../src/calc/warframeStats'
 import { scaleArmor, scaleHealth } from '../src/calc/target'
 import { estimateKill } from '../src/calc/kill'
@@ -14,6 +14,7 @@ import { defaultConditionalStacks, parseUpgrade } from '../src/calc/parseMod'
 import { optimizeAttack } from '../src/optimizer/optimize'
 import { objectiveById } from '../src/optimizer/objectives'
 import type { Attack, Debuffs, EquippedMod, Mod, Weapon } from '../src/types'
+import { canSubsumeInto, type WarframeState } from '../src/data/warframeAbilities'
 type EquippedModList = EquippedMod[]
 
 let failures = 0
@@ -510,7 +511,7 @@ expectClose('Galatine Prime heavy unchanged', heavyBase('Galatine Prime', 'fullC
 expectClose('Thalys has Incarnon evolutions', getIncarnonTiers('Thalys')?.length ?? 0, 4)
 // ---- Warframe abilities (src/data/warframeAbilities.ts) ----
 const withAbilities = (ids: string[], abilityStrength = 1, armor = 0) =>
-  ({ roar: 0, warframe: { frameName: 'None', abilityStrength, teammateStrength: abilityStrength, armor, abilities: Object.fromEntries(ids.map((id) => [id, true])) } })
+  ({ roar: 0, warframe: { frameName: 'None', abilityStrength, teammateStrength: abilityStrength, armor, casts: ids.map((id) => ({ id, by: 'self' as const })) } })
 const plainShotAttack = testAttack({ impact: 100 })
 const plainHit = run(plainShotAttack).hit.average
 // Roar at 175% strength: +87.5% faction damage (a neutral target has no faction, so check it against Grineer)
@@ -529,17 +530,129 @@ expectClose('Primary Bulwark from Warframe armor (1,300 armor = +300%)',
 // Warframe panel: strength/armor/auras from the equipped Warframe mods (src/calc/warframeStats.ts)
 const frameNamed = (name: string) => warframes.find((frame) => frame.name === name)!
 const wfMod = (name: string) => { const mod = mods.find((candidate) => candidate.name === name && candidate.type === 'Warframe Mod')!; return { mod, rank: mod.fusionLimit } }
-const wfBuild = (frameName: string, modNames: string[]) => warframeTotals({ frame: frameNamed(frameName), mods: modNames.map(wfMod), extraStrength: 0, extraArmor: 0, teammateStrength: 1, abilities: {} })
+const wfBuild = (frameName: string, modNames: string[]) => warframeTotals({ frame: frameNamed(frameName), mods: modNames.map(wfMod), extraStrength: 0, extraArmor: 0, teammateStrength: 1, casts: [], arcanes: [] })
 expectClose('Intensify + Blind Rage = 229% strength', wfBuild('Rhino', ['Intensify', 'Blind Rage']).abilityStrength, 1 + 0.3 + 0.99)
 expectClose('Steel Fiber doubles armor', wfBuild('Rhino', ['Steel Fiber']).armor, frameNamed('Rhino').armor * 2)
 expectClose('Steel Charge +60% melee', wfBuild('Jade', ['Steel Charge', 'Rifle Amp']).auraDamage.melee, 0.6)
 expectClose('Jade has two aura slots', frameNamed('Jade').auraPolarities.length, 2)
 expectClose('Corrosive Projection counted', wfBuild('Jade', ['Corrosive Projection']).corrosiveProjections, 1)
 // own frame's abilities use your strength, others the teammate's
-const rhinoState = { frameName: 'Rhino', abilityStrength: 2, teammateStrength: 1, armor: 0, abilities: { roar: true, eclipse: true } }
+const rhinoState: WarframeState = { frameName: 'Rhino', abilityStrength: 2, teammateStrength: 1, armor: 0, casts: [{ id: 'roar', by: 'self' }] }
 expectClose('Roar at your 200% strength', run(plainShotAttack, { buffs: { roar: 0, warframe: rhinoState }, target: grineerTarget }).factionMultiplier, 2)
-expectClose('Eclipse at teammate 100% strength', run(plainShotAttack, { buffs: { roar: 0, warframe: { ...rhinoState, abilities: { eclipse: true } } } }).hit.average, plainHit * 3)
-expectClose('Steel Charge on melee via aura damage', runMelee(swing, { buffs: { roar: 0, warframe: { ...rhinoState, abilities: {}, auraDamage: { melee: 0.6, rifle: 0, sniper: 0, pistol: 0, shotgun: 0 } } } }).hit.normal, 160)
+expectClose('ally Eclipse at teammate 100% strength', run(plainShotAttack, { buffs: { roar: 0, warframe: { ...rhinoState, casts: [{ id: 'eclipse', by: 'ally' }] } } }).hit.average, plainHit * 3)
+// subsumed: your strength, Helminth numbers (Roar 30%, Nourish 45%)
+expectClose('subsumed Roar 30% x your 200% strength', run(plainShotAttack, { buffs: { roar: 0, warframe: { ...rhinoState, frameName: 'Chroma', casts: [{ id: 'roar', by: 'helminth' }] } }, target: grineerTarget }).factionMultiplier, 1.6)
+const nourishSubsumed = run(testAttack({ impact: 100 }), { buffs: { roar: 0, warframe: { ...rhinoState, casts: [{ id: 'nourish', by: 'helminth' }] } } })
+expectClose('subsumed Nourish 45% viral x 200%', typeValue(nourishSubsumed, 'viral'), Math.floor(0.9 * 32 + 0.5) / 32 * 100)
+expectClose('Excalibur passive needs you on Excalibur', runMelee(swing, { buffs: { roar: 0, warframe: { ...rhinoState, casts: [{ id: 'excaliburPassive', by: 'ally' }] } } }).hit.normal, 100)
+expectClose('Roar can only replace damage buffs', canSubsumeInto('Chroma', 'Vex Armor', 'Roar') && !canSubsumeInto('Chroma', 'Effigy', 'Roar') && !canSubsumeInto('Saryn', 'Molt', 'Roar') && canSubsumeInto('Saryn', 'Molt', 'Nourish') ? 1 : 0, 1)
+expectClose('Steel Charge on melee via aura damage', runMelee(swing, { buffs: { roar: 0, warframe: { ...rhinoState, casts: [], auraDamage: { melee: 0.6, rifle: 0, sniper: 0, pistol: 0, shotgun: 0 } } } }).hit.normal, 160)
+
+// ---- survivability (src/calc/warframeStats.ts) ----
+const valkyr = frameNamed('Valkyr')
+const defense = (frameName: string, modNames: string[], casts: { id: string; by: 'self' | 'helminth' | 'ally' }[], extra: Partial<Parameters<typeof warframeTotals>[0]> = {}) =>
+  warframeTotals({ frame: frameNamed(frameName), mods: modNames.map(wfMod), extraStrength: 0, extraArmor: 0, teammateStrength: 1, casts, arcanes: [], ...extra })
+// Warcry wiki: Base Armor x (1 + Armor Mods + Warcry x (1 + Strength Mods))
+const warcryValkyr = defense('Valkyr', ['Steel Fiber', 'Intensify'], [{ id: 'warcry', by: 'self' }])
+expectClose('Warcry armor: base x (1 + mods + 50% x strength)', warcryValkyr.armor, Math.round(valkyr.armor * (1 + 1 + 0.5 * 1.3)))
+expectClose('armor DR = armor / (armor + 300)', warcryValkyr.healthDr, warcryValkyr.armor / (warcryValkyr.armor + 300))
+// Null Star 12 x 5% = 60%, multiplies with armor DR (health) and the shields' innate 50% (shields)
+const nova = defense('Nova', [], [{ id: 'nullStar', by: 'self' }])
+const novaArmorDr = nova.armor / (nova.armor + 300)
+expectClose('Null Star x armor on health', nova.healthDr, 1 - (1 - novaArmorDr) * 0.4)
+expectClose('Null Star x innate 50% on shields', nova.shieldDr, 1 - 0.5 * 0.4)
+expectClose('Null Star from an ally does nothing for you', defense('Rhino', [], [{ id: 'nullStar', by: 'ally' }]).drSources.length, 2)
+expectClose('subsumed Null Star capped at 75%', defense('Rhino', ['Intensify', 'Transient Fortitude', 'Blind Rage'], [{ id: 'nullStar', by: 'helminth' }]).drSources.find((source) => source.label.startsWith('Null Star'))!.value, 0.75)
+expectClose('Vitality +100% health', defense('Rhino', ['Vitality'], []).health, frameNamed('Rhino').health * 2)
+const guardian = arcanes.find((arcane) => arcane.name === 'Arcane Guardian')!
+expectClose('Arcane Guardian +900 flat armor', defense('Rhino', [], [], { arcanes: [{ arcane: guardian, rank: 5, conditionalStacks: 1 }] }).armor, frameNamed('Rhino').armor + 900)
+// Warframe arcanes on weapons: Arcane Avenger is flat crit after mods (wiki: 25% x (1 + 120%) + 60% + 45%), Arcane Fury melee only
+const frameArcane = (name: string) => ({ arcaneId: arcanes.find((arcane) => arcane.name === name)!.uniqueName, rank: 5, conditionalStacks: 1 })
+const withFrameArcane = (name: string): CalcInput['buffs'] => ({ roar: 0, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 1, armor: 0, casts: [], arcanes: [frameArcane(name)] } })
+expectClose('Arcane Avenger +45 points after mods', runMelee(swing, { mods: [meleeMod('True Steel')], buffs: withFrameArcane('Arcane Avenger') }).critChance, 0.2 * 2.2 + 0.45)
+expectClose('Arcane Fury +180% on melee', runMelee(swing, { buffs: withFrameArcane('Arcane Fury') }).hit.normal, 280)
+expectClose('Arcane Fury skips guns', run(testAttack({ impact: 100 }), { buffs: withFrameArcane('Arcane Fury') }).hit.normal, 100)
+
+// ---- damage augments ----
+const castState = (casts: WarframeState['casts'], frameName = 'None'): CalcInput['buffs'] => ({ roar: 0, warframe: { frameName, abilityStrength: 1, teammateStrength: 1, armor: 0, casts } })
+expectClose('Biting Frost +200% crit chance like a mod (on Frost)', runMelee(swing, { buffs: castState([{ id: 'bitingFrost', by: 'self' }], 'Frost') }).critChance, 0.2 * 3)
+expectClose('Biting Frost needs you on Frost', runMelee(swing, { buffs: castState([{ id: 'bitingFrost', by: 'ally' }]) }).critChance, 0.2)
+const shockTrooper = run(testAttack({ impact: 50, heat: 50 }), { buffs: castState([{ id: 'shockTrooper', by: 'ally' }]) })
+expectClose('Shock Trooper electricity stays uncombined (no radiation)', shockTrooper.damageTypes.some((row) => row.damageType === 'radiation') ? 0 : 1, 1)
+const primaryShot = (extra: CalcInput['buffs']) => run(testAttack({ impact: 100 }, { critChance: 0.2 }), { weapon: { ...testWeapon(testAttack({ impact: 100 })), category: 'Primary' }, buffs: extra })
+expectClose('Thrall Pact 4 thralls = +100% primary damage', primaryShot(castState([{ id: 'thrallPact', by: 'self', stacks: 4 }], 'Revenant')).hit.normal, 200)
+expectClose('Teeming Virulence skips secondaries', run(testAttack({ impact: 100 }, { critChance: 0.2 }), { weapon: { ...testWeapon(testAttack({ impact: 100 })), category: 'Secondary' }, buffs: castState([{ id: 'teemingVirulence', by: 'self' }], 'Nidus') }).critChance, 0.2)
+// Thermal Transfer: heat (hold) / cold (tap) / both = Blast "equaling the sum", x strength, doesn't combine
+const strongCast = (id: string): CalcInput['buffs'] => ({ roar: 0, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 2, armor: 0, casts: [{ id, by: 'ally' }] } })
+const ttBlast = run(testAttack({ impact: 100 }), { buffs: strongCast('thermalTransferBlast') })
+expectClose('Thermal Transfer both = 150% Blast x 200% strength', typeValue(ttBlast, 'blast'), 300)
+const ttHeat = run(testAttack({ impact: 50, cold: 50 }, { statusChance: 1 }), { buffs: strongCast('thermalTransferHeat') })
+expectClose('Thermal Transfer heat stays uncombined (no blast)', ttHeat.damageTypes.some((row) => row.damageType === 'blast') ? 0 : 1, 1)
+const plainHeatTick = run(testAttack({ impact: 50, heat: 50 }, { statusChance: 1 })).dots.find((dot) => dot.damageType === 'heat')!.tick.normal
+const ttHeatTick = run(testAttack({ impact: 50, heat: 50 }, { statusChance: 1 }), { buffs: strongCast('thermalTransferHeat') }).dots.find((dot) => dot.damageType === 'heat')!.tick.normal
+expectClose('Thermal Transfer heat adds to heat DoTs like a mod (+150%)', ttHeatTick / plainHeatTick, 2.5)
+
+// Smite Infusion wiki example: 100 Impact + Hellfire + Smite Infusion at 110% strength = 100 Impact, 90 Heat, 110 Radiation,
+// procs 100/300 Impact, 90/300 Heat, 110/300 Radiation
+const smiteBuffs: CalcInput['buffs'] = { roar: 0, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 1.1, armor: 0, casts: [{ id: 'smiteInfusion', by: 'ally' }] } }
+const smiteExample = run(testAttack({ impact: 100 }), { mods: [maxed('Hellfire')], buffs: smiteBuffs })
+expectClose('Smite Infusion example: heat 90 (quantized)', typeValue(smiteExample, 'heat'), Math.floor(0.9 * 32 + 0.5) / 32 * 100)
+expectClose('Smite Infusion example: radiation 110 (quantized)', typeValue(smiteExample, 'radiation'), Math.floor(1.1 * 32 + 0.5) / 32 * 100)
+expectClose('Smite Infusion example: radiation proc share ~110/300', smiteExample.damageTypes.find((row) => row.damageType === 'radiation')!.procShare, typeValue(smiteExample, 'radiation') / (100 + typeValue(smiteExample, 'heat') + typeValue(smiteExample, 'radiation')))
+// Shock Trooper: electricity takes no proc share, one guaranteed Electricity proc per hit instead
+const shockBuffs: CalcInput['buffs'] = { roar: 0, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 1, armor: 0, casts: [{ id: 'shockTrooper', by: 'ally' }] } }
+const shockExample = run(testAttack({ impact: 100 }, { statusChance: 0 }), { buffs: shockBuffs })
+expectClose('Shock Trooper adds 100% electricity', typeValue(shockExample, 'electricity'), 100)
+expectClose('Shock Trooper electricity takes no proc share', shockExample.damageTypes.find((row) => row.damageType === 'electricity')!.procShare, 0)
+expectClose('Shock Trooper forces 1 electricity proc per hit', shockExample.dots.find((dot) => dot.damageType === 'electricity')!.procsPerSecond, 1)
+// two of the same buff: only the strongest
+const twoRoars: CalcInput['buffs'] = { roar: 0, warframe: { frameName: 'Rhino', abilityStrength: 2, teammateStrength: 1, armor: 0, casts: [{ id: 'roar', by: 'self' }, { id: 'roar', by: 'ally' }] } }
+expectClose('two Roars: only the strongest applies', run(plainShotAttack, { buffs: twoRoars, target: grineerTarget }).factionMultiplier, 2)
+
+// requirement list
+const deadheadArcane = arcanes.find((arcane) => arcane.name === 'Primary Deadhead')!
+const needs = run(plainShotAttack, {
+  mods: [{ ...maxed('Galvanized Chamber'), conditionalStacks: 5 }], arcane: { arcane: deadheadArcane, rank: deadheadArcane.levelStats.length - 1, conditionalStacks: 1 },
+  buffs: castState([{ id: 'bitingFrost', by: 'self' }], 'Frost'),
+}).requirements
+console.log('requirements:', needs)
+expectClose('requirements list kills, headshot kills and frozen targets',
+  needs.some((line) => /Galvanized Chamber: on Kill/i.test(line)) && needs.some((line) => /Deadhead: on Weak Point Kill/i.test(line)) && needs.some((line) => /frozen/.test(line)) ? 1 : 0, 1)
+
+// ---- glaives: the heavy detonation (Recall Explosion) ----
+const glaivePrime = named('Glaive Prime')
+const detonation = glaivePrime.attacks.find((attack) => attack.name === 'Charged Throw Recall Explosion')!
+const runGlaive = (attack: Attack, overrides: Partial<CalcInput> = {}) => run(attack, { weapon: glaivePrime, ...overrides })
+expectClose('glaive detonation is a heavy', detonation.heavy ? 1 : 0, 1)
+// overframe heavy detonation guide: 1,184 x 3.85 (Primed Pressure Point + Killing Blow) x 2 combo = 9,116.8
+expectClose('Glaive Prime detonation modded base (PPP + Killing Blow, 2x combo)',
+  runGlaive(detonation, { mods: [meleeMod('Primed Pressure Point'), meleeMod('Killing Blow')], buffs: { roar: 0, combo: 2 } }).moddedBaseDamage, 1184 * 3.85 * 2)
+// "Condition Overload does not affect the explosion"
+expectClose('CO skips the detonation', resolveCoBehavior(glaivePrime, detonation).mode === 'none' ? 1 : 0, 1)
+// "Explosion inflicts a guaranteed Impact and Slash proc": one of each per detonation even at 0% status
+const forcedOnly = runGlaive({ ...detonation, statusChance: 0 })
+expectClose('forced Slash proc per detonation', forcedOnly.dots.find((dot) => dot.damageType === 'slash')!.procsPerSecond / forcedOnly.fireRate, 1)
+// Sacrificial Steel is x2 on the detonation
+expectClose('Sacrificial Steel x2 on the detonation', runGlaive(detonation, { mods: [meleeMod('Sacrificial Steel')] }).critChance, 0.26 * (1 + 4.4))
+expectClose('Glaive mods (Thrown Melee) fit glaives', getCompatibleMods(glaivePrime).some((mod) => mod.name === 'Power Throw') ? 1 : 0, 1)
+expectClose('...and not swords', getCompatibleMods(named('Skana')).some((mod) => mod.name === 'Power Throw') ? 1 : 0, 0)
+// Power Throw: 3 stacks of +100% throw damage, its own multiplier, only on the throw itself
+const throwAttack = glaivePrime.attacks.find((attack) => attack.name === 'Charged Throw')!
+const powerThrow = { ...meleeMod('Power Throw'), conditionalStacks: 3 }
+expectClose('Power Throw x4 on the throw', runGlaive(throwAttack, { mods: [powerThrow] }).hit.normal / runGlaive(throwAttack).hit.normal, 4)
+expectClose('Power Throw not on the explosion', runGlaive(detonation, { mods: [powerThrow] }).hit.normal / runGlaive(detonation).hit.normal, 1)
+// Seismic Wave: +200% slam damage, multiplicative with Pressure Point
+const slam = glaivePrime.attacks.find((attack) => attack.name === 'Slam Attack')!
+expectClose('Seismic Wave x3 on slams, x Pressure Point',
+  runGlaive(slam, { mods: [meleeMod('Seismic Wave'), meleeMod('Primed Pressure Point')] }).hit.normal / runGlaive(slam).hit.normal, 3 * 2.65)
+// Melee Duplicate: crits strike a second time. at 100%+ crit every hit doubles, the single hit stays one instance
+const duplicate = arcanes.find((arcane) => arcane.name === 'Melee Duplicate')!
+const withDuplicate = runGlaive(detonation, {
+  mods: [meleeMod('Sacrificial Steel'), meleeMod('Blood Rush')], buffs: { roar: 0, combo: 12 },
+  arcane: { arcane: duplicate, rank: duplicate.levelStats.length - 1, conditionalStacks: 1 },
+})
+expectClose('Melee Duplicate doubles a 100%+ crit detonation', withDuplicate.averageShot / withDuplicate.hit.average, 2)
+expectClose('whole attack = 2 strikes + their procs', withDuplicate.attackTotal > withDuplicate.averageShot ? 1 : 0, 1)
 
 // sanity: standard Braton Prime build, element combining in slot order
 const braton = weapons.find((weapon) => weapon.name === 'Braton Prime')!

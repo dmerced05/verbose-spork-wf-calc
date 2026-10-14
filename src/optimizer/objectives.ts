@@ -3,7 +3,7 @@ import type { HeavyMode } from '../data/heavyAttacks'
 
 // what the leaderboard can rank by. each one is optimized separately, since the best build for sustained DPS
 // (magazine/reload mods matter) isn't the best one for a single hit (fire rate doesn't matter at all)
-export type ObjectiveId = 'sustained' | 'window3' | 'window10' | 'window30' | 'single'
+export type ObjectiveId = 'sustained' | 'window3' | 'window10' | 'window30' | 'single' | 'attack'
 
 export interface Objective {
   id: ObjectiveId
@@ -40,6 +40,16 @@ export const OBJECTIVES: Objective[] = [
     description: 'One hit from one projectile (or one melee swing), crits averaged in, DoTs not included',
     usesFireRate: false,
     score: (result) => result.hit.average,
+  },
+  {
+    // what a heavy / glaive detonation actually does: Glaive Prime's detonation lives on its forced Slash proc,
+    // and Melee Duplicate's second strike is its own damage instance, so neither shows up in the single-hit score
+    id: 'attack',
+    label: 'Whole attack (hit + procs)',
+    unit: 'per attack',
+    description: 'Everything one attack does to the target: every pellet (and Melee Duplicate strike), crits averaged in, plus the full DoT of every proc it lands (Slash bleed, Heat burn...). One target, no fire rate',
+    usesFireRate: false,
+    score: (result) => result.attackTotal,
   },
 ]
 

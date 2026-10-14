@@ -5,7 +5,7 @@ import { STATUS_TYPES } from '../calc/constants'
 import type { Buffs, Debuffs, TargetSettings } from '../types'
 
 export const SCENARIO_DESCRIPTION =
-  'Neutral target (no faction, no armor, body shots), mod/arcane conditionals at max stacks (headshot-hit triggers off, headshot-kill triggers like Deadhead on, melee-kill triggers on guns and armor thresholds like Bulwark at half; ties go to the arcane with headshot/reload value), Condition Overload/Galvanized count only the build\'s own damage types, melee at max combo (12x) with heavy attacks ranked by single hit only, rank 30 with enough Forma (capacity ignored), no rivens.'
+  'Neutral target (no faction, no armor, body shots), mod/arcane conditionals at max stacks (headshot-hit triggers off, headshot-kill triggers like Deadhead on, melee-kill triggers on guns and armor thresholds like Bulwark at half; ties go to the arcane with headshot/reload value), Condition Overload/Galvanized count only the build\'s own damage types, melee at max combo (12x) with heavy attacks (glaive detonations included) ranked by single hit or whole attack only, rank 30 with enough Forma (capacity ignored), no rivens.'
 
 export const SCENARIO_TARGET: TargetSettings = {
   faction: 'None',

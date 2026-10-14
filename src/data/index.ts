@@ -3,7 +3,8 @@ import modsJson from './mods.json'
 import enemiesJson from './enemies.json'
 import arcanesJson from './arcanes.json'
 import warframesJson from './warframes.json'
-import type { Arcane, Enemy, Mod, Warframe, Weapon } from '../types'
+import helminthJson from './helminth.json'
+import type { Arcane, Enemy, Mod, Warframe, WarframeAbilityInfo, Weapon } from '../types'
 
 // these JSON files come from scripts/build-data.mjs (runs on npm install / dev / build)
 export const weapons = weaponsJson as Weapon[]
@@ -20,10 +21,18 @@ export const warframesById = new Map(warframes.map((frame) => [frame.uniqueName,
 // "Frost Prime" -> "Frost", what augments use as their compatName and what abilities are listed under
 export const warframeBaseName = (name: string) => name.replace(/ (Prime|Umbra)$/, '')
 
-// Warframe mods: generic ones, auras, and this frame's augments
-export function getWarframeMods(frame: Warframe): Mod[] {
+// "Freeze Augment: Hold to cast..." -> Freeze. augments name their ability at the start of the text
+export const augmentAbility = (mod: Mod) => (mod.levelStats.at(-1)?.[0] ?? '').match(/^(.+?) Augment ?:/)?.[1] ?? null
+export const helminthAbilities = helminthJson as WarframeAbilityInfo[]
+
+// Warframe mods: generic ones, auras, this frame's augments, and the augments of a subsumed ability
+// (wiki: subsuming "will offer Freeze and its augments to be used by other Warframes")
+export function getWarframeMods(frame: Warframe, subsumed?: { warframe: string; ability: string } | null): Mod[] {
   const baseName = warframeBaseName(frame.name)
-  return mods.filter((mod) => mod.type === 'Warframe Mod' && (mod.compatName === 'WARFRAME' || mod.compatName === 'AURA' || mod.compatName === baseName))
+  return mods.filter((mod) => mod.type === 'Warframe Mod' && (
+    mod.compatName === 'WARFRAME' || mod.compatName === 'AURA' || mod.compatName === baseName ||
+    (subsumed && mod.compatName === subsumed.warframe && augmentAbility(mod) === subsumed.ability)
+  ))
 }
 export const isAuraMod = (mod: Mod) => mod.compatName === 'AURA'
 export const modsById = new Map(mods.map((mod) => [mod.uniqueName, mod]))
@@ -40,6 +49,9 @@ const SUBTYPE_COMPAT: Record<string, (weapon: Weapon) => boolean> = {
   Sniper: (weapon) => weapon.type === 'Sniper',
   Bow: (weapon) => weapon.type === 'Bow' || weapon.isBow,
   'Assault Rifle': (weapon) => weapon.type === 'Rifle',
+  // melee class mods. the export has no melee class field, so glaives come from build-data's list and daggers from the path
+  'Thrown Melee': (weapon) => Boolean(weapon.isGlaive),
+  Daggers: (weapon) => /\/Melee\/Dagger\//i.test(weapon.uniqueName),
 }
 
 export function getCompatibleMods(weapon: Weapon): Mod[] {

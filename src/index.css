@@ -26,12 +26,22 @@ h3 { margin: 16px 0 8px; font-size: 0.9rem; color: var(--muted); }
 .spread { justify-content: space-between; }
 .muted { color: var(--muted); font-size: 0.85rem; margin: 8px 0 0; }
 
+/* flat controls everywhere: appearance: none drops the native (Safari/macOS) button and select shading */
 input, select, button {
+  -webkit-appearance: none; appearance: none;
   background: var(--bg); color: var(--text); border: 1px solid var(--border);
-  border-radius: 6px; padding: 6px 8px; font: inherit;
+  border-radius: 6px; padding: 6px 8px; font: inherit; box-shadow: none;
 }
-button { cursor: pointer; }
-button:hover { border-color: var(--accent); }
+input[type='checkbox'], input[type='radio'] { -webkit-appearance: auto; appearance: auto; padding: 0; accent-color: var(--accent); }
+/* appearance: none also removes the select arrow, so it gets a plain chevron back */
+select {
+  padding-right: 26px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b93a3' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center;
+}
+button { cursor: pointer; transition: border-color 0.12s, background-color 0.12s; }
+button:hover { border-color: var(--accent); background-color: #161a21; }
+button:active { background-color: #1c2029; }
 
 .mod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 .mod-slot { border: 1px solid var(--border); border-radius: 6px; padding: 8px; display: grid; gap: 6px; align-content: start; }
@@ -80,7 +90,7 @@ th:not(:first-child), td:not(:first-child) { text-align: right; }
 .proc-note { margin: 6px 0 0; font-size: 0.72rem; color: var(--muted); }
 
 /* ---- upgrade screen, loosely styled after the in-game arsenal ---- */
-.upgrades { background: linear-gradient(180deg, #161a22 0%, #12151b 100%); }
+.upgrades { background: var(--panel); }
 .upgrades-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .upgrades-header h2 { margin: 0; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500; }
 .accent { color: var(--accent); }
@@ -95,7 +105,7 @@ th:not(:first-child), td:not(:first-child) { text-align: right; }
 
 .mod-card {
   position: relative; min-height: 150px; padding: 8px 8px 10px; border-radius: 6px; cursor: pointer; overflow: hidden;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  background: rgba(255, 255, 255, 0.035);
   border: 1px solid rgba(255, 255, 255, 0.12); display: flex; flex-direction: column; gap: 4px;
   transition: border-color 0.12s, box-shadow 0.12s;
 }
@@ -150,7 +160,7 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .proc-table { table-layout: fixed; }
 .proc-table th:first-child, .proc-table td:first-child { width: 34%; }
 
-.arcane-card { background: linear-gradient(180deg, rgba(120, 160, 255, 0.07), rgba(255, 255, 255, 0.015)); }
+.arcane-card { background: rgba(120, 160, 255, 0.05); }
 .arcane-card.empty { border-style: dashed; }
 .arcane-label { position: relative; font-size: 0.65rem; letter-spacing: 0.12em; text-transform: uppercase; color: #8fb3ff; }
 
@@ -295,20 +305,68 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 
 /* ---- Warframe panel ---- */
 .warframe-panel { border-color: rgba(120, 180, 255, 0.25); }
-.ability-list { display: grid; gap: 4px; }
-.ability { display: grid; grid-template-columns: auto auto 1fr; grid-template-areas: 'box name frame' '. effect effect'; column-gap: 8px; align-items: center;
-  padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
-.ability input { grid-area: box; }
-.ability-name { grid-area: name; font-weight: 600; }
-.ability .muted-inline { grid-area: frame; }
-.ability-effect { grid-area: effect; font-size: 0.75rem; color: var(--muted); }
-.ability.active { border-color: rgba(120, 180, 255, 0.6); background: rgba(120, 180, 255, 0.06); }
-.ability.inactive { opacity: 0.5; }
+.ability-name { font-weight: 600; }
+.ability-effect { font-size: 0.75rem; color: var(--muted); }
+/* the frame's 4 abilities, under the mods */
+.kit-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 640px) { .kit-list { grid-template-columns: 1fr; } }
+.kit-ability { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.82rem; display: grid; gap: 4px; align-content: start; }
+.kit-ability.passive { margin-top: 6px; }
+.kit-ability.active { border-color: rgba(120, 180, 255, 0.6); background: rgba(120, 180, 255, 0.06); }
+.kit-ability.subsumed { border-style: dashed; border-color: rgba(170, 220, 120, 0.55); }
+.kit-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kit-index { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border); display: grid; place-items: center; font-size: 0.7rem; color: var(--muted); }
+.helminth-tag { font-size: 0.7rem; color: rgb(170, 220, 120); }
+.helminth-select { margin-left: auto; font-size: 0.72rem; padding: 2px 4px; max-width: 150px; }
+.kit-description { font-size: 0.74rem; color: var(--muted); line-height: 1.35; }
+.kit-effect { font-size: 0.76rem; display: flex; gap: 6px; align-items: baseline; cursor: pointer; }
+.kit-effect.inactive { opacity: 0.55; }
+/* allies' abilities */
+.ally-row { margin-bottom: 6px; }
+.inline-number { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--muted); }
+.inline-number input { width: 70px; }
+.ally-list { display: grid; gap: 4px; }
+.ally-chip { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 6px 8px; border: 1px solid rgba(120, 180, 255, 0.45); border-radius: 6px; font-size: 0.82rem; }
+.ally-chip.inactive { opacity: 0.5; }
+.remove-inline { margin-left: auto; padding: 0 6px; border: none; background: none; color: var(--muted); font-size: 1rem; }
+.slot-hint { display: block; margin-top: 8px; }
+
+/* every box folds: click its title (the class is toggled in Calculator.tsx) */
+.layout .panel h2 { cursor: pointer; user-select: none; }
+.layout .panel > h2::before, .layout .panel > :first-child h2::before { content: '▾ '; color: var(--muted); font-size: 0.8em; }
+.layout .panel.collapsed > h2::before, .layout .panel.collapsed > :first-child h2::before { content: '▸ '; }
+.layout .panel.collapsed > :not(:first-child) { display: none; }
+.layout .panel.collapsed > h2, .layout .panel.collapsed > :first-child h2 { margin-bottom: 0; }
 .stack-cap { font-size: 0.7rem; color: var(--muted); }
-.warframe-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+.warframe-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
 .warframe-stats div { display: flex; flex-direction: column; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
 .warframe-stats .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .warframe-stats .value { font-size: 1.1rem; color: var(--accent); }
 .warframe-panel .upgrades { margin: 10px 0; padding: 0; border: none; background: none; }
 .side-column.double-aura { grid-template-rows: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 640px) { .warframe-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* leaderboard attack-type filter */
+.kind-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
+.kind-chip { padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; border: 1px solid var(--border); background: transparent; color: var(--muted); opacity: 0.6; }
+.kind-chip.on { opacity: 1; color: var(--text); }
+.kind-chip.on.melee { border-color: rgba(255, 140, 120, 0.6); background: rgba(255, 140, 120, 0.08); }
+.kind-chip.on.gun { border-color: rgba(120, 180, 255, 0.6); background: rgba(120, 180, 255, 0.08); }
+.kind-tag { color: var(--muted); }
+/* text-ish buttons stay see-through on hover */
+.link-button:hover, .remove-inline:hover, .polarity-button:hover { background-color: transparent; }
+/* Warframe arcanes: two slots in a row under the mod grid */
+.arcane-row { display: grid; grid-template-columns: repeat(2, minmax(0, 200px)); gap: 10px; margin-top: 10px; }
+.arcane-row .mod-card { min-height: 120px; }
+/* survivability table */
+.survivability table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.survivability td { padding: 3px 0; border-bottom: 1px solid var(--border); }
+.survivability td:last-child { text-align: right; }
+.survivability tr.total td { font-weight: 600; color: var(--accent); }
+.survivability .row { margin-top: 8px; }
+/* conditional requirements under the results */
+.requirements { margin-top: 14px; padding: 8px 10px; border: 1px solid rgba(255, 100, 100, 0.35); border-radius: 6px; background: rgba(255, 90, 90, 0.05); }
+.requirements h3 { margin: 0 0 6px; color: #ff7b7b; }
+.requirements ul { margin: 0; padding-left: 18px; }
+.requirements li, .requirements p { color: #ff8f8f; font-size: 0.8rem; margin: 2px 0; }
+.kit-stacks { margin-top: 2px; }

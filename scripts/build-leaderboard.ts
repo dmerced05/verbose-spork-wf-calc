@@ -60,7 +60,7 @@ function toShardEntry(build: OptimizedBuild, score: number): ShardEntry {
       burstDps: round(result.totalDps, 1),
       singleHit: round(result.hit.average, 1),
       statusTypes: result.activeStatusTypes,
-      damageTypes: result.damageTypes.slice(0, 4).map((row) => ({ type: row.damageType, share: round(row.modded / (totalModded || 1), 3) })),
+      damageTypes: result.damageTypes.slice(0, 3).map((row) => ({ type: row.damageType, share: round(row.modded / (totalModded || 1), 3) })),
     },
     mods: build.mods.map(({ mod, rank, conditionalStacks }) => [mod.uniqueName, mod.name, rank, conditionalStacks]),
     arcane: build.arcane ? [build.arcane.arcane.uniqueName, build.arcane.arcane.name, build.arcane.rank, build.arcane.conditionalStacks] : null,
@@ -70,8 +70,7 @@ function toShardEntry(build: OptimizedBuild, score: number): ShardEntry {
   }
 }
 
-// one shard: per weapon and objective, the best normal attack and the best Incarnon-form attack (kept apart so
-// the page can toggle Incarnon forms, whose charge/magazine isn't modeled)
+// one shard: every weapon attack x every ranking
 function runShard(shard: number, count: number) {
   const boards = Object.fromEntries(BOARDS.map((board) => [board.key, [] as ShardEntry[]]))
   weapons.forEach((weapon, index) => {
@@ -80,9 +79,8 @@ function runShard(shard: number, count: number) {
     const attacks = weapon.attacks.filter(
       (attack) => Object.values(attack.damage).some((amount) => amount > 0) && !/reload|expiry|turret/i.test(attack.name),
     )
-    const bestByBoard = new Map<string, Map<boolean, { build: OptimizedBuild; score: number }>>()
+    // every attack (component) gets its own listing: slam, heavy slam, heavy attack, alt-fire, Incarnon form...
     for (const attack of attacks) {
-      const isIncarnon = /incarnon/i.test(attack.name)
       const builds = new Map<string, OptimizedBuild>()
       for (const { key, objective, allowFireRateMods } of BOARDS) {
         // heavies use up the combo, so spamming them at max combo isn't real DPS. they only compete for single hits
@@ -94,13 +92,8 @@ function runShard(shard: number, count: number) {
         const without = builds.get(boardKey(objective.id, false))
         if (allowFireRateMods && objective.usesFireRate && without && without.score > (builds.get(key)?.score ?? 0)) builds.set(key, without)
       }
-      for (const [key, build] of builds) {
-        const byForm = bestByBoard.get(key) ?? new Map()
-        bestByBoard.set(key, byForm)
-        if (build.score > (byForm.get(isIncarnon)?.score ?? 0)) byForm.set(isIncarnon, { build, score: build.score })
-      }
+      for (const [key, build] of builds) if (build.score > 0) boards[key].push(toShardEntry(build, build.score))
     }
-    for (const [key, byForm] of bestByBoard) for (const { build, score } of byForm.values()) boards[key].push(toShardEntry(build, score))
     process.stdout.write('.')
   })
   writeFileSync(new URL(`shard-${shard}.json`, CACHE_DIR), JSON.stringify(boards))

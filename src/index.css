@@ -270,3 +270,4 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .headline .range { display: block; font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
 .range-table td, .range-table th { text-align: right; }
 .range-table td:first-child, .range-table th:first-child { text-align: left; }
+.stack-input { width: 64px; }

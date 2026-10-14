@@ -17,7 +17,8 @@ export type PassiveEffect =
   | { kind: 'reloadTime'; seconds: number } // replaces the reload time
   | { kind: 'heavyDetonatesDots' } // Harmony
   | { kind: 'base'; stat: 'critChance' | 'statusChance'; value: number } // added to the weapon's base stat, before mods
-  | { kind: 'separateElement'; damageType: string; value: number } // element that doesn't combine (Tonkkatt), per stack
+  | { kind: 'separateElement'; damageType: string; value: number } // added element: no combining, no proc share (Tonkkatt), per stack
+  | { kind: 'forcedProc'; damageType: string; procsPerHit: number } // guaranteed proc on every hit, per stack
   | { kind: 'magazineMultiplier'; value: number } // x magazine size
 
 export interface WeaponPassive {
@@ -131,9 +132,13 @@ export const PASSIVES: WeaponPassive[] = [
     name: 'Reconifex: perfect reload',
     weapons: ['Reconifex'],
     quote: 'grant the current magazine Heat rounds that inflict 25% more damage with guaranteed status. (reload drops to 1 second)',
-    effects: [{ kind: 'mod', effect: { kind: 'damageMultiplier', value: 0.25 } }, { kind: 'reloadTime', seconds: 1 }],
+    effects: [
+      { kind: 'mod', effect: { kind: 'damageMultiplier', value: 0.25 } },
+      { kind: 'forcedProc', damageType: 'heat', procsPerHit: 1 },
+      { kind: 'reloadTime', seconds: 1 },
+    ],
     condition: 'Timed reloads',
-    note: 'The extra Heat hit is treated as +25% damage, its guaranteed Heat proc isn\'t added.',
+    note: 'The extra Heat hit is treated as +25% damage, plus its guaranteed Heat proc on every hit.',
   },
   {
     name: 'Ekhein: Heavy Insight',
@@ -146,7 +151,7 @@ export const PASSIVES: WeaponPassive[] = [
     name: 'Lesion: Frenzy',
     weapons: ['Lesion'],
     quote: 'Applying a status effect grants the Frenzy buff. (+15% Attack Speed, multiplicative, and +100% Toxin for 6s)',
-    effects: [{ kind: 'fireRateMultiplier', value: 0.15 }, { kind: 'mod', effect: { kind: 'damageType', damageType: 'toxin', value: 1 } }],
+    effects: [{ kind: 'fireRateMultiplier', value: 0.15 }, { kind: 'separateElement', damageType: 'toxin', value: 1 }],
     condition: 'After a status proc',
   },
   {

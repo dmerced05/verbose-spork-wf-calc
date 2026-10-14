@@ -126,6 +126,25 @@ Tonkkatt, Pyrana Prime, Dual Coda Torxica, plus Tekko / Alternox / Epitaph signa
 - Not in the table: signature bonuses that aren't damage (ammo, reload on headshot...), Thalys shards, Catabolyst grenade scaling,
   Vadarya chain lightning, Arca Titron, Lesion-style effects whose numbers the wiki doesn't give
 
+## Conditional stacks (`triggerUptime` in src/calc/parseMod.ts)
+
+What the leaderboard (and a freshly equipped mod/arcane) assumes for "On X:" bonuses:
+- most triggers (On Kill, On Status Effect...) at max stacks
+- headshot / weak point *hit* triggers (Primary Crux, Longbow Sharpshot) off, since the scenario is body shots.
+  Headshot *kill* triggers (Primary/Secondary Deadhead) stay on, the buff works on every shot once it's up
+- melee-kill triggers on a gun (Primary/Secondary Dexterity) at half: you have to swap to melee and kill to keep them up
+- Primary Bulwark (+1% damage per armor past 1,000, max +500%) at half (+250%), it needs a tank frame. In the calculator
+  its stacks are armor points over 1,000, so type your Warframe's armor minus 1,000
+- ties between arcanes go to the one with headshot / reload value on top (Deadhead's +30% headshot multiplier,
+  Merciless's +30% reload), so with all three at +360%: Deadhead for single hits, Merciless for DPS, Dexterity never
+
+## Added elements and guaranteed procs
+
+Elements that get added on top of the weapon's own (Melee Exposure's Corrosive, Tonkkatt's Heat, Lesion's Toxin) add damage but
+don't combine with other elements and take no share of the status procs. So they don't dilute your procs, but they don't proc
+on their own either: you still need status chance and your own elements for procs. Effects with a guaranteed proc
+(Reconifex's perfect-reload Heat rounds) add that proc to every hit on top of the status chance rolls.
+
 ## Mod restrictions
 
 `src/calc/modConflicts.ts`, used by both the mod browser (blocked mods show greyed out with "Incompatible with X", an equipped
@@ -147,6 +166,9 @@ The page has two tabs: Calculator and Leaderboard. The leaderboard is precompute
 `npm run leaderboard` runs `scripts/build-leaderboard.ts`, which optimizes every weapon attack for every ranking and writes
 `public/leaderboard.json` (committed, fetched only when the tab opens). After a data update: `npm run leaderboard`, then deploy.
 
+Every attack (component) of every weapon gets its own listing (Normal Attack, Slam, Heavy Slam, Heavy Attack, alt-fire,
+Incarnon form...), each optimized on its own. "Best attack per weapon only" collapses it back to one row per weapon.
+
 One leaderboard, ranked by a setting (`src/optimizer/objectives.ts`, each one optimized separately):
 - Sustained DPS: average over a 60 s fight (see Damage over time above)
 - Damage in a time window (3 / 10 / 30 s): simulates shots from t = 0 with reloads, DoTs count the part that fits in the window
@@ -158,7 +180,10 @@ mods". If the search happens to find a better build without them, that build is 
 Settings on the page: Rank by, time window, Primary/Secondary/Melee, search, "Allow fire rate mods" and "Include Incarnon forms". Incarnon forms run on
 Incarnon charge which isn't in the data, so they never reload here, which is why they can be toggled off.
 
-- Scenario (`src/optimizer/scenario.ts`): no faction, no armor, body shots, conditionals at max stacks (headshot-triggered ones off),
+- Scenario (`src/optimizer/scenario.ts`): no faction, no armor, body shots, conditionals at max stacks with exceptions
+  (`triggerUptime` in `src/calc/parseMod.ts`): headshot-hit triggers (Crux, Sharpshot) off, headshot-kill triggers (Deadhead) on,
+  melee kills on a gun (Dexterity) and armor thresholds (Bulwark, +1%/armor past 1,000) at half. When two arcanes tie, the one with
+  headshot multiplier / reload speed wins (reload counts half for single hit), so Deadhead and Merciless beat Dexterity,
   Condition Overload/Galvanized count only the build's own damage types (base physical + modded elements), capacity ignored, no rivens,
   melee at max combo. Heavy attacks/heavy slams only compete in Single damage instance, since they spend the combo they need
 - Search (`src/optimizer/optimize.ts`): mod pool = compatible mods with an effect that can raise that ranking (`modPool.ts`, fire rate /
@@ -194,6 +219,9 @@ src/components/           Weapon/Mod/Target/Debuffs/Stats/Leaderboard panels. Mo
 - Primaries are split into Rifle/Sniper/Launcher/Bow/Shotgun types, so weapons are kept by category. Sniper/Bow/Assault Rifle mods only show for those types
 - Primed Bane mods aren't in the export under their own name, so only regular Banes show up
 - Weapon exilus mods are flagged `isUtility` in the export, not `isExilus`
+- `heavyAttackDamage` is the whole heavy combo added up for some classes: Heavy Scythes (Thalys, Hespar, Wrath, Pride) and
+  Sun & Moon list 18x base. build-data overrides them to the biggest single hit (the 2nd heavy's 600% = 6x), see HEAVY_SINGLE_HIT.
+  Thalys's page lists 800 heavy damage, which matches neither, so it follows the class
 - Some weapon base damage doesn't match in game, e.g. Cernos Prime charged shot is 165.6 impact in the export but 289.8 in the arsenal
 - Enemy health/armor types in the export are pre-Update 36, so only base stats + faction are used
 
@@ -209,7 +237,7 @@ src/components/           Weapon/Mod/Target/Debuffs/Stats/Leaderboard panels. Mo
 - Incarnon Genesis per-status bonuses aren't in the data (Cedo's +60%/status is in the passives table)
 
 - Incarnon data: Burston Prime uses Burston's numbers and Soma Prime uses Soma's (their tables didn't come through),
-  Thalys isn't in warframe-items yet. Untagged base damage perks are assumed to apply to the Incarnon form too
+  Untagged base damage perks are assumed to apply to the Incarnon form too
 - Incarnon perks not modeled: Munitions Grit's multishot-projectile bonus, High Ground / Wiseman's Regard conversions,
   King's Gambit, Kinetic Killer, "Base Status Chance set to X", plus all utility perks (shown greyed out)
 

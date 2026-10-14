@@ -183,6 +183,18 @@ function parseUpgradeUncached(levelStats: string[][], rank: number): ParsedUpgra
         addConditional(trigger, segment)
         continue
       }
+      // Primary Bulwark: "Gain +1% damage for each unit of armor past 1,000, up to a max of +500%". one stack = one armor
+      // point past the threshold, so the stepper reads as "armor over 1,000"
+      const armorScaling = segment.match(/^Gain \+?([\d.]+)% damage for each unit of armor past ([\d,]+), up to a max of \+?([\d.]+)%/i)
+      if (armorScaling) {
+        const perArmor = percent(armorScaling[1])
+        parsed.conditionals.push({
+          trigger: `Warframe armor past ${armorScaling[2]} (1 stack = 1 armor):`,
+          effect: { kind: 'stat', stat: 'damage', value: perArmor },
+          maxStacks: Math.round(percent(armorScaling[3]) / perArmor),
+        })
+        continue
+      }
       const effect = parseStatLine(segment)
       if (effect) parsed.effects.push(effect)
       else parsed.unparsed.push(segment)
@@ -211,3 +223,38 @@ export const raisesFireRate = (levelStats: string[][], rank = levelStats.length 
 }
 
 export const isHeadshotTrigger = (trigger: string) => /headshot|weak ?point/i.test(trigger)
+
+// how much of a conditional the "usual fight" assumes (leaderboard scenario, and the default when you equip something).
+// most triggers are easy to keep up, so they sit at max stacks. the exceptions:
+//  - headshot / weak point *hit* triggers (Primary Crux, Longbow Sharpshot): off when the scenario is body shots.
+//    headshot *kill* triggers (Deadhead) stay on, the buff then works on every shot
+//  - melee kills on a gun (Primary/Secondary Dexterity): you have to swap and kill with melee, so half the stacks
+//  - armor thresholds (Primary Bulwark): needs a tank frame, half of the max (+250%)
+export function triggerUptime(trigger: string, { isMelee, bodyShots }: { isMelee: boolean; bodyShots: boolean }): number {
+  if (isHeadshotTrigger(trigger) && !/kill/i.test(trigger)) return bodyShots ? 0 : 1
+  if (/melee kill/i.test(trigger) && !isMelee) return 0.5
+  if (/armor past/i.test(trigger)) return 0.5
+  return 1
+}
+
+export const defaultConditionalStacks = (levelStats: string[][], rank: number, context: { isMelee: boolean; bodyShots: boolean }) =>
+  Math.max(
+    0,
+    ...parseUpgrade(levelStats, rank).conditionals.map((conditional) =>
+      Math.floor(conditional.maxStacks * triggerUptime(conditional.trigger, context)),
+    ),
+  )
+
+// stuff that doesn't show up in a body-shot damage score but is still worth having when two picks tie
+// (Deadhead's headshot multiplier, Merciless's reload speed)
+// reload counts half when the ranking is a single hit (no reloads in it), so Deadhead beats Merciless there
+export const utilityValue = (levelStats: string[][], rank: number, singleHit = false) => {
+  const parsed = parseUpgrade(levelStats, rank)
+  const weights: Record<string, number> = {
+    headshotMultiplier: 1, weakpointDamage: 1, weakpointCritChance: 1, reloadSpeed: singleHit ? 0.5 : 1,
+  }
+  return [...parsed.effects, ...parsed.conditionals.map((conditional) => conditional.effect)].reduce(
+    (total, effect) => (effect.kind === 'stat' && effect.stat in weights ? total + Math.max(0, effect.value) * weights[effect.stat] : total),
+    0,
+  )
+}

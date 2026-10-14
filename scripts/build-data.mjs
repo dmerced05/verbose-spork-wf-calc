@@ -29,11 +29,20 @@ const cleanStatLine = (line) =>
 // the export has no Heavy Attack in attacks[], just weapon.heavyAttackDamage (total damage x the class's heavy
 // multiplier, e.g. Paracesis 222 x 6 = 1332) and windUp. so I add one: the normal attack's damage split scaled up
 // to heavyAttackDamage, same crit/status. some entries (glaives) list it at 1x, those I leave out
+// some classes list the whole heavy combo added together, not one hit. Heavy Scythes show 18x (wiki Heavy_Scythe:
+// 1st heavy 3 x 200%, 2nd heavy 2 x 600%), Sun & Moon (Dual Nikanas) 18x too (wiki: 1st 3 x 200% + 600%, its page lists
+// 1140 = 6x). the leaderboard's heavy is one damage instance, so these get the biggest single hit: 600% = 6x
+const HEAVY_SINGLE_HIT = [
+  { match: (weapon) => weapon.uniqueName.includes('/HeavyScythe/'), multiplier: 6 },
+  { match: (weapon) => weapon.name === 'Sun & Moon', multiplier: 6 },
+]
+
 function withHeavyAttack(weapon, attacks) {
   if (weapon.category !== 'Melee' || !weapon.heavyAttackDamage) return attacks
   const normal = attacks.find((attack) => /^normal attack$/i.test(attack.name)) ?? attacks[0]
   const normalTotal = Object.values(normal?.damage ?? {}).reduce((total, amount) => total + amount, 0)
-  const heavyMultiplier = weapon.heavyAttackDamage / (weapon.totalDamage || normalTotal || 1)
+  const override = HEAVY_SINGLE_HIT.find((rule) => rule.match(weapon))
+  const heavyMultiplier = override?.multiplier ?? weapon.heavyAttackDamage / (weapon.totalDamage || normalTotal || 1)
   if (!normal || normalTotal <= 0 || heavyMultiplier <= 1.01) return attacks
   const heavy = {
     ...normal,

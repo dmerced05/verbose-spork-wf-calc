@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { capacityFor, modDrain, nextPolarity, type SlotPolarity } from '../calc/capacity'
-import { maxConditionalStacks, raisesFireRate } from '../calc/parseMod'
+import { defaultConditionalStacks, maxConditionalStacks, raisesFireRate } from '../calc/parseMod'
 import { blockingMod } from '../calc/modConflicts'
 import { arcanesById, modsById } from '../data'
 import type { Arcane, Mod } from '../types'
@@ -29,6 +29,7 @@ const IMAGE_BASE = 'https://cdn.warframestat.us/img/'
 
 interface Props {
   weaponName: string
+  isMelee: boolean // melee-kill triggers (Dexterity) start at half stacks on guns
   compatibleMods: Mod[]
   compatibleArcanes: Arcane[]
   slots: (ModSlot | null)[]
@@ -177,7 +178,7 @@ function ArcaneCard({ slot, selected, onSelect, onRemove }: ArcaneCardProps) {
 
 export function ModSlots(props: Props) {
   const {
-    weaponName, compatibleMods, compatibleArcanes, slots, arcaneSlot, polarities, hasCatalyst,
+    weaponName, isMelee, compatibleMods, compatibleArcanes, slots, arcaneSlot, polarities, hasCatalyst,
     onSlotsChange, onArcaneChange, onPolaritiesChange, onCatalystChange,
   } = props
   const [selectedSlot, setSelectedSlot] = useState(0)
@@ -244,7 +245,7 @@ export function ModSlots(props: Props) {
   const browserArcanes = arcaneSelected ? bySearch(compatibleArcanes.filter((arcane) => arcane.uniqueName !== arcaneSlot?.arcaneId)) : []
 
   const equipMod = (mod: Mod) => {
-    updateSlot(selectedSlot, { modId: mod.uniqueName, rank: mod.fusionLimit, conditionalStacks: maxConditionalStacks(mod.levelStats, mod.fusionLimit) })
+    updateSlot(selectedSlot, { modId: mod.uniqueName, rank: mod.fusionLimit, conditionalStacks: defaultConditionalStacks(mod.levelStats, mod.fusionLimit, { isMelee, bodyShots: false }) })
     // jump to the next empty normal slot so filling a build is quick
     if (!exilusSelected) {
       const nextEmpty = slots.findIndex((slot, index) => index < NORMAL_SLOT_COUNT && index !== selectedSlot && !slot)
@@ -253,7 +254,7 @@ export function ModSlots(props: Props) {
   }
   const equipArcane = (arcane: Arcane) => {
     const maxRank = maxRankOf(arcane.levelStats)
-    onArcaneChange({ arcaneId: arcane.uniqueName, rank: maxRank, conditionalStacks: maxConditionalStacks(arcane.levelStats, maxRank) })
+    onArcaneChange({ arcaneId: arcane.uniqueName, rank: maxRank, conditionalStacks: defaultConditionalStacks(arcane.levelStats, maxRank, { isMelee, bodyShots: false }) })
   }
 
   // the selected thing's controls (rank, conditional stacks) work the same for mods and the arcane
@@ -329,7 +330,16 @@ export function ModSlots(props: Props) {
             <span className="stepper">
               Conditional stacks
               <button onClick={() => updateSelected({ conditionalStacks: Math.max(0, selectedState.conditionalStacks - 1) })}>−</button>
-              {Math.min(selectedState.conditionalStacks, selectedMaxStacks)}/{selectedMaxStacks}
+              {selectedMaxStacks > 20 ? (
+                // Primary Bulwark has 500 "stacks" (armor points), typing beats clicking
+                <input
+                  type="number" min={0} max={selectedMaxStacks} className="stack-input"
+                  value={Math.min(selectedState.conditionalStacks, selectedMaxStacks)}
+                  onChange={(event) => updateSelected({ conditionalStacks: Math.min(selectedMaxStacks, Math.max(0, Number(event.target.value))) })}
+                />
+              ) : (
+                Math.min(selectedState.conditionalStacks, selectedMaxStacks)
+              )}/{selectedMaxStacks}
               <button onClick={() => updateSelected({ conditionalStacks: Math.min(selectedMaxStacks, selectedState.conditionalStacks + 1) })}>+</button>
             </span>
           )}

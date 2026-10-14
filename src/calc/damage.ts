@@ -142,6 +142,11 @@ export function calculate({
   let multishotLocked = false // Acuity mods
   const fireRateLocked = mods.some(({ mod }) => mod.locksFireRate) // Semi-___ Cannonade: fire rate stays at base
   const unparsed: string[] = []
+  // elements added on top of the weapon's own (Melee Exposure's Corrosive, Tonkkatt's Heat, Lesion's Toxin): they add
+  // damage but don't combine with other elements and don't take a share of the status procs, so they can't dilute
+  // your procs and don't proc on their own. you still need status chance + your own elements for procs
+  const separateElements: Record<string, number> = {}
+  const forcedProcsPerPellet: Record<string, number> = {} // guaranteed procs on every hit (Reconifex's Heat rounds)
 
   const applyEffect = (effect: ModEffect, times: number) => {
     switch (effect.kind) {
@@ -184,14 +189,20 @@ export function calculate({
   // mods and the arcane use the same stat text, so they go through the same parser
   const upgrades = [
     ...mods.map(({ mod, rank, conditionalStacks }) => ({ name: mod.name, levelStats: mod.levelStats, rank, conditionalStacks })),
-    ...(arcane ? [{ name: arcane.arcane.name, levelStats: arcane.arcane.levelStats, rank: arcane.rank, conditionalStacks: arcane.conditionalStacks }] : []),
+    ...(arcane ? [{ name: arcane.arcane.name, levelStats: arcane.arcane.levelStats, rank: arcane.rank, conditionalStacks: arcane.conditionalStacks, isArcane: true }] : []),
   ]
   for (const upgrade of upgrades) {
     const parsed = parseUpgrade(upgrade.levelStats, upgrade.rank)
-    parsed.effects.forEach((effect) => applyEffect(effect, 1))
+    // arcane elements (Melee Exposure) are separate elements, see separateElements
+    const apply = (effect: ModEffect, times: number) => {
+      if ('isArcane' in upgrade && effect.kind === 'damageType' && !PHYSICAL_TYPES.includes(effect.damageType)) {
+        separateElements[effect.damageType] = (separateElements[effect.damageType] ?? 0) + effect.value * times
+      } else applyEffect(effect, times)
+    }
+    parsed.effects.forEach((effect) => apply(effect, 1))
     for (const conditional of parsed.conditionals) {
       const activeStacks = Math.min(upgrade.conditionalStacks, conditional.maxStacks)
-      if (activeStacks > 0) applyEffect(conditional.effect, activeStacks)
+      if (activeStacks > 0) apply(conditional.effect, activeStacks)
     }
     unparsed.push(...parsed.unparsed.map((line) => `${upgrade.name}: ${line}`))
   }
@@ -209,7 +220,6 @@ export function calculate({
   let reloadOverride: number | null = null // Reconifex perfect reload
   let detonatesDots = false // Harmony
   const passiveBase = { critChance: 0, statusChance: 0 } // Tekko with Atlas
-  const separateElements: Record<string, number> = {} // Tonkkatt heat, doesn't combine
   let magazineMultiplier = 1 // Pyrana Prime
   const activePassives: string[] = []
   for (const { passive, stacks: chosenStacks } of passives) {
@@ -262,6 +272,9 @@ export function calculate({
           break
         case 'magazineMultiplier':
           magazineMultiplier *= effect.value
+          break
+        case 'forcedProc':
+          forcedProcsPerPellet[effect.damageType] = (forcedProcsPerPellet[effect.damageType] ?? 0) + effect.procsPerHit * times
       }
     }
   }
@@ -395,7 +408,6 @@ export function calculate({
     const quantized = quantize(proportion) * moddedBaseDamage
     if (quantized > 0) moddedByType[damageType] = quantized
   }
-  const moddedTotal = sum(Object.values(moddedByType))
 
   // ---- 3. crit, faction, multishot, fire rate ----
   // Puncture and Cold add flat after mods, and don't apply to AoE
@@ -487,7 +499,13 @@ export function calculate({
     : rawStatusChance
   const pelletsPerSecond = multishot * fireRate
   const procsPerSecond = statusChance * pelletsPerSecond
-  const procShare = (damageType: string) => (moddedTotal > 0 ? (moddedByType[damageType] ?? 0) / moddedTotal : 0)
+  // proc weighting skips the separate elements (Melee Exposure etc.), they add damage but no proc share
+  const procWeight: Record<string, number> = {}
+  for (const [damageType, modded] of Object.entries(moddedByType)) {
+    procWeight[damageType] = Math.max(0, modded - quantize(separateElements[damageType] ?? 0) * moddedBaseDamage)
+  }
+  const procWeightTotal = sum(Object.values(procWeight))
+  const procShare = (damageType: string) => (procWeightTotal > 0 ? (procWeight[damageType] ?? 0) / procWeightTotal : 0)
 
   const procRates: Record<string, number> = {}
   for (const damageType of Object.keys(moddedByType)) procRates[damageType] = procsPerSecond * procShare(damageType)
@@ -495,6 +513,10 @@ export function calculate({
   procRates.slash = (procRates.slash ?? 0) + Math.min(critChance, 1) * slashOnCritChance * pelletsPerSecond
   // Internal Bleeding: doubled when fire rate is below 2.5
   procRates.slash += (procRates.impact ?? 0) * slashOnImpactChance * (fireRate < 2.5 ? 2 : 1)
+  // guaranteed procs ride on every pellet, on top of the status chance rolls
+  for (const [damageType, perPellet] of Object.entries(forcedProcsPerPellet)) {
+    procRates[damageType] = (procRates[damageType] ?? 0) + perPellet * pelletsPerSecond
+  }
 
   // procs inherit the crit of the hit that applied them, so I keep the normal/crit/average split.
   // modded base here is NOT quantized and uses the full base damage, not just that element's share.

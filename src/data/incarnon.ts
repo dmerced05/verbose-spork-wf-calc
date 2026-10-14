@@ -356,6 +356,24 @@ V | Kinetic Harmony | ALL | +100% Heavy Attack Wind Up Speed
 V | Universal Readiness | ALL | On collecting ammo: +5 Combo Count`,
   },
   {
+    // wiki Thalys: Incarnon Heavy Scythe, form at 6x combo + Heavy Attack. shard damage isn't modeled
+    variants: ['Thalys'],
+    native: true,
+    lines: `
+II | Dreadful Reach | ALL | On Weapon Status Effect: +0.1 Range for 8s; Stacks up to 20x.
+II | Whirling Flurry | ALL | +20% Attack Speed
+II | Raging Drift | ALL | While sliding: +80% Attack Speed; +20% Slide
+III | Nimble Scythe | ALL | Each enemy hit by a Slide Attack grants +5 Combo Count
+III | Echoes of Rage | ALL | +1 Combo Count on Shard Damage
+III | Adept Reflexes | ALL | +20 Initial Combo
+IV | Swift Transmute | ALL | Incarnon Form activates at 3x Combo with Heavy Attack
+IV | Vaulting Leap | ALL | +100% Jump and Double Jump Height
+IV | Devastating Mercy | ALL | Ground Finishers knock enemies down in a 6m radius
+V | Explosive Growth | ALL | Shards grow up to 3 times when a new shard is created, fully grown shards erupt for x2 damage
+V | Chain Shatter | ALL | Heavy attacks detonate shards for 200% of base damage, chaining to shards within 5m
+V | Void Splinters | ALL | Shard duration 30s; shards become weak spots with +100% Critical Chance; shard damage -50%`,
+  },
+  {
     variants: ['Innodem'],
     native: true,
     lines: `

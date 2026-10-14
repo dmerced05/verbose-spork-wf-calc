@@ -29,6 +29,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
   const [windowSeconds, setWindowSeconds] = useState<number>(10)
   const [includeIncarnon, setIncludeIncarnon] = useState(true)
   const [allowFireRate, setAllowFireRate] = useState(true)
+  const [bestPerWeapon, setBestPerWeapon] = useState(false)
   const [category, setCategory] = useState('All')
   const [search, setSearch] = useState('')
   const [limit, setLimit] = useState(PAGE_SIZE)
@@ -48,23 +49,26 @@ export function Leaderboard({ onLoadBuild }: Props) {
   // DPS rankings were also optimized without fire rate / attack speed mods, single hit doesn't care about fire rate
   const key = boardKey(objectiveId, allowFireRate || !objective.usesFireRate)
 
-  // each weapon has a best normal-attack entry and (if it has one) a best Incarnon-form entry. pick the better
-  // allowed one, rank those, then filter. the rank stays global so "#12" always means 12th overall
+  // every attack has its own entry (slam, heavy slam, heavy attack, alt-fire...). "Best attack per weapon" keeps one
+  // per weapon instead. rank, then filter, so "#12" always means 12th overall
   const ranked = useMemo(() => {
     if (!data) return []
-    const bestPerWeapon = new Map<string, LeaderboardEntry>()
-    for (const entry of data.boards[key] ?? []) {
-      if (entry.incarnonForm && !includeIncarnon) continue
-      const current = bestPerWeapon.get(entry.weaponId)
-      if (!current || entry.score > current.score) bestPerWeapon.set(entry.weaponId, entry)
+    let entries = (data.boards[key] ?? []).filter((entry) => includeIncarnon || !entry.incarnonForm)
+    if (bestPerWeapon) {
+      const best = new Map<string, LeaderboardEntry>()
+      for (const entry of entries) {
+        const current = best.get(entry.weaponId)
+        if (!current || entry.score > current.score) best.set(entry.weaponId, entry)
+      }
+      entries = [...best.values()]
     }
-    return [...bestPerWeapon.values()].sort((a, b) => b.score - a.score).map((entry, index) => ({ entry, rank: index + 1 }))
-  }, [data, key, includeIncarnon])
+    return [...entries].sort((a, b) => b.score - a.score).map((entry, index) => ({ entry, rank: index + 1 }))
+  }, [data, key, includeIncarnon, bestPerWeapon])
 
   const rows = useMemo(() => {
     const searchText = search.trim().toLowerCase()
     return ranked.filter(
-      ({ entry }) => (category === 'All' || entry.category === category) && (!searchText || entry.weaponName.toLowerCase().includes(searchText)),
+      ({ entry }) => (category === 'All' || entry.category === category) && (!searchText || `${entry.weaponName} ${entry.attack}`.toLowerCase().includes(searchText)),
     )
   }, [ranked, category, search])
 
@@ -120,7 +124,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
           <select value={category} onChange={(event) => { setCategory(event.target.value); resetPaging() }}>
             {CATEGORIES.map((option) => <option key={option}>{option}</option>)}
           </select>
-          <input placeholder="Search weapons" value={search} onChange={(event) => { setSearch(event.target.value); resetPaging() }} />
+          <input placeholder="Search weapons or attacks (e.g. heavy slam)" value={search} onChange={(event) => { setSearch(event.target.value); resetPaging() }} />
           <label className="inline-check" title="Incarnon forms run on Incarnon charge, which isn't modeled, so they never reload here">
             <input type="checkbox" checked={includeIncarnon} onChange={(event) => { setIncludeIncarnon(event.target.checked); resetPaging() }} />
             Include Incarnon forms
@@ -131,10 +135,14 @@ export function Leaderboard({ onLoadBuild }: Props) {
               Allow fire rate mods
             </label>
           )}
-          <span className="muted-inline">{rows.length} weapons</span>
+          <label className="inline-check" title="Off = every attack of every weapon gets its own listing">
+            <input type="checkbox" checked={bestPerWeapon} onChange={(event) => { setBestPerWeapon(event.target.checked); resetPaging() }} />
+            Best attack per weapon only
+          </label>
+          <span className="muted-inline">{rows.length} {bestPerWeapon ? 'weapons' : 'attacks'}</span>
         </div>
         <p className="muted">
-          Best attack per weapon in one fixed scenario: {data.scenario}
+          Every weapon attack, each optimized on its own, in one fixed scenario: {data.scenario}
           Incarnon forms don't reload here (their charge isn't in the data). Shell-by-shell weapons (Felarx, Struns, Corinth, Zarr)
           reload longer with magazine mods. Precomputed {new Date(data.generatedAt).toLocaleDateString()} from {data.dataVersion}.
         </p>

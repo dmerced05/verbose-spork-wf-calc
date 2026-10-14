@@ -5,7 +5,7 @@ import { resolveCoBehavior } from '../calc/conditionOverload'
 import { calculate, type CalcResult, type SelectedPassive } from '../calc/damage'
 import { BONUS_ELEMENT_RANGE, BONUS_ELEMENTS, hasBonusElement, passivesFor, type BonusElement } from '../data/passives'
 import { getIncarnonTiers, type SelectedPerk } from '../calc/incarnon'
-import { isHeadshotTrigger, maxConditionalStacks, parseUpgrade, raisesFireRate } from '../calc/parseMod'
+import { defaultConditionalStacks, parseUpgrade, raisesFireRate, utilityValue } from '../calc/parseMod'
 import { getCompatibleArcanes, getCompatibleMods } from '../data'
 import type { Arcane, Attack, EquippedArcane, EquippedMod, Mod, Weapon } from '../types'
 import { conflicts, damageModPool } from './modPool'
@@ -29,15 +29,14 @@ export interface OptimizedBuild {
   bonusElement: BonusElement | null
 }
 
-// mods and arcanes go in at max rank with conditionals at max stacks (the scenario's assumption),
-// except headshot/weak point triggers since the scenario is body shots
-const bodyShotTrigger = (trigger: string) => !isHeadshotTrigger(trigger)
-const equipMod = (mod: Mod): EquippedMod => ({
-  mod, rank: mod.fusionLimit, conditionalStacks: maxConditionalStacks(mod.levelStats, mod.fusionLimit, bodyShotTrigger),
+// mods and arcanes go in at max rank with conditionals at the scenario's stacks (src/calc/parseMod.ts triggerUptime):
+// max for most, off for headshot-hit triggers (body shots), half for melee kills on a gun and armor thresholds
+const equipMod = (mod: Mod, isMelee: boolean): EquippedMod => ({
+  mod, rank: mod.fusionLimit, conditionalStacks: defaultConditionalStacks(mod.levelStats, mod.fusionLimit, { isMelee, bodyShots: true }),
 })
-const equipArcane = (arcane: Arcane): EquippedArcane => {
+const equipArcane = (arcane: Arcane, isMelee: boolean): EquippedArcane => {
   const rank = arcane.levelStats.length - 1
-  return { arcane, rank, conditionalStacks: maxConditionalStacks(arcane.levelStats, rank, bodyShotTrigger) }
+  return { arcane, rank, conditionalStacks: defaultConditionalStacks(arcane.levelStats, rank, { isMelee, bodyShots: true }) }
 }
 
 const isElementalMod = (equipped: EquippedMod) =>
@@ -56,11 +55,11 @@ function* permutations<T>(items: T[]): Generator<T[]> {
 }
 
 export function optimizeAttack(weapon: Weapon, attack: Attack, objective: Objective, allowFireRateMods = true): OptimizedBuild {
-  const pool = damageModPool(getCompatibleMods(weapon), objective.usesFireRate, Boolean(attack.heavy), allowFireRateMods).map(equipMod)
+  const pool = damageModPool(getCompatibleMods(weapon), objective.usesFireRate, Boolean(attack.heavy), allowFireRateMods).map((mod) => equipMod(mod, weapon.category === 'Melee'))
   // "no fire rate mods" rankings skip fire rate arcanes too
   const arcaneOptions = getCompatibleArcanes(weapon)
     .filter((option) => allowFireRateMods || !raisesFireRate(option.levelStats))
-    .map(equipArcane)
+    .map((option) => equipArcane(option, weapon.category === 'Melee'))
   const incarnonTiers = getIncarnonTiers(weapon.name) ?? []
   const coBehavior = resolveCoBehavior(weapon, attack)
 
@@ -161,11 +160,14 @@ export function optimizeAttack(weapon: Weapon, attack: Attack, objective: Object
   const pickArcane = () => {
     let bestArcane: EquippedArcane | null = null
     let bestScore = -1
+    const utility = (option: EquippedArcane | null) => (option ? utilityValue(option.arcane.levelStats, option.rank, !objective.usesFireRate) : 0)
     for (const option of [null, ...arcaneOptions]) {
       arcane = option
       const score = evaluate(best.mods)
-      if (score > bestScore) {
-        bestScore = score
+      // a tie (Merciless vs Deadhead on body shots) goes to the one with headshot / reload value on top
+      const tied = bestScore > 0 && Math.abs(score - bestScore) <= bestScore * 1e-6
+      if ((score > bestScore && !tied) || (tied && utility(option) > utility(bestArcane))) {
+        bestScore = Math.max(score, bestScore)
         bestArcane = option
       }
     }

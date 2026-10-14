@@ -9,6 +9,9 @@ import { getIncarnonTiers } from '../src/calc/incarnon'
 import { INCARNON_FAMILIES } from '../src/data/incarnon'
 import { passivesFor } from '../src/data/passives'
 import { modsConflict } from '../src/calc/modConflicts'
+import { defaultConditionalStacks, parseUpgrade } from '../src/calc/parseMod'
+import { optimizeAttack } from '../src/optimizer/optimize'
+import { objectiveById } from '../src/optimizer/objectives'
 import type { Attack, Debuffs, EquippedMod, Mod, Weapon } from '../src/types'
 type EquippedModList = EquippedMod[]
 
@@ -460,6 +463,41 @@ const bratonExpected = bratonStatus.damageInWindow(10)
 console.log('Braton 10s expected', bratonExpected.toFixed(0), 'MC', bratonRange)
 expectClose('MC mean within 3% of expected', Math.abs(bratonRange.expected / bratonExpected - 1) < 0.03 ? 1 : 0, 1)
 expectClose('MC range brackets the mean', bratonRange.low <= bratonRange.expected && bratonRange.expected <= bratonRange.high ? 1 : 0, 1)
+// ---- arcane activation (src/calc/parseMod.ts triggerUptime) ----
+const arcaneNamed = (name: string) => arcanes.find((arcane) => arcane.name === name)!
+const bulwark = arcaneNamed('Primary Bulwark')
+const bulwarkParsed = parseUpgrade(bulwark.levelStats, bulwark.levelStats.length - 1).conditionals[0]
+expectClose('Primary Bulwark parsed as armor stacks', bulwarkParsed.maxStacks * (bulwarkParsed.effect as { value: number }).value, 5)
+const gunContext = { isMelee: false, bodyShots: true }
+const stacksOf = (name: string) => defaultConditionalStacks(arcaneNamed(name).levelStats, arcaneNamed(name).levelStats.length - 1, gunContext)
+expectClose('Dexterity on a gun: half stacks', stacksOf('Primary Dexterity'), 3)
+expectClose('Merciless: full stacks', stacksOf('Primary Merciless'), 12)
+expectClose('Deadhead (headshot kill) stays on', stacksOf('Primary Deadhead'), 3)
+expectClose('Crux (headshot hit) off on body shots', stacksOf('Primary Crux'), 0)
+expectClose('Bulwark: half (+250%)', stacksOf('Primary Bulwark'), 250)
+// the optimizer shouldn't pick Dexterity over Merciless / Deadhead any more
+const bratonSingle = optimizeAttack(named('Braton Prime'), named('Braton Prime').attacks[0], objectiveById('single'))
+const bratonSustained = optimizeAttack(named('Braton Prime'), named('Braton Prime').attacks[0], objectiveById('sustained'))
+console.log('Braton arcanes: single', bratonSingle.arcane?.arcane.name, '/ sustained', bratonSustained.arcane?.arcane.name)
+expectClose('single hit picks Deadhead', bratonSingle.arcane?.arcane.name === 'Primary Deadhead' ? 1 : 0, 1)
+expectClose('sustained skips Dexterity', bratonSustained.arcane?.arcane.name !== 'Primary Dexterity' ? 1 : 0, 1)
+// Melee Exposure: +240% Corrosive damage that takes no share of the procs (and doesn't combine)
+const exposure = arcanes.find((arcane) => arcane.name === 'Melee Exposure')!
+const exposureSwing = testAttack({ slash: 80, impact: 20 }, { statusChance: 0.5 })
+const withExposure = runMelee(exposureSwing, { mods: [meleeMod('Fever Strike')], arcane: { arcane: exposure, rank: exposure.levelStats.length - 1, conditionalStacks: 4 } })
+const withoutExposure = runMelee(exposureSwing, { mods: [meleeMod('Fever Strike')] })
+const rowOf = (result: typeof withExposure, damageType: string) => result.damageTypes.find((row) => row.damageType === damageType)
+expectClose('Melee Exposure adds Corrosive damage', (rowOf(withExposure, 'corrosive')?.modded ?? 0) > 0 ? 1 : 0, 1)
+expectClose('Melee Exposure Corrosive gets no procs', rowOf(withExposure, 'corrosive')!.procShare, 0)
+expectClose('Melee Exposure leaves Toxin uncombined', rowOf(withExposure, 'toxin')?.modded ?? 0, rowOf(withoutExposure, 'toxin')!.modded)
+expectClose('Melee Exposure keeps the slash proc share', rowOf(withExposure, 'slash')!.procShare, rowOf(withoutExposure, 'slash')!.procShare)
+// Reconifex perfect reload: a guaranteed Heat proc on every hit
+const reconifex = runWeapon('Reconifex', { passives: passivesOn('Reconifex') })
+expectClose('Reconifex guaranteed Heat proc', reconifex.dots.find((dot) => dot.damageType === 'heat')!.procsPerSecond >= reconifex.fireRate * reconifex.multishot - 1e-9 ? 1 : 0, 1)
+// Heavy Scythes: the export sums both heavies (18x), the biggest single hit is the 2nd heavy's 600%
+const thalysHeavy = named('Thalys').attacks.find((attack) => attack.name === 'Heavy Attack')!
+expectClose('Thalys heavy = 6x (one 600% hit)', Object.values(thalysHeavy.damage).reduce((a, b) => a + b, 0), 300 * 6)
+expectClose('Thalys has Incarnon evolutions', getIncarnonTiers('Thalys')?.length ?? 0, 4)
 
 // sanity: standard Braton Prime build, element combining in slot order
 const braton = weapons.find((weapon) => weapon.name === 'Braton Prime')!

@@ -260,6 +260,7 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
 
           <ModSlots
             weaponName={weapon.name}
+            isMelee={isMelee}
             compatibleMods={compatibleMods}
             compatibleArcanes={compatibleArcanes}
             slots={slots}

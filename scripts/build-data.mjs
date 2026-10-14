@@ -10,7 +10,7 @@ const readJson = (name) => JSON.parse(readFileSync(new URL(`${name}.json`, sourc
 const WEAPON_CATEGORIES = new Set(['Primary', 'Secondary', 'Melee'])
 // productCategory tells moddable Warframe weapons apart from things like the Drifter's Sirocco (OperatorAmps)
 const MODDABLE_PRODUCT_CATEGORIES = new Set(['LongGuns', 'Pistols', 'Melee'])
-const MOD_TYPES = new Set(['Primary Mod', 'Shotgun Mod', 'Secondary Mod', 'Melee Mod'])
+const MOD_TYPES = new Set(['Primary Mod', 'Shotgun Mod', 'Secondary Mod', 'Melee Mod', 'Warframe Mod'])
 
 // the export wraps damage types in color tags. usually the word follows the tag
 // ("<DT_FIRE_COLOR>Heat") but sometimes it's just the tag ("apply <DT_SLASH_COLOR> on Critical")
@@ -29,20 +29,13 @@ const cleanStatLine = (line) =>
 // the export has no Heavy Attack in attacks[], just weapon.heavyAttackDamage (total damage x the class's heavy
 // multiplier, e.g. Paracesis 222 x 6 = 1332) and windUp. so I add one: the normal attack's damage split scaled up
 // to heavyAttackDamage, same crit/status. some entries (glaives) list it at 1x, those I leave out
-// some classes list the whole heavy combo added together, not one hit. Heavy Scythes show 18x (wiki Heavy_Scythe:
-// 1st heavy 3 x 200%, 2nd heavy 2 x 600%), Sun & Moon (Dual Nikanas) 18x too (wiki: 1st 3 x 200% + 600%, its page lists
-// 1140 = 6x). the leaderboard's heavy is one damage instance, so these get the biggest single hit: 600% = 6x
-const HEAVY_SINGLE_HIT = [
-  { match: (weapon) => weapon.uniqueName.includes('/HeavyScythe/'), multiplier: 6 },
-  { match: (weapon) => weapon.name === 'Sun & Moon', multiplier: 6 },
-]
-
+// heavyAttackDamage isn't consistent between classes (some list every hit added up, some one hit). the calc rescales the
+// Heavy Attack for multi-hit classes from src/data/heavyAttacks.ts, this just stores the export's number
 function withHeavyAttack(weapon, attacks) {
   if (weapon.category !== 'Melee' || !weapon.heavyAttackDamage) return attacks
   const normal = attacks.find((attack) => /^normal attack$/i.test(attack.name)) ?? attacks[0]
   const normalTotal = Object.values(normal?.damage ?? {}).reduce((total, amount) => total + amount, 0)
-  const override = HEAVY_SINGLE_HIT.find((rule) => rule.match(weapon))
-  const heavyMultiplier = override?.multiplier ?? weapon.heavyAttackDamage / (weapon.totalDamage || normalTotal || 1)
+  const heavyMultiplier = weapon.heavyAttackDamage / (weapon.totalDamage || normalTotal || 1)
   if (!normal || normalTotal <= 0 || heavyMultiplier <= 1.01) return attacks
   const heavy = {
     ...normal,
@@ -176,9 +169,29 @@ const arcanes = readJson('Arcanes')
   }))
   .sort((a, b) => a.name.localeCompare(b.name))
 
+// Warframes for the Warframe panel: base armor/energy for Ability Strength and Primary Bulwark, slot polarities,
+// and aura polarity (Jade's is a list, she has two aura slots)
+const warframes = readJson('Warframes')
+  .filter((frame) => frame.category === 'Warframes' && frame.productCategory === 'Suits')
+  .map((frame) => ({
+    uniqueName: frame.uniqueName,
+    name: frame.name,
+    health: frame.health ?? 0,
+    shield: frame.shield ?? 0,
+    armor: frame.armor ?? 0,
+    energy: frame.power ?? 0,
+    auraPolarities: [frame.aura ?? null].flat().map((polarity) => (polarity === 'aura' ? 'universal' : polarity)),
+    polarities: frame.polarities ?? [],
+    exilusPolarity: frame.exilusPolarity ?? null,
+    passive: frame.passiveDescription ?? null,
+    imageName: frame.imageName ?? null,
+  }))
+  .sort((a, b) => a.name.localeCompare(b.name))
+
 mkdirSync(outDir, { recursive: true })
+writeFileSync(new URL('warframes.json', outDir), JSON.stringify(warframes))
 writeFileSync(new URL('arcanes.json', outDir), JSON.stringify(arcanes))
 writeFileSync(new URL('weapons.json', outDir), JSON.stringify(weapons))
 writeFileSync(new URL('mods.json', outDir), JSON.stringify(mods))
 writeFileSync(new URL('enemies.json', outDir), JSON.stringify(enemies))
-console.log(`wrote ${weapons.length} weapons, ${mods.length} mods, ${arcanes.length} arcanes, ${enemies.length} enemies to src/data/`)
+console.log(`wrote ${weapons.length} weapons, ${warframes.length} warframes, ${mods.length} mods, ${arcanes.length} arcanes, ${enemies.length} enemies to src/data/`)

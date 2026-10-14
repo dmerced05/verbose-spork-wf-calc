@@ -2,7 +2,8 @@ import weaponsJson from './weapons.json'
 import modsJson from './mods.json'
 import enemiesJson from './enemies.json'
 import arcanesJson from './arcanes.json'
-import type { Arcane, Enemy, Mod, Weapon } from '../types'
+import warframesJson from './warframes.json'
+import type { Arcane, Enemy, Mod, Warframe, Weapon } from '../types'
 
 // these JSON files come from scripts/build-data.mjs (runs on npm install / dev / build)
 export const weapons = weaponsJson as Weapon[]
@@ -13,6 +14,18 @@ export const arcanesById = new Map(arcanes.map((arcane) => [arcane.uniqueName, a
 export const enemies = (enemiesJson as Enemy[]).filter((enemy) => ['Grineer', 'Corpus', 'Infestation', 'Orokin', 'Sentient'].includes(enemy.faction))
 
 export const weaponsById = new Map(weapons.map((weapon) => [weapon.uniqueName, weapon]))
+export const warframes = warframesJson as Warframe[]
+export const warframesById = new Map(warframes.map((frame) => [frame.uniqueName, frame]))
+
+// "Frost Prime" -> "Frost", what augments use as their compatName and what abilities are listed under
+export const warframeBaseName = (name: string) => name.replace(/ (Prime|Umbra)$/, '')
+
+// Warframe mods: generic ones, auras, and this frame's augments
+export function getWarframeMods(frame: Warframe): Mod[] {
+  const baseName = warframeBaseName(frame.name)
+  return mods.filter((mod) => mod.type === 'Warframe Mod' && (mod.compatName === 'WARFRAME' || mod.compatName === 'AURA' || mod.compatName === baseName))
+}
+export const isAuraMod = (mod: Mod) => mod.compatName === 'AURA'
 export const modsById = new Map(mods.map((mod) => [mod.uniqueName, mod]))
 export const enemiesById = new Map(enemies.map((enemy) => [enemy.uniqueName, enemy]))
 

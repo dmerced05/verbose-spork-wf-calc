@@ -1,4 +1,5 @@
 import type { CalcResult } from '../calc/damage'
+import type { HeavyMode } from '../data/heavyAttacks'
 
 // what the leaderboard can rank by. each one is optimized separately, since the best build for sustained DPS
 // (magazine/reload mods matter) isn't the best one for a single hit (fire rate doesn't matter at all)
@@ -49,12 +50,19 @@ export interface BoardSpec {
   key: string
   objective: Objective
   allowFireRateMods: boolean
+  heavyMode?: HeavyMode
+  heavyOnly?: boolean // only multi-hit Heavy Attacks get an entry, the page falls back to the normal board for the rest
 }
 export const boardKey = (id: ObjectiveId, allowFireRateMods: boolean) => (allowFireRateMods ? id : `${id}-nofr`)
-export const BOARDS: BoardSpec[] = OBJECTIVES.flatMap((objective) =>
-  [true, ...(objective.usesFireRate ? [false] : [])].map((allowFireRateMods) => ({
-    key: boardKey(objective.id, allowFireRateMods),
-    objective,
-    allowFireRateMods,
-  })),
-)
+// "Count the full heavy": multi-hit Heavy Attacks scored with every hit added up
+export const FULL_HEAVY_BOARD = 'single-fullheavy'
+export const BOARDS: BoardSpec[] = [
+  ...OBJECTIVES.flatMap((objective) =>
+    [true, ...(objective.usesFireRate ? [false] : [])].map((allowFireRateMods) => ({
+      key: boardKey(objective.id, allowFireRateMods),
+      objective,
+      allowFireRateMods,
+    })),
+  ),
+  { key: FULL_HEAVY_BOARD, objective: objectiveById('single'), allowFireRateMods: true, heavyMode: 'fullCombo', heavyOnly: true },
+]

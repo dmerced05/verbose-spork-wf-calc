@@ -3,6 +3,7 @@
 // it's a heuristic, not a proof of the best build, but it's checked against hand-built meta builds.
 import { resolveCoBehavior } from '../calc/conditionOverload'
 import { calculate, type CalcResult, type SelectedPassive } from '../calc/damage'
+import type { HeavyMode } from '../data/heavyAttacks'
 import { BONUS_ELEMENT_RANGE, BONUS_ELEMENTS, hasBonusElement, passivesFor, type BonusElement } from '../data/passives'
 import { getIncarnonTiers, type SelectedPerk } from '../calc/incarnon'
 import { defaultConditionalStacks, parseUpgrade, raisesFireRate, utilityValue } from '../calc/parseMod'
@@ -54,7 +55,9 @@ function* permutations<T>(items: T[]): Generator<T[]> {
   }
 }
 
-export function optimizeAttack(weapon: Weapon, attack: Attack, objective: Objective, allowFireRateMods = true): OptimizedBuild {
+export function optimizeAttack(
+  weapon: Weapon, attack: Attack, objective: Objective, allowFireRateMods = true, heavyMode: HeavyMode = 'biggestHit',
+): OptimizedBuild {
   const pool = damageModPool(getCompatibleMods(weapon), objective.usesFireRate, Boolean(attack.heavy), allowFireRateMods).map((mod) => equipMod(mod, weapon.category === 'Melee'))
   // "no fire rate mods" rankings skip fire rate arcanes too
   const arcaneOptions = getCompatibleArcanes(weapon)
@@ -73,7 +76,7 @@ export function optimizeAttack(weapon: Weapon, attack: Attack, objective: Object
 
   const run = (mods: EquippedMod[]) =>
     calculate({
-      weapon, attack, mods, arcane, coBehavior, incarnonPerks: perks, passives, bonusElement,
+      weapon, attack, mods, arcane, coBehavior, incarnonPerks: perks, passives, bonusElement, heavyMode,
       target: SCENARIO_TARGET, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS,
     })
   const evaluate = (mods: EquippedMod[]) => objective.score(run(mods))

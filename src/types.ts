@@ -1,3 +1,5 @@
+import type { WarframeState } from './data/warframeAbilities'
+
 export type DamageMap = Record<string, number>
 
 export interface Attack {
@@ -45,6 +47,20 @@ export interface Mod {
   semiOnly?: boolean // Semi-___ Cannonade
   locksFireRate?: boolean // Semi-___ Cannonade: fire rate mods stop working
   levelStats: string[][] // stat lines per rank, index 0 = rank 0
+}
+
+export interface Warframe {
+  uniqueName: string
+  name: string
+  health: number
+  shield: number
+  armor: number
+  energy: number
+  auraPolarities: (string | null)[] // one per aura slot (Jade has two)
+  polarities: string[]
+  exilusPolarity: string | null
+  passive: string | null
+  imageName: string | null
 }
 
 export interface Arcane {
@@ -107,4 +123,5 @@ export interface Buffs {
   roar: number // faction damage bonus from Roar etc, additive with bane mods
   combo?: number // melee combo multiplier (1x-12x), defaults to 1x
   gladiatorWarframePieces?: number // Gladiator set mods on the Warframe, they count toward the weapon's set bonus
+  warframe?: WarframeState // ability strength, armor and active abilities (Warframe panel)
 }

@@ -53,7 +53,7 @@ export const BANE_TARGET: Record<string, string> = {
 
 export interface StatusInfo {
   name: string
-  maxStacks: number | null // null = stack count doesn't change any number here, it's just on/off
+  maxStacks: number | null // null = no stack cap (DoTs: Slash/Heat/Toxin/Electricity keep stacking, Harmony can detonate 100 at once)
   effect: string
 }
 
@@ -71,7 +71,7 @@ export const STATUS_EFFECTS: Record<string, StatusInfo> = {
   magnetic: { name: 'Disrupt', maxStacks: 10, effect: '+100% shield/overguard dmg, +25% per stack' },
   radiation: { name: 'Confusion', maxStacks: 10, effect: 'No damage multiplier' },
   viral: { name: 'Virus', maxStacks: 10, effect: '+100% health dmg, +25% per stack' },
-  void: { name: 'Bullet Attractor', maxStacks: null, effect: 'No damage multiplier' },
+  void: { name: 'Bullet Attractor', maxStacks: 1, effect: 'No damage multiplier' },
   tau: { name: 'Status Vulnerability', maxStacks: 10, effect: '+10% status chance per stack (flat)' },
 }
 export const STATUS_TYPES = Object.keys(STATUS_EFFECTS)

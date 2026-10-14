@@ -65,7 +65,7 @@ th:not(:first-child), td:not(:first-child) { text-align: right; }
 .form-grid input[type='number'], .form-grid select, .form-grid input[list] { width: 100%; }
 
 .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
-.status { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
+.status { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
 .status.active { border-color: var(--accent); }
 .status input[type='number'] { width: 56px; padding: 2px 4px; }
 .status-name { text-transform: capitalize; font-size: 0.9rem; }
@@ -271,3 +271,44 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .range-table td, .range-table th { text-align: right; }
 .range-table td:first-child, .range-table th:first-child { text-align: left; }
 .stack-input { width: 64px; }
+
+/* ---- base stats of the selected attack ---- */
+.base-stats { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: rgba(255, 255, 255, 0.02); }
+.base-stats-head { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+.base-stats-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 6px 24px; }
+.base-stats dl { margin: 0; }
+.base-stats dl div { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; font-size: 0.82rem; border-bottom: 1px dashed rgba(255, 255, 255, 0.05); }
+.base-stats dt { color: var(--muted); text-transform: capitalize; }
+.base-stats dd { margin: 0; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .base-stats-grid { grid-template-columns: 1fr; } }
+
+/* multi-hit heavy attack flag, breakdown in the hover tooltip */
+.multi-hit-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 0.68rem; letter-spacing: 0.02em; text-transform: none;
+  color: #d9c7ff; border: 1px solid rgba(200, 170, 255, 0.5); cursor: help; }
+
+/* leaderboard: multi-hit heavy breakdown */
+.heavy-details { margin-top: 4px; font-size: 0.78rem; }
+.heavy-details summary { list-style: none; display: inline-block; margin-left: 0; }
+.heavy-details summary::-webkit-details-marker { display: none; }
+.heavy-details ol { margin: 6px 0 4px 18px; padding: 0; }
+.heavy-details li { padding: 1px 0; }
+
+/* ---- Warframe panel ---- */
+.warframe-panel { border-color: rgba(120, 180, 255, 0.25); }
+.ability-list { display: grid; gap: 4px; }
+.ability { display: grid; grid-template-columns: auto auto 1fr; grid-template-areas: 'box name frame' '. effect effect'; column-gap: 8px; align-items: center;
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+.ability input { grid-area: box; }
+.ability-name { grid-area: name; font-weight: 600; }
+.ability .muted-inline { grid-area: frame; }
+.ability-effect { grid-area: effect; font-size: 0.75rem; color: var(--muted); }
+.ability.active { border-color: rgba(120, 180, 255, 0.6); background: rgba(120, 180, 255, 0.06); }
+.ability.inactive { opacity: 0.5; }
+.stack-cap { font-size: 0.7rem; color: var(--muted); }
+.warframe-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+.warframe-stats div { display: flex; flex-direction: column; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.warframe-stats .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.warframe-stats .value { font-size: 1.1rem; color: var(--accent); }
+.warframe-panel .upgrades { margin: 10px 0; padding: 0; border: none; background: none; }
+.side-column.double-aura { grid-template-rows: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .warframe-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

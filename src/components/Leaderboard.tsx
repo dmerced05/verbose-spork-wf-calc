@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { TIME_WINDOWS, boardKey, objectiveById, type ObjectiveId } from '../optimizer/objectives'
+import { FULL_HEAVY_BOARD, TIME_WINDOWS, boardKey, objectiveById, type ObjectiveId } from '../optimizer/objectives'
 import { raisesFireRate } from '../calc/parseMod'
-import { modsById } from '../data'
+import { modsById, weaponsById } from '../data'
+import { biggestHit, comboTotal, heavyBreakdownText, heavyComboFor } from '../data/heavyAttacks'
 import { expandLeaderboard, type Leaderboard as LeaderboardData, type LeaderboardEntry, type LeaderboardFile } from '../optimizer/leaderboardTypes'
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 2 })
@@ -30,6 +31,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
   const [includeIncarnon, setIncludeIncarnon] = useState(true)
   const [allowFireRate, setAllowFireRate] = useState(true)
   const [bestPerWeapon, setBestPerWeapon] = useState(false)
+  const [fullHeavy, setFullHeavy] = useState(false)
   const [category, setCategory] = useState('All')
   const [search, setSearch] = useState('')
   const [limit, setLimit] = useState(PAGE_SIZE)
@@ -53,7 +55,13 @@ export function Leaderboard({ onLoadBuild }: Props) {
   // per weapon instead. rank, then filter, so "#12" always means 12th overall
   const ranked = useMemo(() => {
     if (!data) return []
-    let entries = (data.boards[key] ?? []).filter((entry) => includeIncarnon || !entry.incarnonForm)
+    let entries = data.boards[key] ?? []
+    // "Count the full heavy": multi-hit Heavy Attacks come from the full-heavy board (every hit added up)
+    if (rankBy === 'single' && fullHeavy) {
+      const full = new Map((data.boards[FULL_HEAVY_BOARD] ?? []).map((entry) => [`${entry.weaponId}|${entry.attack}`, entry]))
+      entries = entries.map((entry) => full.get(`${entry.weaponId}|${entry.attack}`) ?? entry)
+    }
+    entries = entries.filter((entry) => includeIncarnon || !entry.incarnonForm)
     if (bestPerWeapon) {
       const best = new Map<string, LeaderboardEntry>()
       for (const entry of entries) {
@@ -63,7 +71,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
       entries = [...best.values()]
     }
     return [...entries].sort((a, b) => b.score - a.score).map((entry, index) => ({ entry, rank: index + 1 }))
-  }, [data, key, includeIncarnon, bestPerWeapon])
+  }, [data, key, includeIncarnon, bestPerWeapon, rankBy, fullHeavy])
 
   const rows = useMemo(() => {
     const searchText = search.trim().toLowerCase()
@@ -135,6 +143,12 @@ export function Leaderboard({ onLoadBuild }: Props) {
               Allow fire rate mods
             </label>
           )}
+          {rankBy === 'single' && (
+            <label className="inline-check" title="Multi-hit Heavy Attacks (Heavy Scythes, Sparring, Dual Swords...) normally rank by their biggest hit. On = every hit of the heavy added up">
+              <input type="checkbox" checked={fullHeavy} onChange={(event) => { setFullHeavy(event.target.checked); resetPaging() }} />
+              Count the full heavy (all hits)
+            </label>
+          )}
           <label className="inline-check" title="Off = every attack of every weapon gets its own listing">
             <input type="checkbox" checked={bestPerWeapon} onChange={(event) => { setBestPerWeapon(event.target.checked); resetPaging() }} />
             Best attack per weapon only
@@ -154,11 +168,44 @@ export function Leaderboard({ onLoadBuild }: Props) {
             <div className="board-rank">#{rank}</div>
             <div className="board-weapon">
               <div className="board-name">{entry.weaponName}</div>
-              <div className="muted-inline">{entry.attack} · {entry.type}</div>
+              <div className="muted-inline">
+                {entry.attack} · {entry.type}
+              </div>
+              {(() => {
+                // multi-hit heavies: hover for the wiki/arsenal hit list, click for this build's damage per hit
+                const combo = /^heavy attack$/i.test(entry.attack) ? heavyComboFor(entry.weaponName) : null
+                if (!combo) return null
+                const normal = weaponsById.get(entry.weaponId)?.attacks.find((option) => /^normal attack$/i.test(option.name))
+                const normalTotal = normal ? Object.values(normal.damage).reduce((sum, amount) => sum + amount, 0) : undefined
+                // the entry's single hit is either the biggest hit or all hits added up, scale each hit from that
+                const scoredMultiplier = rankBy === 'single' && fullHeavy ? comboTotal(combo) : biggestHit(combo)
+                const perUnit = entry.stats.singleHit / scoredMultiplier
+                return (
+                  <details className="heavy-details">
+                    <summary className="multi-hit-tag" title={heavyBreakdownText(combo, normalTotal)}>
+                      Multi-hit heavy · {combo.hits.length} hits ⓘ
+                    </summary>
+                    <ol>
+                      {combo.hits.map((hit, index) => (
+                        <li key={index}>
+                          {Math.round(hit.multiplier * 100)}% → {compact.format(hit.multiplier * perUnit)}
+                          {hit.procs && <span className="muted-inline"> {hit.procs.map((proc) => (proc === 'Slash' ? 'Bleed' : proc)).join(', ')}</span>}
+                          {hit.radial && <span className="muted-inline"> radial</span>}
+                        </li>
+                      ))}
+                    </ol>
+                    <div className="muted-inline">
+                      All hits: {compact.format(comboTotal(combo) * perUnit)} · biggest: {compact.format(biggestHit(combo) * perUnit)} (crits averaged, before forced procs)
+                    </div>
+                  </details>
+                )
+              })()}
             </div>
             <div className="board-score">
               <span className="value">{compact.format(entry.score)}</span>
-              <span className="label">{objective.unit}</span>
+              <span className="label">
+                {rankBy === 'single' && fullHeavy && /^heavy attack$/i.test(entry.attack) && heavyComboFor(entry.weaponName) ? 'all hits' : objective.unit}
+              </span>
             </div>
             <div className="board-stats">
               <span title="Crit chance">CC {percent(entry.stats.critChance)}</span>

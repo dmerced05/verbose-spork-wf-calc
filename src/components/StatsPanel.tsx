@@ -85,12 +85,46 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
       )}
 
       {result.passives.length > 0 && <p className="proc-note">Passive on: {result.passives.join(', ')}</p>}
+      {result.abilities.length > 0 && <p className="proc-note">Abilities on: {result.abilities.join(', ')}</p>}
       {result.detonation && (
         <p className="proc-note">
           Harmony detonation per heavy: <b>{formatDamage(result.detonation.ownProcs + result.detonation.existingStacks)}</b> ({formatDamage(result.detonation.ownProcs)} from
           the heavy's own procs, {formatDamage(result.detonation.existingStacks)} from stacks already on the target). The own-procs part
           is already in the DoT DPS (it just lands at once), the stacks part is extra burst.
         </p>
+      )}
+
+      {result.heavyCombo && (
+        <>
+          <h3>
+            Heavy attack, hit by hit{' '}
+            <span className="muted-inline">
+              (scoring {result.heavyCombo.mode === 'fullCombo' ? 'every hit added up' : 'the biggest hit'}, {result.heavyCombo.combo.source})
+            </span>
+          </h3>
+          <table className="range-table">
+            <thead>
+              <tr><th>Hit</th><th>Multiplier</th><th>Average hit</th><th>Forced procs</th></tr>
+            </thead>
+            <tbody>
+              {result.heavyCombo.combo.hits.map((hit, index) => (
+                <tr key={index}>
+                  <td>{index + 1}</td>
+                  <td>{formatNumber(hit.multiplier * 100, 0)}%</td>
+                  <td>{formatDamage((result.hit.average * hit.multiplier) / result.heavyCombo!.multiplier)}</td>
+                  <td>{[...(hit.procs ?? []).map((proc) => (proc === 'Slash' ? 'Bleed' : proc)), ...(hit.radial ? ['radial'] : [])].join(', ') || '–'}</td>
+                </tr>
+              ))}
+              <tr>
+                <td>All</td>
+                <td>{formatNumber(result.heavyCombo.combo.hits.reduce((total, hit) => total + hit.multiplier, 0) * 100, 0)}%</td>
+                <td>{formatDamage((result.hit.average * result.heavyCombo.combo.hits.reduce((total, hit) => total + hit.multiplier, 0)) / result.heavyCombo.multiplier)}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="proc-note">Every hit at the current combo, crits averaged. Forced procs are listed, not added to the damage.</p>
+        </>
       )}
 
       <h3>Headshot vs body <span className="muted-inline">(hits rounded like in-game numbers, hover for exact)</span></h3>

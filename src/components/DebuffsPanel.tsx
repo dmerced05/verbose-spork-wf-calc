@@ -9,6 +9,8 @@ interface Props {
 }
 
 const toPercent = (fraction: number) => Math.round(fraction * 100)
+// DoTs have no stack cap in game, the box just stops somewhere sane
+const UNCAPPED_STACKS = 999
 
 export function DebuffsPanel({ debuffs, buffs, onDebuffsChange, onBuffsChange }: Props) {
   const update = (changes: Partial<Debuffs>) => onDebuffsChange({ ...debuffs, ...changes })
@@ -20,7 +22,8 @@ export function DebuffsPanel({ debuffs, buffs, onDebuffsChange, onBuffsChange }:
   }
   const setAll = (useMax: boolean) =>
     update({
-      stacks: Object.fromEntries(STATUS_TYPES.map((statusType) => [statusType, useMax ? STATUS_EFFECTS[statusType].maxStacks ?? 1 : 0])),
+      // uncapped DoTs go to 10 on "Max all", type a bigger number for Harmony-style detonations
+      stacks: Object.fromEntries(STATUS_TYPES.map((statusType) => [statusType, useMax ? STATUS_EFFECTS[statusType].maxStacks ?? 10 : 0])),
       heatArmorStrip: useMax ? 0.5 : 0,
       liftedOrKnockedDown: useMax,
     })
@@ -42,14 +45,12 @@ export function DebuffsPanel({ debuffs, buffs, onDebuffsChange, onBuffsChange }:
           return (
             <div key={statusType} className={`status ${count > 0 ? 'active' : ''}`} title={info.effect}>
               <span className={`dmg-${statusType} status-name`}>{statusType}</span>
-              {info.maxStacks === null ? (
-                <input type="checkbox" checked={count > 0} onChange={(event) => setStacks(statusType, event.target.checked ? 1 : 0)} />
-              ) : (
-                <input
-                  type="number" min={0} max={info.maxStacks} value={count}
-                  onChange={(event) => setStacks(statusType, Math.min(info.maxStacks!, Math.max(0, Number(event.target.value))))}
-                />
-              )}
+              <input
+                type="number" min={0} max={info.maxStacks ?? UNCAPPED_STACKS} value={count}
+                title={info.maxStacks === null ? 'No stack cap' : `Up to ${info.maxStacks} stacks`}
+                onChange={(event) => setStacks(statusType, Math.min(info.maxStacks ?? UNCAPPED_STACKS, Math.max(0, Math.floor(Number(event.target.value)))))}
+              />
+              <span className="stack-cap">/{info.maxStacks ?? '∞'}</span>
               <span className="status-effect">{info.effect}</span>
             </div>
           )
@@ -84,7 +85,7 @@ export function DebuffsPanel({ debuffs, buffs, onDebuffsChange, onBuffsChange }:
           </select>
         </label>
         <label>
-          Corrosive Projection auras
+          Corrosive Projection (teammates' auras)
           <input
             type="number" min={0} max={4} value={debuffs.corrosiveProjections}
             onChange={(event) => update({ corrosiveProjections: Math.min(4, Math.max(0, Number(event.target.value))) })}
@@ -105,7 +106,7 @@ export function DebuffsPanel({ debuffs, buffs, onDebuffsChange, onBuffsChange }:
           />
         </label>
         <label>
-          Roar / faction buff %
+          Other faction buff %
           <input
             type="number" min={0} value={toPercent(buffs.roar)}
             onChange={(event) => onBuffsChange({ ...buffs, roar: Math.max(0, Number(event.target.value)) / 100 })}

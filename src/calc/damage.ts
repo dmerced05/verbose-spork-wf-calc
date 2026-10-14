@@ -15,6 +15,8 @@ import { perkAppliesTo, type SelectedPerk } from './incarnon'
 import { armorDamageMultiplier, effectiveArmor } from './target'
 import { hasBonusElement, type BonusElement, type WeaponPassive } from '../data/passives'
 import { SHELL_BY_SHELL_RELOAD } from '../data/reloads'
+import { WARFRAME_ABILITIES, abilityApplies, scaledValue, strengthFor } from '../data/warframeAbilities'
+import { biggestHit, comboTotal, heavyComboFor, type HeavyCombo, type HeavyMode } from '../data/heavyAttacks'
 import { expectedDamage, simulateDamage, type DamageRange, type ShotModel } from './simulate'
 
 // "sustained" = average DPS over a fight this long: reloads, DoT ramp-up and Heat stacking count, and DoT ticks
@@ -31,6 +33,7 @@ export interface CalcInput {
   incarnonPerks?: SelectedPerk[]
   passives?: SelectedPassive[] // weapon passives (src/data/passives.ts)
   bonusElement?: BonusElement | null // Kuva/Tenet/Coda bonus element
+  heavyMode?: HeavyMode // multi-hit heavies: score the biggest hit (default) or every hit added up
   target: TargetSettings
   armor: number // target armor before debuffs (already level scaled)
   debuffs: Debuffs
@@ -99,6 +102,8 @@ export interface CalcResult {
   shotModel: ShotModel
   fireRateLocked: boolean
   passives: string[] // names of the passives that are on for this attack
+  abilities: string[] // Warframe abilities that apply to this weapon
+  heavyCombo: { combo: HeavyCombo; mode: HeavyMode; multiplier: number } | null // multi-hit heavy, what got scored
   detonation: { ownProcs: number; existingStacks: number } | null // Harmony heavy: DoT damage dealt at once, per heavy
   melee: {
     combo: number // multiplier actually used (clamped to the weapon's cap)
@@ -117,8 +122,22 @@ const sum = (values: number[]) => values.reduce((total, value) => total + value,
 const quantize = (proportion: number) => (Math.sign(proportion) * Math.floor(Math.abs(proportion) * 32 + 0.5)) / 32
 
 export function calculate({
-  weapon, attack, mods, arcane, coBehavior, incarnonPerks = [], passives = [], bonusElement, target, armor, debuffs, buffs,
+  weapon, attack, mods, arcane, coBehavior, incarnonPerks = [], passives = [], bonusElement, heavyMode = 'biggestHit', target, armor, debuffs, buffs,
 }: CalcInput): CalcResult {
+  // multi-hit heavies (src/data/heavyAttacks.ts): the export's heavy number isn't one hit, so rescale the Heavy Attack to
+  // the biggest single hit, or every hit added up for the "full heavy" ranking
+  const heavyComboData = attack.heavy && attack.heavyMultiplier ? heavyComboFor(weapon.name) : null
+  let heavyCombo: CalcResult['heavyCombo'] = null
+  if (heavyComboData && attack.heavyMultiplier) {
+    const multiplier = heavyMode === 'fullCombo' ? comboTotal(heavyComboData) : biggestHit(heavyComboData)
+    const scale = multiplier / attack.heavyMultiplier
+    attack = {
+      ...attack,
+      damage: Object.fromEntries(Object.entries(attack.damage).map(([damageType, amount]) => [damageType, amount * scale])),
+      heavyMultiplier: multiplier,
+    }
+    heavyCombo = { combo: heavyComboData, mode: heavyMode, multiplier }
+  }
   const stacks = (statusType: string) => debuffs.stacks[statusType] ?? 0
   // CO counts status *types*, not stacks. Lifted/knocked down is a hidden status that also counts
   const debuffStatusTypes = Object.values(debuffs.stacks).filter((count) => count > 0).length
@@ -201,7 +220,13 @@ export function calculate({
     }
     parsed.effects.forEach((effect) => apply(effect, 1))
     for (const conditional of parsed.conditionals) {
-      const activeStacks = Math.min(upgrade.conditionalStacks, conditional.maxStacks)
+      let activeStacks = Math.min(upgrade.conditionalStacks, conditional.maxStacks)
+      // Primary Bulwark: with a Warframe armor set in the Warframe panel, its stacks come from that (1 stack = 1 armor past 1,000)
+      const armorThreshold = conditional.trigger.match(/^Warframe armor past ([\d,]+)/)
+      const warframeArmor = buffs.warframe?.armor ?? 0
+      if (armorThreshold && warframeArmor > 0) {
+        activeStacks = Math.min(conditional.maxStacks, Math.max(0, warframeArmor - Number(armorThreshold[1].replace(/,/g, ''))))
+      }
       if (activeStacks > 0) apply(conditional.effect, activeStacks)
     }
     unparsed.push(...parsed.unparsed.map((line) => `${upgrade.name}: ${line}`))
@@ -275,6 +300,60 @@ export function calculate({
           break
         case 'forcedProc':
           forcedProcsPerPellet[effect.damageType] = (forcedProcsPerPellet[effect.damageType] ?? 0) + effect.procsPerHit * times
+      }
+    }
+  }
+
+  // ---- Warframe abilities (src/data/warframeAbilities.ts), scaled by Ability Strength ----
+  let abilityFlatCritChance = 0 // Wrathful Advance, after mods
+  let abilityCritDamageScale = 1 // Electric Shield, multiplies every other crit damage source
+  let extraHitFraction = 0 // Xata's Whisper: a separate Void hit worth this share of the weapon's damage
+  const uncombinedElements: Record<string, number> = {} // Freeze Force / Electric Shield: don't combine, do proc
+  const activeAbilities: string[] = []
+  const warframe = buffs.warframe
+  if (warframe) {
+    // squad auras that buff weapons (Steel Charge, Rifle Amp...), added in with the damage mods
+    const aura = warframe.auraDamage
+    if (aura) {
+      bonus.damage +=
+        weapon.category === 'Melee' ? aura.melee
+          : weapon.category === 'Secondary' ? aura.pistol
+            : weapon.type === 'Shotgun' ? aura.shotgun
+              : aura.rifle + (weapon.type === 'Sniper' ? aura.sniper : 0)
+    }
+    bonus.weakpointCritChance += warframe.weakpointCritChance ?? 0
+    for (const ability of WARFRAME_ABILITIES) {
+      if (!warframe.abilities[ability.id] || !abilityApplies(ability, weapon.category === 'Melee')) continue
+      if (ability.selfOnly && ability.warframe !== warframe.frameName) continue
+      activeAbilities.push(ability.name)
+      for (const effect of ability.effects) {
+        const value = scaledValue(ability, effect.value, strengthFor(ability, warframe))
+        switch (effect.kind) {
+          case 'factionDamage':
+            factionBonus += value
+            break
+          case 'damageMultiplier':
+            separateDamageMultiplier *= 1 + value
+            break
+          case 'baseDamage':
+            bonus.damage += value
+            break
+          case 'element':
+            if (effect.combines) applyEffect({ kind: 'damageType', damageType: effect.damageType, value }, 1)
+            else uncombinedElements[effect.damageType] = (uncombinedElements[effect.damageType] ?? 0) + value
+            break
+          case 'extraHit':
+            extraHitFraction += value
+            break
+          case 'attackSpeed':
+            bonus.fireRate += value
+            break
+          case 'flatCritChance':
+            abilityFlatCritChance += value
+            break
+          case 'critDamageMultiplier':
+            abilityCritDamageScale *= 1 + value
+        }
       }
     }
   }
@@ -374,6 +453,8 @@ export function calculate({
   }
   // passive elements that skip combining (Tonkkatt's heat stays heat)
   for (const [damageType, amount] of Object.entries(separateElements)) addProportion(damageType, amount)
+  // ability elements (Freeze Force, Electric Shield) also skip combining, but they do take their share of procs
+  for (const [damageType, amount] of Object.entries(uncombinedElements)) addProportion(damageType, amount)
 
   // which status types the target has, for CO / Galvanized. by default it's the build's own damage types
   // (base physical + modded elements), so a gun can't count statuses it never applies
@@ -419,12 +500,12 @@ export function calculate({
   const weakpointCritBonus = isHeadshot ? bonus.weakpointCritChance : 0
   const critChance =
     attack.critChance * (1 + bonus.critChance + weakpointCritBonus + critFromCombo + (isHeavy ? bonus.heavyCritChance : 0)) +
-    perkFlat.critChance + passiveFlat.critChance + critPerStatusType * activeStatusTypes +
+    perkFlat.critChance + passiveFlat.critChance + critPerStatusType * activeStatusTypes + abilityFlatCritChance +
     (attack.isAoE ? 0 : punctureCritChanceBonus(stacks('puncture')))
   // headcrit doubles the weapon's *base* crit multiplier, so mods scale it but Cold's flat bonus doesn't
   const headcritFactor = isHeadshot && headcrit ? HEADCRIT_MULTIPLIER : 1
   const critMultiplier =
-    attack.critMultiplier * headcritFactor * (1 + bonus.critDamage) + finalCritMultiplierBonus +
+    (attack.critMultiplier * headcritFactor * (1 + bonus.critDamage) + finalCritMultiplierBonus) * abilityCritDamageScale +
     (attack.isAoE ? 0 : coldCritMultiplierBonus(stacks('cold')))
   // over 100% the lowest tier is the "normal" hit and the next tier up is the "crit" (Damage/Calculation 4.3)
   const normalCritMultiplier = 1 + Math.floor(critChance) * (critMultiplier - 1)
@@ -479,9 +560,11 @@ export function calculate({
   const headshotFactor = isHeadshot ? weakPointMultiplier * (1 + bonus.headshotMultiplier) : 1
   const sharedMultiplier = (1 + debuffs.damageVulnerability) * headshotFactor
 
-  const vsTargetNoCrit = sum(
+  // Xata's Whisper: X% of the weapon's total damage as a separate Void hit, faction applies to it twice
+  const extraHitNoCrit = extraHitFraction * sum(Object.values(moddedByType)) * typeMultiplier('void') * factionMultiplier
+  const vsTargetNoCrit = (sum(
     Object.entries(moddedByType).map(([damageType, amount]) => amount * typeMultiplier(damageType)),
-  ) * factionMultiplier * sharedMultiplier
+  ) + extraHitNoCrit) * factionMultiplier * sharedMultiplier
 
   const hit = {
     normal: vsTargetNoCrit * normalCritMultiplier,
@@ -680,6 +763,8 @@ export function calculate({
     shotModel,
     fireRateLocked,
     passives: activePassives,
+    abilities: activeAbilities,
+    heavyCombo,
     detonation,
     melee: isMelee
       ? {

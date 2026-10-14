@@ -145,6 +145,34 @@ don't combine with other elements and take no share of the status procs. So they
 on their own either: you still need status chance and your own elements for procs. Effects with a guaranteed proc
 (Reconifex's perfect-reload Heat rounds) add that proc to every hit on top of the status chance rolls.
 
+## Warframe panel
+
+Pick a Warframe (`src/data/warframes.json` from the export: base armor/energy/shields, slot + aura polarities) and mod it like
+the in-game screen: 2x4 grid, aura slot, exilus slot (Jade has two aura slots), Orokin Reactor, capacity with aura bonus
+(matching polarity x2, mismatch -20%). Only that frame's augments show up. From the equipped mods (`src/calc/warframeStats.ts`):
+- Ability Strength: 100% + "+X% Ability Strength" mods (Intensify, Blind Rage, Transient Fortitude...), Growing Power assumed up,
+  Power Donation -30%, plus an "Extra Ability Strength %" box for Archon Shards / arcanes
+- armor: base x (1 + armor mods) + extra flat armor. Feeds Primary Bulwark (0 = use the arcane's own stack setting)
+- squad auras that buff weapons, added in with damage mods: Steel Charge (melee), Rifle Amp (every non-shotgun primary),
+  Dead Eye (snipers), Pistol Amp, Shotgun Amp; Worthy Comradery (weak point crit chance); Corrosive Projection adds to the
+  Debuffs panel's count (max 4)
+- Gladiator pieces on the Warframe
+
+Abilities (`src/data/warframeAbilities.ts`), max-rank wiki values x Ability Strength (linear): your frame's own abilities use your
+strength, the others count as a teammate's and use "Teammate strength %". Passives (Excalibur's) only work on that frame.
+- Roar (Rhino) +50% faction damage, additive with banes, counts twice on status ticks
+- Solar Eclipse (Mirage) x(1 + 200%), its own multiplier, not multiplied into additive Condition Overload
+- Vex Armor (Chroma) +275% Fury, added in with Serration
+- Xata's Whisper (Xaku) 26% of the weapon's damage as a separate Void hit (mods, crit, faction x2), its Void procs not modeled
+- Nourish (Grendel) +75% Viral, like a Viral mod
+- Freeze Force (Frost) +100% Cold, Electric Shield (Volt, guns, no strength scaling) +50% Electricity: don't combine, do proc;
+  Electric Shield also doubles crit damage
+- Warcry (Valkyr) +50% attack speed, Wrathful Advance (Kullervo) +200% crit after mods, Excalibur passive +10% damage / attack speed
+The leaderboard scenario has no Warframe, so none of this changes the rankings.
+
+Debuffs: every status has a stack count up to its cap. Slash/Heat/Toxin/Electricity have no cap (the box goes to 999), so
+Harmony can detonate 100 Heat stacks. "Max all" puts the uncapped ones at 10.
+
 ## Mod restrictions
 
 `src/calc/modConflicts.ts`, used by both the mod browser (blocked mods show greyed out with "Incompatible with X", an equipped
@@ -219,9 +247,22 @@ src/components/           Weapon/Mod/Target/Debuffs/Stats/Leaderboard panels. Mo
 - Primaries are split into Rifle/Sniper/Launcher/Bow/Shotgun types, so weapons are kept by category. Sniper/Bow/Assault Rifle mods only show for those types
 - Primed Bane mods aren't in the export under their own name, so only regular Banes show up
 - Weapon exilus mods are flagged `isUtility` in the export, not `isExilus`
-- `heavyAttackDamage` is the whole heavy combo added up for some classes: Heavy Scythes (Thalys, Hespar, Wrath, Pride) and
-  Sun & Moon list 18x base. build-data overrides them to the biggest single hit (the 2nd heavy's 600% = 6x), see HEAVY_SINGLE_HIT.
-  Thalys's page lists 800 heavy damage, which matches neither, so it follows the class
+- `heavyAttackDamage` isn't consistent between classes. Checked against the per-hit "Stanceless Combos" Heavy row on each class's
+  wiki page: Heavy Scythes / Sun & Moon list every hit added up (18x = 3 x 200% + 2 x 600%), Assault Saws / Two-Handed Nikanas
+  only the first part, Daggers / Tonfas / Warfans / Sparring neither. The wiki's Weapon Comparison "Heavy" column is the same
+  number as the export, so it's no independent check. In-game, Coda Hirudo's arsenal shows 500% + 5 x 300% (first hit 1,375
+  = 5x of 274.9 with 57.1% Heat), not the wiki's Sparring row or the export's 6.5x
+
+## Multi-hit heavy attacks (`src/data/heavyAttacks.ts`)
+
+12 classes hit more than once on a heavy (Heavy Scythe, Assault Saw, Blade and Whip, Dagger, Dual Daggers, Dual Nikanas,
+Dual Swords, Machete, Sparring, Tonfa, Two-Handed Nikana, Warfan). Their hit lists come from the class pages, with in-game
+arsenal readings overriding them per weapon (Coda Hirudo so far). The calc rescales the Heavy Attack from the hit list:
+- default / leaderboard: the biggest single hit (one damage instance)
+- "Full heavy (all hits)" in the calculator, "Count the full heavy" on the leaderboard: every hit added up, all at the current combo
+- forced procs per hit (Bleed, Puncture, Lifted...) are listed in the breakdowns but not added to the damage
+- the calculator's results and each leaderboard row show the hit-by-hit damage (click "Multi-hit heavy" on a row)
+Classes not in the table hit once and keep the export's number
 - Some weapon base damage doesn't match in game, e.g. Cernos Prime charged shot is 165.6 impact in the export but 289.8 in the arsenal
 - Enemy health/armor types in the export are pre-Update 36, so only base stats + faction are used
 

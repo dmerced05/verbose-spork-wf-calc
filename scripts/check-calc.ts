@@ -1,7 +1,8 @@
 // checks the calc against worked examples from the wiki. run with: npm run check
 import { calculate, type CalcInput } from '../src/calc/damage'
 import { STATUS_TYPES } from '../src/calc/constants'
-import { arcanes, mods, weapons } from '../src/data'
+import { arcanes, mods, warframes, weapons } from '../src/data'
+import { warframeTotals } from '../src/calc/warframeStats'
 import { scaleArmor, scaleHealth } from '../src/calc/target'
 import { estimateKill } from '../src/calc/kill'
 import { resolveCoBehavior } from '../src/calc/conditionOverload'
@@ -494,10 +495,51 @@ expectClose('Melee Exposure keeps the slash proc share', rowOf(withExposure, 'sl
 // Reconifex perfect reload: a guaranteed Heat proc on every hit
 const reconifex = runWeapon('Reconifex', { passives: passivesOn('Reconifex') })
 expectClose('Reconifex guaranteed Heat proc', reconifex.dots.find((dot) => dot.damageType === 'heat')!.procsPerSecond >= reconifex.fireRate * reconifex.multishot - 1e-9 ? 1 : 0, 1)
-// Heavy Scythes: the export sums both heavies (18x), the biggest single hit is the 2nd heavy's 600%
-const thalysHeavy = named('Thalys').attacks.find((attack) => attack.name === 'Heavy Attack')!
-expectClose('Thalys heavy = 6x (one 600% hit)', Object.values(thalysHeavy.damage).reduce((a, b) => a + b, 0), 300 * 6)
+// multi-hit heavies (src/data/heavyAttacks.ts): Heavy Scythe = 3 x 200% + 2 x 600% (the export's 18x is every hit added up)
+const heavyOf = (name: string) => named(name).attacks.find((attack) => attack.name === 'Heavy Attack')!
+const heavyBase = (name: string, heavyMode: 'biggestHit' | 'fullCombo', combo = 1) =>
+  runWeapon(name, { attack: heavyOf(name), heavyMode, buffs: { roar: 0, combo } }).moddedBaseDamage
+expectClose('Thalys biggest heavy hit = 600%', heavyBase('Thalys', 'biggestHit'), 300 * 6)
+expectClose('Thalys full heavy = 1800%', heavyBase('Thalys', 'fullCombo'), 300 * 18)
+// Coda Hirudo, in-game arsenal: 500% + 5 x 300%, first hit 1,375 = 5x of 274.9 (175 + 57.1% Heat)
+expectClose('Coda Hirudo biggest hit = 500%', heavyBase('Coda Hirudo', 'biggestHit'), 175 * 5)
+expectClose('Coda Hirudo arsenal first hit', runWeapon('Coda Hirudo', { attack: heavyOf('Coda Hirudo'), bonusElement: { damageType: 'heat', value: 0.571 } }).moddedBaseDamage, 274.925 * 5)
+expectClose('Coda Hirudo full heavy = 2000%', heavyBase('Coda Hirudo', 'fullCombo'), 175 * 20)
+// single-hit classes keep the export's number
+expectClose('Galatine Prime heavy unchanged', heavyBase('Galatine Prime', 'fullCombo'), Object.values(heavyOf('Galatine Prime').damage).reduce((a, b) => a + b, 0))
 expectClose('Thalys has Incarnon evolutions', getIncarnonTiers('Thalys')?.length ?? 0, 4)
+// ---- Warframe abilities (src/data/warframeAbilities.ts) ----
+const withAbilities = (ids: string[], abilityStrength = 1, armor = 0) =>
+  ({ roar: 0, warframe: { frameName: 'None', abilityStrength, teammateStrength: abilityStrength, armor, abilities: Object.fromEntries(ids.map((id) => [id, true])) } })
+const plainShotAttack = testAttack({ impact: 100 })
+const plainHit = run(plainShotAttack).hit.average
+// Roar at 175% strength: +87.5% faction damage (a neutral target has no faction, so check it against Grineer)
+expectClose('Roar x strength (faction)', run(plainShotAttack, { buffs: withAbilities(['roar'], 1.75), target: grineerTarget }).factionMultiplier, 1.875)
+expectClose('Eclipse x3 damage', run(plainShotAttack, { buffs: withAbilities(['eclipse']) }).hit.average, plainHit * 3)
+expectClose('Vex Armor +275% like Serration', run(plainShotAttack, { buffs: withAbilities(['vexArmor']) }).hit.average, plainHit * 3.75)
+expectClose("Xata's Whisper: +26% as a separate hit", run(plainShotAttack, { buffs: withAbilities(['xatasWhisper']) }).hit.average, plainHit * 1.26)
+const freezeForce = run(testAttack({ impact: 50, heat: 50 }), { buffs: withAbilities(['freezeForce']) })
+expectClose('Freeze Force cold stays uncombined', freezeForce.damageTypes.some((row) => row.damageType === 'blast') ? 0 : (freezeForce.damageTypes.find((row) => row.damageType === 'cold')?.procShare ?? 0) > 0 ? 1 : 0, 1)
+expectClose('Electric Shield doubles crit damage', run(testAttack({ impact: 100 }, { critMultiplier: 2 }), { buffs: withAbilities(['electricShield']) }).critMultiplier, 4)
+expectClose('Wrathful Advance +200% flat crit on melee', runMelee(swing, { buffs: withAbilities(['wrathfulAdvance']) }).critChance, 0.2 + 2)
+expectClose('Wrathful Advance skips guns', run(testAttack({ impact: 100 }, { critChance: 0.2 }), { buffs: withAbilities(['wrathfulAdvance']) }).critChance, 0.2)
+const bulwarkArcane = arcanes.find((arcane) => arcane.name === 'Primary Bulwark')!
+expectClose('Primary Bulwark from Warframe armor (1,300 armor = +300%)',
+  run(plainShotAttack, { arcane: { arcane: bulwarkArcane, rank: bulwarkArcane.levelStats.length - 1, conditionalStacks: 0 }, buffs: withAbilities([], 1, 1300) }).hit.average, plainHit * 4)
+// Warframe panel: strength/armor/auras from the equipped Warframe mods (src/calc/warframeStats.ts)
+const frameNamed = (name: string) => warframes.find((frame) => frame.name === name)!
+const wfMod = (name: string) => { const mod = mods.find((candidate) => candidate.name === name && candidate.type === 'Warframe Mod')!; return { mod, rank: mod.fusionLimit } }
+const wfBuild = (frameName: string, modNames: string[]) => warframeTotals({ frame: frameNamed(frameName), mods: modNames.map(wfMod), extraStrength: 0, extraArmor: 0, teammateStrength: 1, abilities: {} })
+expectClose('Intensify + Blind Rage = 229% strength', wfBuild('Rhino', ['Intensify', 'Blind Rage']).abilityStrength, 1 + 0.3 + 0.99)
+expectClose('Steel Fiber doubles armor', wfBuild('Rhino', ['Steel Fiber']).armor, frameNamed('Rhino').armor * 2)
+expectClose('Steel Charge +60% melee', wfBuild('Jade', ['Steel Charge', 'Rifle Amp']).auraDamage.melee, 0.6)
+expectClose('Jade has two aura slots', frameNamed('Jade').auraPolarities.length, 2)
+expectClose('Corrosive Projection counted', wfBuild('Jade', ['Corrosive Projection']).corrosiveProjections, 1)
+// own frame's abilities use your strength, others the teammate's
+const rhinoState = { frameName: 'Rhino', abilityStrength: 2, teammateStrength: 1, armor: 0, abilities: { roar: true, eclipse: true } }
+expectClose('Roar at your 200% strength', run(plainShotAttack, { buffs: { roar: 0, warframe: rhinoState }, target: grineerTarget }).factionMultiplier, 2)
+expectClose('Eclipse at teammate 100% strength', run(plainShotAttack, { buffs: { roar: 0, warframe: { ...rhinoState, abilities: { eclipse: true } } } }).hit.average, plainHit * 3)
+expectClose('Steel Charge on melee via aura damage', runMelee(swing, { buffs: { roar: 0, warframe: { ...rhinoState, abilities: {}, auraDamage: { melee: 0.6, rifle: 0, sniper: 0, pistol: 0, shotgun: 0 } } } }).hit.normal, 160)
 
 // sanity: standard Braton Prime build, element combining in slot order
 const braton = weapons.find((weapon) => weapon.name === 'Braton Prime')!

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { weapons } from '../src/data'
 import { optimizeAttack, type OptimizedBuild } from '../src/optimizer/optimize'
 import { BOARDS, boardKey } from '../src/optimizer/objectives'
+import { heavyComboFor } from '../src/data/heavyAttacks'
 import type { CompactEntry, LeaderboardFile } from '../src/optimizer/leaderboardTypes'
 import { SCENARIO_DESCRIPTION } from '../src/optimizer/scenario'
 
@@ -82,10 +83,12 @@ function runShard(shard: number, count: number) {
     // every attack (component) gets its own listing: slam, heavy slam, heavy attack, alt-fire, Incarnon form...
     for (const attack of attacks) {
       const builds = new Map<string, OptimizedBuild>()
-      for (const { key, objective, allowFireRateMods } of BOARDS) {
+      for (const { key, objective, allowFireRateMods, heavyMode, heavyOnly } of BOARDS) {
         // heavies use up the combo, so spamming them at max combo isn't real DPS. they only compete for single hits
         if (attack.heavy && objective.usesFireRate) continue
-        builds.set(key, optimizeAttack(weapon, attack, objective, allowFireRateMods))
+        // the full-heavy board only holds multi-hit Heavy Attacks
+        if (heavyOnly && !(attack.heavyMultiplier && heavyComboFor(weapon.name))) continue
+        builds.set(key, optimizeAttack(weapon, attack, objective, allowFireRateMods, heavyMode))
       }
       // the search is a heuristic, so the no-fire-rate build can come out ahead. it's a legal build either way
       for (const { key, objective, allowFireRateMods } of BOARDS) {

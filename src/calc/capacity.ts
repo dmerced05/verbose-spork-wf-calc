@@ -16,5 +16,14 @@ export function modDrain(baseDrain: number, rank: number, modPolarity: string | 
   return matches ? Math.ceil(drain / 2) : Math.ceil(drain * 1.25)
 }
 
+// aura mods add capacity instead of using it (negative base drain). matching polarity doubles the bonus,
+// a mismatch takes 20% off (rounded, my reading of the wiki's Polarity page)
+export function auraCapacity(baseDrain: number, rank: number, modPolarity: string | null, slotPolarity: SlotPolarity): number {
+  const bonus = Math.abs(baseDrain) + rank
+  if (!slotPolarity || !modPolarity) return bonus
+  const matches = slotPolarity === modPolarity || slotPolarity === 'universal'
+  return matches ? bonus * 2 : Math.round(bonus * 0.8)
+}
+
 export const nextPolarity = (current: SlotPolarity): SlotPolarity =>
   WEAPON_SLOT_POLARITIES[(WEAPON_SLOT_POLARITIES.indexOf(current) + 1) % WEAPON_SLOT_POLARITIES.length]

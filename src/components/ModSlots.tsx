@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { capacityFor, modDrain, nextPolarity, type SlotPolarity } from '../calc/capacity'
+import { auraCapacity, capacityFor, modDrain, nextPolarity, type SlotPolarity } from '../calc/capacity'
 import { defaultConditionalStacks, maxConditionalStacks, raisesFireRate } from '../calc/parseMod'
 import { blockingMod } from '../calc/modConflicts'
 import { arcanesById, modsById } from '../data'
@@ -22,13 +22,19 @@ export interface ArcaneSlot {
 export const NORMAL_SLOT_COUNT = 8
 export const EXILUS_SLOT = 8
 export const TOTAL_SLOTS = 9
-const ARCANE_SLOT = 9 // only used for selection, the arcane lives in its own state
+const ARCANE_SLOT = 100 // only used for selection, the arcane lives in its own state
+// Warframes: aura slots come after the exilus (index 9, Jade's second aura 10)
+export const AURA_SLOT_START = TOTAL_SLOTS
 
 // WFCD's image CDN, keyed by the imageName in warframe-items
 const IMAGE_BASE = 'https://cdn.warframestat.us/img/'
 
 interface Props {
-  weaponName: string
+  weaponName: string // shown in the header ("Upgrades: Braton Prime")
+  capacityLabel?: string // 'Orokin Catalyst' for weapons, 'Orokin Reactor' for Warframes
+  auraCount?: number // Warframes: 1 aura slot (Jade 2)
+  showArcane?: boolean // weapons have an arcane slot
+  isAura?: (mod: Mod) => boolean
   isMelee: boolean // melee-kill triggers (Dexterity) start at half stacks on guns
   compatibleMods: Mod[]
   compatibleArcanes: Arcane[]
@@ -99,16 +105,19 @@ interface ModCardProps {
   conflictWith: string | null // another equipped mod this one can't go with (old/loaded builds)
   slotPolarity: SlotPolarity
   isExilusSlot: boolean
+  isAuraSlot?: boolean
   selected: boolean
   onSelect: () => void
   onCyclePolarity: () => void
   onRemove: () => void
 }
 
-function ModCard({ slot, conflictWith, slotPolarity, isExilusSlot, selected, onSelect, onCyclePolarity, onRemove }: ModCardProps) {
+function ModCard({ slot, conflictWith, slotPolarity, isExilusSlot, isAuraSlot, selected, onSelect, onCyclePolarity, onRemove }: ModCardProps) {
   const mod = slot ? modsById.get(slot.modId) : undefined
-  const drain = mod && slot ? modDrain(mod.baseDrain, slot.rank, mod.polarity, slotPolarity) : 0
-  const rawDrain = mod && slot ? mod.baseDrain + slot.rank : 0
+  // auras add capacity (shown as +N), everything else uses it
+  const auraBonus = mod && slot && isAuraSlot ? auraCapacity(mod.baseDrain, slot.rank, mod.polarity, slotPolarity) : 0
+  const drain = mod && slot ? (isAuraSlot ? -auraBonus : modDrain(mod.baseDrain, slot.rank, mod.polarity, slotPolarity)) : 0
+  const rawDrain = mod && slot ? (isAuraSlot ? -(Math.abs(mod.baseDrain) + slot.rank) : mod.baseDrain + slot.rank) : 0
   const drainClass = drain < rawDrain ? 'matched' : drain > rawDrain ? 'mismatched' : ''
 
   return (
@@ -121,8 +130,8 @@ function ModCard({ slot, conflictWith, slotPolarity, isExilusSlot, selected, onS
           <PolarityIcon polarity={slotPolarity} />
         </button>
         {mod && (
-          <span className={`drain ${drainClass}`} title={`Drain ${drain} (base ${rawDrain})`}>
-            {drain} <PolarityIcon polarity={mod.polarity} size={11} />
+          <span className={`drain ${drainClass}`} title={isAuraSlot ? `Adds ${auraBonus} capacity` : `Drain ${drain} (base ${rawDrain})`}>
+            {isAuraSlot ? `+${auraBonus}` : drain} <PolarityIcon polarity={mod.polarity} size={11} />
           </span>
         )}
       </div>
@@ -141,7 +150,7 @@ function ModCard({ slot, conflictWith, slotPolarity, isExilusSlot, selected, onS
           <RemoveButton onRemove={onRemove} />
         </>
       ) : (
-        <div className="empty-label">{isExilusSlot ? 'EXILUS' : ''}</div>
+        <div className="empty-label">{isExilusSlot ? 'EXILUS' : isAuraSlot ? 'AURA' : ''}</div>
       )}
     </CardShell>
   )
@@ -180,15 +189,23 @@ export function ModSlots(props: Props) {
   const {
     weaponName, isMelee, compatibleMods, compatibleArcanes, slots, arcaneSlot, polarities, hasCatalyst,
     onSlotsChange, onArcaneChange, onPolaritiesChange, onCatalystChange,
+    capacityLabel = 'Orokin Catalyst', auraCount = 0, showArcane = true, isAura = () => false,
   } = props
+  const isAuraIndex = (index: number) => index >= AURA_SLOT_START && index < AURA_SLOT_START + auraCount
   const [selectedSlot, setSelectedSlot] = useState(0)
   const [search, setSearch] = useState('')
   const arcaneSelected = selectedSlot === ARCANE_SLOT
   const exilusSelected = selectedSlot === EXILUS_SLOT
+  const auraSelected = isAuraIndex(selectedSlot)
 
-  const capacity = capacityFor(hasCatalyst)
+  // auras add to the capacity, every other slot uses it
+  const auraBonus = slots.reduce((total, slot, index) => {
+    const mod = slot && isAuraIndex(index) ? modsById.get(slot.modId) : undefined
+    return mod && slot ? total + auraCapacity(mod.baseDrain, slot.rank, mod.polarity, polarities[index]) : total
+  }, 0)
+  const capacity = capacityFor(hasCatalyst) + auraBonus
   const usedCapacity = slots.reduce((total, slot, index) => {
-    const mod = slot ? modsById.get(slot.modId) : undefined
+    const mod = slot && !isAuraIndex(index) ? modsById.get(slot.modId) : undefined
     return mod && slot ? total + modDrain(mod.baseDrain, slot.rank, mod.polarity, polarities[index]) : total
   }, 0)
 
@@ -238,7 +255,10 @@ export function ModSlots(props: Props) {
 
   const browserMods = arcaneSelected
     ? []
-    : bySearch(uniqueMods.filter((mod) => !equippedNames.has(mod.name) && (!exilusSelected || mod.isExilus))) // exilus slot only takes exilus mods
+    : bySearch(uniqueMods.filter((mod) =>
+        // aura slots only take auras, exilus only exilus mods, auras go nowhere else
+        !equippedNames.has(mod.name) && (auraSelected ? isAura(mod) : !isAura(mod) && (!exilusSelected || mod.isExilus)))
+      )
         // incompatible ones stay listed (greyed out, at the end) so it's clear why they can't go in
         .map((mod) => ({ mod, blocker: blockerFor(mod) }))
         .sort((a, b) => Number(Boolean(a.blocker)) - Number(Boolean(b.blocker)))
@@ -247,7 +267,7 @@ export function ModSlots(props: Props) {
   const equipMod = (mod: Mod) => {
     updateSlot(selectedSlot, { modId: mod.uniqueName, rank: mod.fusionLimit, conditionalStacks: defaultConditionalStacks(mod.levelStats, mod.fusionLimit, { isMelee, bodyShots: false }) })
     // jump to the next empty normal slot so filling a build is quick
-    if (!exilusSelected) {
+    if (!exilusSelected && !auraSelected) {
       const nextEmpty = slots.findIndex((slot, index) => index < NORMAL_SLOT_COUNT && index !== selectedSlot && !slot)
       if (nextEmpty !== -1) setSelectedSlot(nextEmpty)
     }
@@ -279,6 +299,7 @@ export function ModSlots(props: Props) {
       })()}
       slotPolarity={polarities[index]}
       isExilusSlot={index === EXILUS_SLOT}
+      isAuraSlot={isAuraIndex(index)}
       selected={selectedSlot === index}
       onSelect={() => setSelectedSlot(index)}
       onCyclePolarity={() => cyclePolarity(index)}
@@ -295,24 +316,27 @@ export function ModSlots(props: Props) {
         <div className="row">
           <label className="inline-check">
             <input type="checkbox" checked={hasCatalyst} onChange={(event) => onCatalystChange(event.target.checked)} />
-            Orokin Catalyst
+            {capacityLabel}
           </label>
           <span className={`capacity ${usedCapacity > capacity ? 'over' : ''}`}>
             Capacity <b>{capacity - usedCapacity}/{capacity}</b>
           </span>
-          <button onClick={() => { onSlotsChange(Array(TOTAL_SLOTS).fill(null)); onArcaneChange(null) }}>Clear</button>
+          <button onClick={() => { onSlotsChange(Array(TOTAL_SLOTS + auraCount).fill(null)); onArcaneChange(null) }}>Clear</button>
         </div>
       </div>
 
       <div className="mod-layout">
         <div className="mod-grid">{Array.from({ length: NORMAL_SLOT_COUNT }, (_, index) => renderModCard(index))}</div>
-        <div className="side-column">
-          <ArcaneCard
-            slot={arcaneSlot}
-            selected={arcaneSelected}
-            onSelect={() => setSelectedSlot(ARCANE_SLOT)}
-            onRemove={() => onArcaneChange(null)}
-          />
+        <div className={`side-column ${auraCount > 1 ? 'double-aura' : ''}`}>
+          {Array.from({ length: auraCount }, (_, offset) => renderModCard(AURA_SLOT_START + offset))}
+          {showArcane && (
+            <ArcaneCard
+              slot={arcaneSlot}
+              selected={arcaneSelected}
+              onSelect={() => setSelectedSlot(ARCANE_SLOT)}
+              onRemove={() => onArcaneChange(null)}
+            />
+          )}
           {renderModCard(EXILUS_SLOT)}
         </div>
       </div>
@@ -352,7 +376,9 @@ export function ModSlots(props: Props) {
           <span className="muted-inline">
             {arcaneSelected
               ? `${browserArcanes.length} arcanes · filling arcane slot`
-              : `${browserMods.length} mods · filling ${exilusSelected ? 'Exilus slot (exilus mods only)' : `slot ${selectedSlot + 1}`}`}
+              : `${browserMods.length} mods · filling ${
+                  exilusSelected ? 'Exilus slot (exilus mods only)' : auraSelected ? 'aura slot (auras only)' : `slot ${selectedSlot + 1}`
+                }`}
           </span>
         </div>
         <div className="browser-grid">

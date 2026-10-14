@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { GLADIATOR_MAX_PIECES, STATUS_TYPES, hitsPerComboTier, maxComboFor } from './calc/constants'
+import { STATUS_TYPES, hitsPerComboTier, maxComboFor } from './calc/constants'
 import { calculate } from './calc/damage'
 import { arcanesById, enemies, getCompatibleArcanes, getCompatibleMods, modsById, weapons, weaponsById } from './data'
 import { estimateKill } from './calc/kill'
@@ -9,7 +9,11 @@ import { IncarnonPanel } from './components/IncarnonPanel'
 import { getIncarnonTiers, type SelectedPerk } from './calc/incarnon'
 import { DebuffsPanel } from './components/DebuffsPanel'
 import { PassivesPanel } from './components/PassivesPanel'
+import { WarframePanel } from './components/WarframePanel'
+import { BaseStats } from './components/BaseStats'
 import { hasBonusElement, passivesFor, type BonusElement } from './data/passives'
+import { heavyComboFor, type HeavyMode } from './data/heavyAttacks'
+import type { WarframeState } from './data/warframeAbilities'
 import { ModSlots, TOTAL_SLOTS, EXILUS_SLOT, type ArcaneSlot, type ModSlot } from './components/ModSlots'
 import type { SlotPolarity } from './calc/capacity'
 import { SearchSelect } from './components/SearchSelect'
@@ -77,6 +81,10 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
   const [buffs, setBuffs] = useState<Buffs>({ roar: 0, combo: 1, gladiatorWarframePieces: 0 })
   const [passiveStacks, setPassiveStacks] = useState<Record<string, number>>(() => defaultPassiveStacks(weaponsById.get(defaultWeaponId)!.name))
   const [bonusElement, setBonusElement] = useState<BonusElement | null>(null)
+  const [heavyMode, setHeavyMode] = useState<HeavyMode>('biggestHit')
+  // from the Warframe panel: strength/armor/abilities/auras, and how many Corrosive Projections your auras bring
+  const [warframeState, setWarframeState] = useState<WarframeState | null>(null)
+  const [warframeCorrosive, setWarframeCorrosive] = useState(0)
   const [loadedFrom, setLoadedFrom] = useState<string | null>(null)
 
   // "Load build" on the leaderboard: set the weapon, attack, mods, arcane and perks, and switch the target/debuffs
@@ -135,7 +143,9 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
     : null
   const wikiCo = resolveCoBehavior(weapon, attack)
   const coBehavior = coOverride === 'auto' ? wikiCo : { mode: coOverride, scale: 1, source: 'override' as const }
-  const calcInput = { weapon, attack, mods: equippedMods, arcane: equippedArcane, coBehavior, incarnonPerks, passives: selectedPassives, bonusElement, armor: resolveArmor(target), debuffs, buffs }
+  const calcInput = { weapon, attack, mods: equippedMods, arcane: equippedArcane, coBehavior, incarnonPerks, passives: selectedPassives, bonusElement, heavyMode, armor: resolveArmor(target),
+    debuffs: { ...debuffs, corrosiveProjections: Math.min(4, debuffs.corrosiveProjections + warframeCorrosive) },
+    buffs: { ...buffs, warframe: warframeState ?? undefined } }
   // body and head are always both calculated so the results can show them side by side,
   // the "assume headshots" toggle just picks which one drives the main numbers
   const bodyResult = calculate({ ...calcInput, target: { ...target, headshot: false } })
@@ -191,9 +201,10 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
               )}
             </div>
             <p className="muted">
-              {weapon.type} · Riven disposition {weapon.disposition ?? '?'} · {compatibleMods.length} compatible mods
+              {weapon.type} · {compatibleMods.length} compatible mods
               {attack.isAoE && ' · AoE attack (no headshots, no Puncture/Cold crit bonus)'}
             </p>
+            <BaseStats weapon={weapon} attack={attack} />
             <div className="co-row">
               <label htmlFor="co-mode">Condition Overload / Galvanized / Shiver</label>
               <select id="co-mode" value={coOverride} onChange={(event) => setCoOverride(event.target.value as CoMode | 'auto')}>
@@ -217,17 +228,18 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
                   id="combo" type="range" min={1} max={maxCombo} step={1} value={combo}
                   onChange={(event) => setBuffs({ ...buffs, combo: Number(event.target.value) })}
                 />
-                <label title="Gladiator mods on your Warframe count toward the set bonus. The ones on this weapon are counted automatically">
-                  Gladiator pieces on Warframe
-                  <input
-                    type="number" min={0} max={GLADIATOR_MAX_PIECES - 3} value={buffs.gladiatorWarframePieces ?? 0}
-                    onChange={(event) =>
-                      setBuffs({ ...buffs, gladiatorWarframePieces: Math.min(GLADIATOR_MAX_PIECES - 3, Math.max(0, Number(event.target.value))) })}
-                  />
-                </label>
+                {attack.heavy && attack.heavyMultiplier && heavyComboFor(weapon.name) && (
+                  <label title="This heavy hits more than once. Biggest hit = one damage instance, full heavy = every hit added up">
+                    Heavy attack
+                    <select value={heavyMode} onChange={(event) => setHeavyMode(event.target.value as HeavyMode)}>
+                      <option value="biggestHit">Biggest hit</option>
+                      <option value="fullCombo">Full heavy (all hits)</option>
+                    </select>
+                  </label>
+                )}
                 <p className="muted">
                   Combo multiplies Heavy Attack / Heavy Slam damage and feeds Blood Rush, Weeping Wounds and the Gladiator set
-                  (bonus × (combo − 1)) on every melee attack. Normal swings don't get the damage multiplier.
+                  (bonus × (combo − 1)) on every melee attack. Gladiator pieces on your Warframe are in the Warframe panel. Normal swings don't get the damage multiplier.
                   {attack.heavy && ' Heavies read the combo before spending it.'}
                 </p>
               </div>
@@ -273,6 +285,10 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
             onCatalystChange={setHasCatalyst}
           />
 
+          <WarframePanel
+            buffs={buffs} isMelee={isMelee} onBuffsChange={setBuffs}
+            onWarframeChange={(state, corrosive) => { setWarframeState(state); setWarframeCorrosive(corrosive) }}
+          />
           <TargetPanel target={target} onChange={setTarget} />
           <DebuffsPanel debuffs={debuffs} buffs={buffs} onDebuffsChange={setDebuffs} onBuffsChange={setBuffs} />
         </div>

@@ -4,6 +4,7 @@ import enemiesJson from './enemies.json'
 import arcanesJson from './arcanes.json'
 import warframesJson from './warframes.json'
 import helminthJson from './helminth.json'
+import { bannedOnExalted } from './exalted'
 import type { Arcane, Enemy, Mod, Warframe, WarframeAbilityInfo, Weapon } from '../types'
 
 // these JSON files come from scripts/build-data.mjs (runs on npm install / dev / build)
@@ -71,6 +72,8 @@ export function getCompatibleMods(weapon: Weapon): Mod[] {
     if (mod.type !== modType) return mod.type !== 'Warframe Mod' && Boolean(mod.compatName) && !GENERIC_COMPAT.has(mod.compatName!) && !SUBTYPE_COMPAT[mod.compatName!] && namedFor(weapon, mod.compatName!)
     // Semi-___ Cannonade: "Only compatible with Semi-Auto Trigger" (from the mod's description)
     if (mod.semiOnly && weapon.trigger !== 'Semi') return false
+    // pseudo-exalted abilities can't block, heavy attack or finish (Parry, Fury, Melee Animosity...)
+    if (bannedOnExalted(weapon, mod.name)) return false
     if (!mod.compatName || GENERIC_COMPAT.has(mod.compatName)) return true
     if (SUBTYPE_COMPAT[mod.compatName]) return SUBTYPE_COMPAT[mod.compatName](weapon)
     // weapon-specific mods/augments, e.g. compatName "Paris Prime" or "Tetra"

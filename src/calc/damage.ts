@@ -11,6 +11,7 @@ import {
 } from './constants'
 import { parseUpgrade, scopeApplies, type ModEffect, type StatKey } from './parseMod'
 import { arcanesById } from '../data'
+import { exaltedRuleFor } from '../data/exalted'
 import { NIRA_SLAM_PER_PIECE, VIGILANTE_ENHANCE_PER_PIECE, addPieces, countSets, setEnhancement, setSummary } from './modSets'
 import { resolveCoBehavior, type CoBehavior } from './conditionOverload'
 import { perkAppliesTo, type SelectedPerk } from './incarnon'
@@ -143,6 +144,12 @@ export function calculate({
       heavyMultiplier: multiplier,
     }
     heavyCombo = { combo: heavyComboData, mode: heavyMode, multiplier }
+  }
+  // exalted / pseudo-exalted weapons (src/data/exalted.ts): base damage x your Ability Strength, or a strength damage bonus
+  const exalted = exaltedRuleFor(weapon)
+  const exaltedStrength = buffs.warframe?.abilityStrength ?? 1
+  if (exalted?.strength === 'base') {
+    attack = { ...attack, damage: Object.fromEntries(Object.entries(attack.damage).map(([damageType, amount]) => [damageType, amount * exaltedStrength])) }
   }
   const stacks = (statusType: string) => debuffs.stacks[statusType] ?? 0
   // CO counts status *types*, not stacks. Lifted/knocked down is a hidden status that also counts
@@ -284,6 +291,7 @@ export function calculate({
   let damagePerStatusTypePassive = 0 // Cedo, additive with damage mods
   let finalCritMultiplierBonus = 0 // Knell
   const statusDurationByType: Record<string, number> = {} // '*' = every DoT
+  const statusDamageByType: Record<string, number> = {} // Ash's passive: Slash procs deal 25% more
   let critOverride: { chance: number; critChance: number } | null = null // Gotva Prime
   let statusOverride: { chance: number; statusChance: number } | null = null // Sagek Prime
   let fireRateMultiplier = 1 // Lesion, multiplies with attack speed mods
@@ -353,7 +361,8 @@ export function calculate({
   // ---- Warframe abilities (src/data/warframeAbilities.ts), scaled by Ability Strength ----
   let abilityFlatCritChance = 0 // Wrathful Advance, after mods
   let abilityCritDamageScale = 1 // Electric Shield, multiplies every other crit damage source
-  let extraHitFraction = 0 // Xata's Whisper: a separate Void hit worth this share of the weapon's damage
+  const extraHits: Record<string, number> = {} // separate hits worth this share of the weapon's damage (Xata's Whisper Void, Resupply...)
+  let abilityVulnerability = 0 // Petrify: the target takes more from everything
   const uncombinedElements: Record<string, number> = {} // Freeze Force / Electric Shield: don't combine, do proc
   const statusElementBonus: Record<string, number> = {} // uncombined ability elements that still count for their DoT
   const activeAbilities: string[] = []
@@ -378,18 +387,19 @@ export function calculate({
     }
     for (const cast of strongest.values()) {
       const ability = abilitiesById.get(cast.id)
-      if (!ability || !abilityApplies(ability, weapon.category)) continue
+      if (!ability || !abilityApplies(ability, weapon)) continue
       // passives only work on that frame, cast by you
       if (ability.selfOnly && (cast.by !== 'self' || ability.warframe !== warframe.frameName)) continue
       const times = castStacks(ability, cast)
-      if (times <= 0 || effectsFor(ability, cast.by).length === 0) continue
+      const effects = effectsFor(ability, cast.by)
+      if (effects.length === 0 || effects.every((effect) => effect.perStack && times <= 0)) continue
       const caster = cast.by === 'helminth' ? 'your subsumed' : cast.by === 'ally' ? 'an ally\'s' : 'your'
       activeAbilities.push(`${ability.name}${cast.by === 'helminth' ? ' (subsumed)' : cast.by === 'ally' ? ' (ally)' : ''}`)
       // passives (no ability to cast) just need their condition
       const needs = ability.ability ? `${caster} ${ability.ability} up${ability.condition ? `, ${ability.condition}` : ''}` : ability.condition ?? `playing ${ability.warframe}`
       requirements.push(`${ability.name}: ${needs}${ability.stacks ? ` (${times} ${ability.stacks.label})` : ''}`)
-      for (const effect of effectsFor(ability, cast.by)) {
-        const value = scaledValue(ability, effect.value, strengthFor(cast, warframe)) * times
+      for (const effect of effects) {
+        const value = scaledValue(ability, effect.value, strengthFor(cast, warframe)) * (effect.perStack ? times : 1)
         switch (effect.kind) {
           case 'factionDamage':
             factionBonus += value
@@ -413,9 +423,13 @@ export function calculate({
             // Thermal Transfer: "the Heat bonus is additive with other Heat bonuses for status"
             if (!effect.combines && effect.boostsStatus) statusElementBonus[effect.damageType] = (statusElementBonus[effect.damageType] ?? 0) + value
             break
-          case 'extraHit':
-            extraHitFraction += value
+          case 'extraHit': {
+            // Resupply's sniper bonus is doubled (Neutralizer gets it too, it's a sniper)
+            const amount = weapon.type === 'Sniper' && effect.sniperValue ? value * (effect.sniperValue / effect.value) : value
+            extraHits[effect.damageType] = (extraHits[effect.damageType] ?? 0) + amount
+            if (effect.forcedProc) forcedProcsPerPellet[effect.damageType] = (forcedProcsPerPellet[effect.damageType] ?? 0) + 1
             break
+          }
           case 'attackSpeed':
             bonus.fireRate += value
             break
@@ -430,6 +444,24 @@ export function calculate({
             break
           case 'critDamageMod':
             bonus.critDamage += value
+            break
+          case 'statusTypeDamage':
+            statusDamageByType[effect.damageType] = (statusDamageByType[effect.damageType] ?? 0) + value
+            break
+          case 'statusTypeDuration':
+            statusDurationByType[effect.damageType] = (statusDurationByType[effect.damageType] ?? 0) + value
+            break
+          case 'statusChanceMod':
+            bonus.statusChance += value
+            break
+          case 'statusDurationMod':
+            bonus.statusDuration += value
+            break
+          case 'weakpointDamage':
+            bonus.weakpointDamage += value
+            break
+          case 'targetVulnerability':
+            abilityVulnerability += value
         }
       }
     }
@@ -444,7 +476,7 @@ export function calculate({
   const combo = isMelee ? Math.min(maxComboFor(weapon.name), Math.max(1, buffs.combo ?? 1)) : 1
   const comboSteps = combo - 1
   // the combo only matters if something reads it
-  if (isMelee && combo > 1 && (Boolean(attack.heavy) || bonus.critChancePerCombo > 0 || bonus.statusChancePerCombo > 0 || mods.some(({ mod }) => mod.name.startsWith('Gladiator ')))) {
+  if (isMelee && combo > 1 && (Boolean(attack.heavy) || Boolean(exalted?.abilityCombo) || bonus.critChancePerCombo > 0 || bonus.statusChancePerCombo > 0 || mods.some(({ mod }) => mod.name.startsWith('Gladiator ')))) {
     requirements.push(`Melee combo at ${combo}x${attack.heavy ? ' (spent by the heavy)' : ''}`)
   }
   const gladiatorPieces = Math.min(
@@ -460,7 +492,18 @@ export function calculate({
   // Nira's set: +150% slam damage per piece, "additive to" Seismic Wave
   if (isMelee && /slam/i.test(attack.name)) separateDamageMultiplier *= 1 + bonus.slamDamage + NIRA_SLAM_PER_PIECE * Math.min(3, setPieces.Nira ?? 0)
   if (isMelee && /throw$/i.test(attack.name)) separateDamageMultiplier *= 1 + bonus.throwDamage
-  const heavyComboFactor = isHeavy ? combo : 1
+  // pseudo-exalted (Landslide, Shattered Lash, Whipclaw, Blade Storm): "1x additional damage per combo multiplier" on every hit
+  const heavyComboFactor = isHeavy || (isMelee && exalted?.abilityCombo) ? combo : 1
+  if (exalted && exalted.strength !== 'none') {
+    requirements.push(`${exalted.ability} active (${exalted.strength === 'base' ? 'base damage' : `+${Math.round((exalted.strengthBonus ?? 0) * 100)}% damage`} x ${Math.round(exaltedStrength * 100)}% Ability Strength)`)
+  }
+  // Regulators' innate +150% / Neutralizer's x1.25: Ability Strength damage bonuses added in with Hornet Strike / Serration
+  if (exalted?.strength === 'bonus') bonus.damage += (exalted.strengthBonus ?? 0) * exaltedStrength
+  // Peacemaker's ramp-up multiplies final damage
+  if (exalted?.finalMultiplier) {
+    separateDamageMultiplier *= exalted.finalMultiplier.value
+    requirements.push(exalted.finalMultiplier.requirement)
+  }
 
   // ---- Kuva / Tenet / Coda bonus element: an innate element worth X% of base damage ----
   if (bonusElement && bonusElement.value > 0 && hasBonusElement(weapon.name)) {
@@ -624,7 +667,8 @@ export function calculate({
   const multishot = weapon.category === 'Melee' ? 1 : weapon.multishot * (multishotLocked ? 1 : 1 + bonus.multishot)
   // charged attacks (wiki Damage/Calculation): effective rate = 1 / (charge time + 1 / fire rate), and fire rate
   // mods also speed up the charge (modded charge time = base / (1 + speed bonuses))
-  const fireRateBonus = fireRateLocked ? 0 : bonus.fireRate
+  // pseudo-exalted speed comes from Casting Speed, attack speed mods do nothing
+  const fireRateBonus = fireRateLocked || exalted?.noAttackSpeed ? 0 : bonus.fireRate
   const moddedFireRate = attack.fireRate * (1 + fireRateBonus) * fireRateMultiplier
   // heavy attacks: attack speed only speeds up the swing, wind-up only gets faster from Wind Up Speed mods
   // (wiki Attack_Speed). I treat one heavy as wind-up + one swing at the attack speed, an estimate since the
@@ -656,10 +700,13 @@ export function calculate({
   // Weak_Point: (head multiplier + 1.5 x weak point damage bonuses) x (1 + headshot multiplier bonuses)
   const weakPointMultiplier = headMultiplier + WEAK_POINT_BONUS_RATE_ON_HEAD * bonus.weakpointDamage
   const headshotFactor = isHeadshot ? weakPointMultiplier * (1 + bonus.headshotMultiplier) : 1
-  const sharedMultiplier = (1 + debuffs.damageVulnerability) * headshotFactor
+  // Debuffs panel vulnerability + Petrify, added together
+  const vulnerability = debuffs.damageVulnerability + abilityVulnerability
+  const sharedMultiplier = (1 + vulnerability) * headshotFactor
 
   // Xata's Whisper: X% of the weapon's total damage as a separate Void hit, faction applies to it twice
-  const extraHitNoCrit = extraHitFraction * sum(Object.values(moddedByType)) * typeMultiplier('void') * factionMultiplier
+  // faction counts twice on these (Xata's Whisper wiki: "double-dips faction damage")
+  const extraHitNoCrit = sum(Object.entries(extraHits).map(([damageType, fraction]) => fraction * sum(Object.values(moddedByType)) * typeMultiplier(damageType))) * factionMultiplier
   const vsTargetNoCrit = (sum(
     Object.entries(moddedByType).map(([damageType, amount]) => amount * typeMultiplier(damageType)),
   ) + extraHitNoCrit) * factionMultiplier * sharedMultiplier
@@ -724,8 +771,8 @@ export function calculate({
       const elementMultiplier = info.usesElementMods ? 1 + (elementBonus[damageType] ?? 0) + (statusElementBonus[damageType] ?? 0) : 1
       const headshotPart = !isHeadshot ? 1 : info.fullHeadshot ? headshotFactor : 1 + bonus.headshotMultiplier
       const beforeCrit =
-        info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage) *
-        (1 + debuffs.damageVulnerability) * headshotPart
+        info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage + (statusDamageByType[damageType] ?? 0)) *
+        (1 + vulnerability) * headshotPart
       const tick = critSplit(beforeCrit * typeMultiplier(damageType, info.bypassesArmor))
       // Status Duration stretches the DoT, at one tick per second that's more ticks (wiki Status_Duration).
       // Blast is a single hit so it doesn't care
@@ -737,7 +784,7 @@ export function calculate({
       if (damageType === 'blast') {
         // the explosion hits *other* enemies, so the target's armor/viral/vulnerability don't apply,
         // just the faction weakness (assuming they're the same faction)
-        const detonationBase = (beforeCrit / (1 + debuffs.damageVulnerability)) * (BLAST_DETONATION_MULTIPLIER / info.fraction)
+        const detonationBase = (beforeCrit / (1 + vulnerability)) * (BLAST_DETONATION_MULTIPLIER / info.fraction)
         aoe = { label: '10-stack AoE', damage: critSplit(detonationBase * (factionWeakness.blast ?? 1)) }
       }
       return {
@@ -810,7 +857,7 @@ export function calculate({
       const elementMultiplier = info.usesElementMods ? 1 + (elementBonus[damageType] ?? 0) + (statusElementBonus[damageType] ?? 0) : 1
       const durationScale = 1 + bonus.statusDuration + (statusDurationByType['*'] ?? 0) + (statusDurationByType[damageType] ?? 0)
       const perProc =
-        info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage) * (1 + debuffs.damageVulnerability) *
+        info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage + (statusDamageByType[damageType] ?? 0)) * (1 + vulnerability) *
         typeMultiplier(damageType, info.bypassesArmor) * averageCritMultiplier * Math.floor(info.ticks * durationScale + 1e-9)
       existingStacks += stacks(damageType) * perProc * normalSwingScale
     }

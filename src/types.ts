@@ -32,6 +32,7 @@ export interface Weapon {
   polarities: string[]
   isBow: boolean
   isGlaive?: boolean // takes "Thrown Melee" mods (Power Throw, Volatile Rebound...)
+  exalted?: boolean // summoned by an ability (Exalted Blade) or a pseudo-exalted ability (Landslide), rules in src/data/exalted.ts
   attacks: Attack[]
 }
 

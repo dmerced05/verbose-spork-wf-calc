@@ -10,13 +10,13 @@ import {
   SUBSUMABLE, WARFRAME_ABILITIES, abilitiesById, abilityApplies, canSubsumeInto, effectsFor, modeledAbility, modeledVariants, scaledValue,
   helpsAllies, type AbilityCast, type AbilityEffect, type CastBy, type DefenseEffect, type WarframeAbility, type WarframeState,
 } from '../data/warframeAbilities'
-import type { Warframe, WarframeAbilityInfo } from '../types'
+import type { Warframe, WarframeAbilityInfo, Weapon } from '../types'
 import { AURA_SLOT_START, EXILUS_SLOT, ModSlots, TOTAL_SLOTS, type ArcaneSlot, type ModSlot } from './ModSlots'
 import { SearchSelect } from './SearchSelect'
 
 interface Props {
   isMelee: boolean
-  weaponCategory: string // Primary / Secondary / Melee, which abilities apply
+  weapon: Weapon // the calculator's weapon: which abilities apply, and Valkyr Talons switch Hysteria on
   onWarframeChange: (state: WarframeState, corrosiveProjections: number) => void
 }
 
@@ -47,17 +47,20 @@ function describe(effect: AbilityEffect, value: number) {
     case 'critDamageMultiplier': return `×${(1 + value).toFixed(1)} crit damage`
   }
 }
-function describeDefense(effect: DefenseEffect, ability: WarframeAbility, by: CastBy, strength: number) {
+function describeDefense(effect: DefenseEffect, ability: WarframeAbility, by: CastBy, strength: number, duration: number) {
   if (effect.kind === 'damageReduction') {
     const cap = by === 'helminth' ? effect.helminthCap ?? effect.cap : effect.cap
-    return `${percent(Math.min(cap, scaledValue(ability, effect.perStack * effect.stacks, strength)))} damage reduction (cap ${percent(cap)})${effect.selfOnly && by === 'ally' ? ', not on you' : ''}`
+    // Null Star: particle count from Ability Duration
+    const stacks = effect.stacksScaleWithDuration ? Math.round(effect.stacks * duration) : effect.stacks
+    const count = effect.stacksScaleWithDuration ? `${stacks} ${effect.stackLabel ?? 'stacks'} at ${percent(duration)} duration, ` : ''
+    return `${count}${percent(Math.min(cap, scaledValue(ability, effect.perStack * stacks, strength)))} damage reduction (cap ${percent(cap)})${effect.selfOnly && by === 'ally' ? ', not on you' : ''}`
   }
   return `+${percent(scaledValue(ability, effect.value, strength))} ${effect.kind.replace('Percent', '')}`
 }
-const effectText = (ability: WarframeAbility, by: CastBy, strength: number) =>
+const effectText = (ability: WarframeAbility, by: CastBy, strength: number, duration = 1) =>
   [
     ...effectsFor(ability, by).map((effect) => describe(effect, scaledValue(ability, effect.value, strength))),
-    ...(ability.defense ?? []).map((effect) => describeDefense(effect, ability, by, strength)),
+    ...(ability.defense ?? []).map((effect) => describeDefense(effect, ability, by, strength, duration)),
   ].join(' · ') + (ability.scalesWithStrength ? ` (at ${percent(strength)} strength)` : '')
 const APPLIES_LABEL = { all: '', melee: 'melee only', guns: 'guns only', primary: 'primaries only' } as const
 // the frame's two arcane slots take Warframe arcanes
@@ -82,7 +85,7 @@ const subsumeByKey = new Map(SUBSUME_OPTIONS.map((option) => [option.key, option
 // abilities an ally can bring (passives can't be shared)
 const ALLY_OPTIONS = WARFRAME_ABILITIES.filter(helpsAllies)
 
-export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Props) {
+export function WarframePanel({ isMelee, weapon, onWarframeChange }: Props) {
   const [frameId, setFrameId] = useState(defaultFrameId)
   const frame = warframesById.get(frameId)!
   const baseName = warframeBaseName(frame.name)
@@ -90,6 +93,7 @@ export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Pro
   const [polarities, setPolarities] = useState(() => polaritiesFor(frame))
   const [hasReactor, setHasReactor] = useState(true)
   const [extraStrength, setExtraStrength] = useState(0)
+  const [extraDuration, setExtraDuration] = useState(0)
   const [extraArmor, setExtraArmor] = useState(0)
   const [teammateStrength, setTeammateStrength] = useState(1)
   // the Helminth swap: which of the 4 slots, and what goes in it
@@ -127,6 +131,9 @@ export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Pro
     ...kit.flatMap((entry) => (entry.modeled && activeOwn[entry.activeKey] && hasAugment(entry.modeled) ? [{ id: entry.modeled.id, by: entry.by, stacks: abilityStacks[entry.modeled.id] }] : [])),
     ...passives.filter((passive) => activeOwn[passive.id] && hasAugment(passive)).map((passive) => ({ id: passive.id, by: 'self' as const })),
     ...allies.map((id) => ({ id, by: 'ally' as const })),
+    // holding Valkyr Talons means Hysteria is up (Warcry's armor x3)
+    ...(baseName === 'Valkyr' && /^Valkyr( Prime)? Talons/.test(weapon.name) && !kit.some((entry) => entry.modeled?.id === 'hysteria' && activeOwn[entry.activeKey])
+      ? [{ id: 'hysteria', by: 'self' as const }] : []),
   ]
   const build: WarframeBuild = {
     frame,
@@ -135,6 +142,7 @@ export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Pro
     shieldInnateDr,
     otherDr,
     extraStrength,
+    extraDuration,
     extraArmor,
     teammateStrength,
     casts,
@@ -163,7 +171,7 @@ export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Pro
   const renderKitEntry = (entry: (typeof kit)[number], index: number) => {
     const { modeled } = entry
     const on = Boolean(modeled && activeOwn[entry.activeKey])
-    const applies = modeled ? abilityApplies(modeled, weaponCategory) : false
+    const applies = modeled ? abilityApplies(modeled, weapon) : false
     const missingAugment = modeled && !hasAugment(modeled)
     // the Helminth list for this slot: not this frame's own ability, and damage buffs only where the game allows
     const slotName = entry.replaced ?? entry.info.name
@@ -191,7 +199,7 @@ export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Pro
               onChange={(event) => setActiveOwn({ ...activeOwn, [entry.activeKey]: event.target.checked })}
             />
             {modeled.name !== entry.info.name ? `${modeled.name}: ` : 'Active: '}
-            {effectText(modeled, entry.by, state.abilityStrength)}
+            {effectText(modeled, entry.by, state.abilityStrength, totals.abilityDuration)}
             {entry.by === 'helminth' && modeled.helminth && ' · subsumed value'}
             {!applies && ` · ${APPLIES_LABEL[modeled.appliesTo]}`}
             {missingAugment && ` · equip ${modeled.augment} to use it`}
@@ -232,6 +240,7 @@ export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Pro
 
       <div className="warframe-stats">
         <div><span className="label">Ability Strength</span><span className="value">{percent(totals.abilityStrength)}</span></div>
+        <div><span className="label">Ability Duration</span><span className="value">{percent(totals.abilityDuration)}</span></div>
         <div><span className="label">Health</span><span className="value">{totals.health.toLocaleString()}</span></div>
         <div><span className="label">Shields</span><span className="value">{totals.shields.toLocaleString()}</span></div>
         <div><span className="label">Armor</span><span className="value">{totals.armor.toLocaleString()}</span></div>
@@ -260,6 +269,10 @@ export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Pro
         <label title="Archon Shards, arcanes, anything not in the mods (+%)">
           Extra Ability Strength %
           <input type="number" step={1} value={Math.round(extraStrength * 100)} onChange={(event) => setExtraStrength(Number(event.target.value) / 100)} />
+        </label>
+        <label title="Archon Shards, arcanes, anything not in the mods (+%). Null Star's particle count scales with it">
+          Extra Ability Duration %
+          <input type="number" step={1} value={Math.round(extraDuration * 100)} onChange={(event) => setExtraDuration(Number(event.target.value) / 100)} />
         </label>
         <label title="Flat armor from Archon Shards etc. Feeds Primary Bulwark (+1% damage per armor past 1,000)">
           Extra armor
@@ -321,12 +334,12 @@ export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Pro
           <div className="kit-head"><span className="kit-index">P</span><span className="ability-name">Passive</span></div>
           <div className="kit-description">{frame.passive.replace(/\|[A-Z_]+\|/g, 'X')}</div>
           {passives.map((passive) => (
-            <label key={passive.id} className={`kit-effect ${abilityApplies(passive, weaponCategory) ? '' : 'inactive'}`} title={`“${passive.quote}”${passive.note ? `\n${passive.note}` : ''}`}>
+            <label key={passive.id} className={`kit-effect ${abilityApplies(passive, weapon) ? '' : 'inactive'}`} title={`“${passive.quote}”${passive.note ? `\n${passive.note}` : ''}`}>
               <input
                 type="checkbox" checked={Boolean(activeOwn[passive.id])} disabled={!hasAugment(passive)}
                 onChange={(event) => setActiveOwn({ ...activeOwn, [passive.id]: event.target.checked })}
               />
-              {passive.augment ? `${passive.name}: ` : 'Active: '}{effectText(passive, 'self', state.abilityStrength)}
+              {passive.augment ? `${passive.name}: ` : 'Active: '}{effectText(passive, 'self', state.abilityStrength, totals.abilityDuration)}
               {passive.condition && ` · ${passive.condition}`}
               {!hasAugment(passive) && ` · equip ${passive.augment} to use it`}
             </label>
@@ -348,7 +361,7 @@ export function WarframePanel({ isMelee, weaponCategory, onWarframeChange }: Pro
       <div className="ally-list">
         {allies.map((id) => {
           const ability = abilitiesById.get(id)!
-          const applies = abilityApplies(ability, weaponCategory)
+          const applies = abilityApplies(ability, weapon)
           return (
             <div key={id} className={`ally-chip ${applies ? '' : 'inactive'}`} title={`“${ability.quote}”${ability.note ? `\n${ability.note}` : ''}`}>
               <span className="ability-name">{ability.name}</span>

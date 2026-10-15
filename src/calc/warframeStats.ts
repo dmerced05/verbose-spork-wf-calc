@@ -25,6 +25,7 @@ export interface WarframeBuild {
   mods: EquippedWarframeMod[]
   arcanes: EquippedWarframeArcane[] // the frame's two arcane slots
   extraStrength: number // archon shards, anything not in the mods (fraction, 0.1 = +10%)
+  extraDuration?: number // same for Ability Duration
   extraArmor: number // flat armor from shards etc.
   teammateStrength: number // strength allies cast at
   casts: AbilityCast[] // your abilities, your subsumed one and allies' (built by the panel)
@@ -40,6 +41,7 @@ export interface DrSource {
 
 export interface WarframeTotals {
   abilityStrength: number // 1 = 100%
+  abilityDuration: number // 1 = 100%
   armor: number
   health: number
   shields: number
@@ -66,7 +68,7 @@ const combineDr = (values: number[]) => 1 - values.reduce((taken, value) => take
 
 export function warframeTotals(build: WarframeBuild): WarframeTotals {
   const flat = { armor: build.extraArmor, health: 0 }
-  const scaling = { strength: build.extraStrength, armorPercent: 0, healthPercent: 0, shieldPercent: 0 }
+  const scaling = { strength: build.extraStrength, duration: build.extraDuration ?? 0, armorPercent: 0, healthPercent: 0, shieldPercent: 0 }
   const drSources: DrSource[] = []
   const auraDamage = { melee: 0, rifle: 0, sniper: 0, pistol: 0, shotgun: 0 }
   let weakpointCritChance = 0
@@ -78,7 +80,7 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
     const total = value * times
     if (stat === 'damageResistance') drSources.push({ label: source, value: Math.min(0.9, total), on: 'both' })
     else if (stat === 'armor' || stat === 'health') flat[stat] += total
-    else if (stat === 'strength') scaling.strength += total
+    else if (stat === 'strength' || stat === 'duration') scaling[stat] += total
     else scaling[stat] += total
     lines.push(`${source}: ${stat === 'armor' || stat === 'health' ? `+${Math.round(total)} ${stat}` : `${total >= 0 ? '+' : ''}${Math.round(total * 1000) / 10}% ${stat.replace('Percent', '').replace('damageResistance', 'DR')}`}`)
   }
@@ -143,9 +145,14 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
   }
 
   const abilityStrength = Math.max(0, 1 + scaling.strength)
+  const abilityDuration = Math.max(0, 1 + scaling.duration)
 
   // abilities: % of base armor/health/shields go in with the mods, DR sources stack multiplicatively
   const frameName = warframeBaseName(build.frame.name)
+  // synergies: an active ability of yours multiplying another one's defense (Hysteria: "Warcry's armor bonus is multiplied by 3x")
+  const boostFor = (abilityId: string) => build.casts
+    .filter((cast) => cast.by !== 'ally')
+    .reduce((total, cast) => total * (abilitiesById.get(cast.id)?.boosts?.[abilityId] ?? 1), 1)
   for (const cast of build.casts) {
     const ability = abilitiesById.get(cast.id)
     if (!ability?.defense) continue
@@ -155,10 +162,13 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
       if (effect.selfOnly && cast.by === 'ally') continue
       if (effect.kind === 'damageReduction') {
         const cap = cast.by === 'helminth' ? effect.helminthCap ?? effect.cap : effect.cap
-        drSources.push({ label: ability.name, value: Math.min(cap, effect.perStack * effect.stacks * strength), on: 'both' })
+        // Null Star: the particle count is the Duration stat (12 x duration), each particle's 5% is the Strength one
+        const stacks = effect.stacksScaleWithDuration ? Math.round(effect.stacks * abilityDuration) : effect.stacks
+        drSources.push({ label: `${ability.name}${effect.stacksScaleWithDuration ? ` (${stacks} ${effect.stackLabel ?? 'stacks'})` : ''}`, value: Math.min(cap, effect.perStack * stacks * strength), on: 'both' })
       } else {
-        scaling[effect.kind] += effect.value * strength
-        lines.push(`${ability.name}: +${Math.round(effect.value * strength * 1000) / 10}% ${effect.kind.replace('Percent', '')}`)
+        const boost = cast.by === 'ally' ? 1 : boostFor(ability.id)
+        scaling[effect.kind] += effect.value * strength * boost
+        lines.push(`${ability.name}: +${Math.round(effect.value * strength * boost * 1000) / 10}% ${effect.kind.replace('Percent', '')}${boost !== 1 ? ` (x${boost})` : ''}`)
       }
     }
   }
@@ -180,7 +190,7 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
   const effectiveHealth = health / Math.max(1e-6, 1 - healthDr) + shields / Math.max(1e-6, 1 - shieldDr)
 
   return {
-    abilityStrength, armor, health, shields,
+    abilityStrength, abilityDuration, armor, health, shields,
     drSources: allSources, healthDr, shieldDr, effectiveHealth, damageCap, setPieces,
     auraDamage, weakpointCritChance, corrosiveProjections, lines,
   }

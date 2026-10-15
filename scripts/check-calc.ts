@@ -561,6 +561,10 @@ const nova = defense('Nova', [], [{ id: 'nullStar', by: 'self' }])
 const novaArmorDr = nova.armor / (nova.armor + 300)
 expectClose('Null Star x armor on health', nova.healthDr, 1 - (1 - novaArmorDr) * 0.4)
 expectClose('Null Star x innate 50% on shields', nova.shieldDr, 1 - 0.5 * 0.4)
+// Null Star particles = 12 x Ability Duration (the wiki lists the count under Duration), 5% each x Strength
+expectClose('Null Star +30% duration = 16 particles = 80%', defense('Nova', ['Continuity'], [{ id: 'nullStar', by: 'self' }]).drSources.find((source) => source.label.startsWith('Null Star'))!.value, 0.8)
+expectClose('Null Star strength scales the 5%, not the count', defense('Nova', ['Intensify'], [{ id: 'nullStar', by: 'self' }]).drSources.find((source) => source.label.startsWith('Null Star'))!.value, 12 * 0.05 * 1.3)
+expectClose('Immolation at max heat: 85% x strength, cap 90%', defense('Ember', [], [{ id: 'immolation', by: 'self' }]).drSources.find((source) => source.label.startsWith('Immolation'))!.value, 0.85)
 expectClose('Null Star from an ally does nothing for you', defense('Rhino', [], [{ id: 'nullStar', by: 'ally' }]).drSources.length, 2)
 expectClose('subsumed Null Star capped at 75%', defense('Rhino', ['Intensify', 'Transient Fortitude', 'Blind Rage'], [{ id: 'nullStar', by: 'helminth' }]).drSources.find((source) => source.label.startsWith('Null Star'))!.value, 0.75)
 expectClose('Vitality +100% health', defense('Rhino', ['Vitality'], []).health, frameNamed('Rhino').health * 2)
@@ -651,6 +655,44 @@ expectClose('Range Advantage (filed as a Primary Mod) fits the Akjagara', getCom
 expectClose('Clip Delegation (Primary Mod) fits the Sobek shotgun', getCompatibleMods(named('Sobek')).some((mod) => mod.name === 'Clip Delegation') ? 1 : 0, 1)
 expectClose('Biotic Rounds (compat "AX-52") fits the Ax-52', getCompatibleMods(weapons.find((weapon) => weapon.name.startsWith('Ax-52'))!).some((mod) => mod.name === 'Biotic Rounds') ? 1 : 0, 1)
 expectClose("Nira's Contempt fits whips", getCompatibleMods(named('Lecta')).some((mod) => mod.name === "Nira's Contempt") ? 1 : 0, 1)
+
+// Ash's passive: Slash procs +25% damage, +50% duration (6 ticks -> 9)
+const ashSlash = runMelee(testAttack({ slash: 100 }, { statusChance: 1 }), { buffs: castState([{ id: 'ashPassive', by: 'self' }], 'Ash') }).dots.find((dot) => dot.damageType === 'slash')!
+const plainSlash = runMelee(testAttack({ slash: 100 }, { statusChance: 1 })).dots.find((dot) => dot.damageType === 'slash')!
+expectClose('Ash passive: slash tick x1.25', ashSlash.tick.normal / plainSlash.tick.normal, 1.25)
+expectClose('Ash passive: slash +50% duration', ashSlash.ticks, Math.floor(plainSlash.ticks * 1.5))
+// Smoke Shadow's crit doesn't scale with strength (the wiki lists fixed values)
+const strongAlly = (id: string): CalcInput['buffs'] => ({ roar: 0, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 2, armor: 0, casts: [{ id, by: 'ally' }] } })
+expectClose('Smoke Shadow +150% crit at any strength', runMelee(swing, { buffs: strongAlly('smokeShadow') }).critChance, 0.2 * 2.5)
+
+// ---- exalted weapons (src/data/exalted.ts) ----
+const exaltedRun = (name: string, attackName: string | null, buffs: CalcInput['buffs'], extra: Partial<CalcInput> = {}) => {
+  const weapon = named(name)
+  const attack = attackName ? weapon.attacks.find((option) => option.name === attackName)! : weapon.attacks[0]
+  return calculate({ weapon, attack, mods: [], armor: 0, debuffs: noDebuffs(), buffs, target: { ...grineerTarget, faction: 'None' }, ...extra })
+}
+const withStrength = (abilityStrength: number, casts: WarframeState['casts'] = [], frameName = 'None', combo = 1): CalcInput['buffs'] =>
+  ({ roar: 0, combo, warframe: { frameName, abilityStrength, teammateStrength: 1, armor: 0, casts } })
+expectClose('Exalted Blade: base damage x Ability Strength', exaltedRun('Exalted Blade', 'Normal Attack', withStrength(2)).hit.normal / exaltedRun('Exalted Blade', 'Normal Attack', withStrength(1)).hit.normal, 2)
+expectClose('Garuda Talons are innate claws, no strength scaling', exaltedRun('Garuda Talons', 'Normal Attack', withStrength(2)).hit.normal / exaltedRun('Garuda Talons', 'Normal Attack', withStrength(1)).hit.normal, 1)
+// Regulators: 50 base, +150% x strength with the damage mods, x2.5 when ramped
+expectClose('Regulators: 50 x (1 + 150%) x 2.5 ramp', exaltedRun('Regulators', null, withStrength(1)).hit.normal, 50 * 2.5 * 2.5)
+expectClose('Shattered Lash: +1x per combo (12x)', exaltedRun('Shattered Lash', 'Thrust (tap)', withStrength(1, [], 'None', 12)).hit.normal / exaltedRun('Shattered Lash', 'Thrust (tap)', withStrength(1, [], 'None', 1)).hit.normal, 12)
+expectClose('Landslide can\'t take Fury', getCompatibleMods(named('Landslide Fists')).some((mod) => mod.name === 'Fury') ? 1 : 0, 0)
+expectClose('Smite Infusion doesn\'t reach Exalted Blade', typeValue(exaltedRun('Exalted Blade', 'Normal Attack', withStrength(1, [{ id: 'smiteInfusion', by: 'ally' }])), 'radiation'), 0)
+expectClose('Ensnare: Whipclaw x2', exaltedRun('Whipclaw', null, withStrength(1, [{ id: 'ensnare', by: 'ally' }])).hit.normal / exaltedRun('Whipclaw', null, withStrength(1)).hit.normal, 2)
+expectClose('Ensnare: nothing on other melee', runMelee(swing, { buffs: withStrength(1, [{ id: 'ensnare', by: 'ally' }]) }).hit.normal, 100)
+expectClose('Petrify: +50% vulnerability', run(plainShotAttack, { buffs: withStrength(1, [{ id: 'petrify', by: 'ally' }]) }).hit.average, plainHit * 1.5)
+// Hysteria: Warcry armor x3 (Valkyr base 600-ish: 1 + 0.5 x 3)
+const hysteria = defense('Valkyr', [], [{ id: 'warcry', by: 'self' }, { id: 'hysteria', by: 'self' }])
+expectClose('Hysteria triples Warcry armor', hysteria.armor, Math.round(frameNamed('Valkyr').armor * (1 + 0.5 * 3)))
+// Resupply: an extra hit of the element, 25% (50% on snipers), forced proc
+const neutralizer = exaltedRun('Neutralizer', 'Normal Attack', withStrength(1, [{ id: 'resupply_heat', by: 'ally' }]))
+const plainNeutralizer = exaltedRun('Neutralizer', 'Normal Attack', withStrength(1))
+expectClose('Resupply heat on a sniper: +50% extra hit', neutralizer.hit.normal / plainNeutralizer.hit.normal, 1.5)
+expectClose('Resupply forces a Heat proc every hit', neutralizer.dots.find((dot) => dot.damageType === 'heat')!.procsPerSecond / neutralizer.fireRate, 1)
+// Ripper's Wail: 75% heat + 5% per Backbeat hit, uncombined
+expectClose("Ripper's Wail with 25 hits = +200% heat", typeValue(run(testAttack({ impact: 100 }), { buffs: withStrength(1, [{ id: 'rippersWail', by: 'ally', stacks: 25 }]) }), 'heat'), 200)
 
 // requirement list
 const deadheadArcane = arcanes.find((arcane) => arcane.name === 'Primary Deadhead')!

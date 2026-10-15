@@ -42,7 +42,7 @@ export type ModEffect =
   | { kind: 'forcedProcChance'; damageType: string; value: number } // extra proc chance on every hit, outside the damage split
 
 // armor/health are flat ("+900 Armor"), the *Percent ones % of base, damageResistance is one multiplicative DR source
-export type FrameStat = 'armor' | 'armorPercent' | 'health' | 'healthPercent' | 'shieldPercent' | 'strength' | 'damageResistance'
+export type FrameStat = 'armor' | 'armorPercent' | 'health' | 'healthPercent' | 'shieldPercent' | 'strength' | 'duration' | 'damageResistance'
 
 // Warframe arcanes that buff one weapon type ("+180% Melee Damage to Melee Weapons", "+120% Fire Rate to Pistols")
 export type WeaponScope = 'melee' | 'primary' | 'primaryNoShotgun' | 'secondary' | 'shotgun' | 'sniper' | 'guns'
@@ -84,6 +84,7 @@ const FRAME_STAT_PATTERNS: [RegExp, FrameStat][] = [
   [/^([+-][\d.]+)% Health$/, 'healthPercent'],
   [/^([+-][\d.]+)% Shield Capacity$/, 'shieldPercent'],
   [/^([+-][\d.]+)% Ability Strength$/, 'strength'],
+  [/^([+-][\d.]+)% Ability Duration$/, 'duration'],
   // Adaptation is per damage type, against one kind of enemy that's all of it
   [/^([+-][\d.]+)% (?:[Dd]amage [Rr]esistance|Resistance to that Damage Type)$/, 'damageResistance'],
 ]

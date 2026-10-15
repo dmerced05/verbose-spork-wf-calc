@@ -338,7 +338,7 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .layout .panel.collapsed > :not(:first-child) { display: none; }
 .layout .panel.collapsed > h2, .layout .panel.collapsed > :first-child h2 { margin-bottom: 0; }
 .stack-cap { font-size: 0.7rem; color: var(--muted); }
-.warframe-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+.warframe-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
 .warframe-stats div { display: flex; flex-direction: column; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
 .warframe-stats .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .warframe-stats .value { font-size: 1.1rem; color: var(--accent); }

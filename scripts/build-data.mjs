@@ -72,15 +72,9 @@ const glaiveDetonation = (weapon, attack) =>
     ? { heavy: true, windUp: null, forcedProcs: GLAIVE_DETONATION_PROCS[weapon.name] }
     : {}
 
-const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('Melee')]
-  .filter(
-    (weapon) =>
-      WEAPON_CATEGORIES.has(weapon.category) &&
-      MODDABLE_PRODUCT_CATEGORIES.has(weapon.productCategory) &&
-      weapon.type !== 'Zaw Component' &&
-      weapon.attacks?.length,
-  )
-  .map((weapon) => ({
+// one weapon in the shape the calc wants. also used for the exalted weapons below
+function toWeapon(weapon) {
+  return {
     uniqueName: weapon.uniqueName,
     name: weapon.name,
     type: weapon.type,
@@ -118,8 +112,56 @@ const weapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('
       ...(weapon.category === 'Melee' && /heavy slam/i.test(attack.name) ? { heavy: true } : {}),
       ...glaiveDetonation(weapon, attack),
     }))),
-  }))
-  .sort((a, b) => a.name.localeCompare(b.name))
+  }
+}
+
+const regularWeapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('Melee')]
+  .filter(
+    (weapon) =>
+      WEAPON_CATEGORIES.has(weapon.category) &&
+      MODDABLE_PRODUCT_CATEGORIES.has(weapon.productCategory) &&
+      weapon.type !== 'Zaw Component' &&
+      weapon.attacks?.length,
+  )
+  .map((weapon) => toWeapon(weapon))
+
+
+// exalted weapons (Exalted Blade, Valkyr Talons, Regulators...) and the pseudo-exalted abilities that take mods (Landslide,
+// Shattered Lash, Whipclaw, Blade Storm) live in Misc. their numbers are the max-rank base, the calc scales them with
+// Ability Strength (src/data/exalted.ts). archgun/archmelee ones are left out (no mods for those here)
+const EXALTED_SLOTS = { Primary: 'Primary', Secondary: 'Secondary', Melee: 'Melee' }
+const EXALTED_TYPES = { 'Artemis Bow': 'Bow', 'Artemis Bow Prime': 'Bow', Neutralizer: 'Sniper' }
+// pseudo-exalted can't heavy attack ("Cannot perform blocking or heavy attacks"), Diwata neither
+const NO_HEAVY = /^(Shattered Lash|Landslide Fists|Whipclaw|Shadow Clones|Diwata)/
+const exaltedWeapons = readJson('Misc')
+  .filter((item) => item.type === 'Exalted Weapon' && EXALTED_SLOTS[item.exaltedSlot] && item.attacks?.length)
+  .map((item) => {
+    const category = EXALTED_SLOTS[item.exaltedSlot]
+    const source = {
+      ...item,
+      category,
+      type: EXALTED_TYPES[item.name] ?? (category === 'Melee' ? 'Melee' : category === 'Secondary' ? 'Pistol' : 'Rifle'),
+      heavyAttackDamage: NO_HEAVY.test(item.name) ? undefined : item.heavyAttackDamage,
+      // Blade Storm's clones: the export has no numbers. wiki: 1,500 Finisher damage per hit at max rank, guaranteed Bleed.
+      // Finisher damage ignores armor, so it goes in as True
+      attacks: /^Shadow Clones/.test(item.name)
+        ? [{ name: 'Clone Strike', speed: 2, crit_chance: 5, crit_mult: 1.2, status_chance: 5, damage: { true: 1500 } }]
+        // Shattered Lash: tap = Thrust (Puncture), hold = Sweep (Slash)
+        : item.attacks.map((attack) => ({ ...attack, name: /^Shattered Lash/.test(item.name) ? (attack.name === 'Damage' ? 'Thrust (tap)' : 'Sweep (hold)') : attack.name })),
+    }
+    const weapon = toWeapon(source)
+    // Garuda's Talons are her innate claws, a normal weapon
+    if (!/^Garuda/.test(item.name)) weapon.exalted = true
+    if (/^Shadow Clones/.test(item.name)) weapon.attacks = weapon.attacks.map((attack) => ({ ...attack, forcedProcs: ['slash'] }))
+    // Noctua's Active Attack "needs a full meter, which takes 60 seconds to recharge. Primary hits reduce recharge by 1 second each".
+    // firing the primary (1.5/s) the whole time, 60 - 1.5t = t gives one every 24 s
+    if (item.name === 'Noctua') weapon.attacks = weapon.attacks.map((attack) => (attack.name === 'Active Attack' ? { ...attack, fireRate: 1 / 24 } : attack))
+    // Artemis Bow "fires seven arrows at once" at max rank (not Concentrated Arrow), damage isn't split between them
+    if (/^Artemis Bow/.test(item.name)) weapon.attacks = weapon.attacks.map((attack) => (/^Base /.test(attack.name) ? { ...attack, multishot: 7 } : attack))
+    return weapon
+  })
+const weapons = [...regularWeapons, ...exaltedWeapons]
+weapons.sort((a, b) => a.name.localeCompare(b.name))
 
 const weaponMods = readJson('Mods')
   .filter((mod) => MOD_TYPES.has(mod.type) && mod.levelStats?.length)

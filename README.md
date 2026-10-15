@@ -205,8 +205,9 @@ Arcane Blessing health, Double Back damage resistance) feed the frame's stats.
 
 Survivability (`warframeTotals`): health / shields / armor from base x (1 + % mods + % from abilities) + flat (arcanes, extra
 armor). Abilities that add defense: Warcry +50% armor (wiki: "Base Armor x (1 + Armor Mods + Warcry Modifier x (1 + Strength
-Mods))", allies too), Vex Armor's Scorn +350%, Elemental Ward (Cold) +145%, Null Star 12 x 5% DR (cap 90%, 75% subsumed, only
-Nova). Damage reduction: armor / (armor + 300) on health only, shields' innate 50% (toggle, from the wiki's example), Null Star,
+Mods))", allies too), Vex Armor's Scorn +350%, Elemental Ward (Cold) +145%, Null Star (particles = 12 x Ability Duration, each 5% x
+Strength, cap 90%, 75% subsumed, only Nova), Immolation at max heat (85% x Strength, cap 90%), Ash's passive (Slash procs +25%
+damage, +50% duration). Damage reduction: armor / (armor + 300) on health only, shields' innate 50% (toggle, from the wiki's example), Null Star,
 Adaptation, Double Back and an "Other DR %" box, all multiplied together ("Sources of damage reduction (including armor) stack
 multiplicatively with each other"). Effective health = health / (1 - health DR) + shields / (1 - shield DR).
 
@@ -244,6 +245,26 @@ utility lines (ammo, accuracy, projectile speed, punch through...) are dropped. 
 Thrown) now show up on those weapons, and weapon-named augments go on their weapon whatever type the export files them under
 (Range Advantage on the Akjagara and Clip Delegation on the Sobek are "Primary Mods"). Still not in the numbers: on-death explosions (Acid Shells, Vulcan Blitz...), Sentient
 Incision, Static Discharge, alt-fire modes (Wild Frenzy, Spontaneous Singularity, Vile Discharge), Meticulous Aim's body shot penalty.
+
+More ability buffs (each frame's Abilities wiki page): Prismatic Gem (Citrine, +100% status chance and duration), Resupply (Cyte-09,
+pick the element on the card: an extra hit of it worth 25% x strength, 50% on snipers, with its forced proc), Seek (+75% weak point
+damage), Deathbringer (Jade, +100% like Serration), Ripper's Wail (Temple, +75% Heat + 5% per Backbeat hit up to 750%, doesn't
+combine), Silken Stride (Oraxia, 40% / 80% wall latched Toxin extra hit, 100% status), Demonium (Uriel, 30% Heat extra hit with
+forced Heat, +30% fire rate), Narin's passive (50% Cold extra hit with forced Cold), Petrify (+50% damage vulnerability), Ensnare
+(Whipclaw x2). Synergies: Hysteria triples Warcry's armor ("Warcry's armor bonus is multiplied by 3x when used while Hysteria is
+active"), on automatically when the weapon is Valkyr Talons.
+
+Exalted weapons (`src/data/exalted.ts`): the export's Misc list has them with max-rank base numbers, build-data turns the primary /
+secondary / melee ones into weapons (archgun / archmelee ones left out). Exalted Blade, Valkyr Talons, Iron Staff, Desert Wind,
+Shadow Claws, Diwata, Dex Pixia, Artemis Bow (7 arrows), Balefire Charger, Noctua, Glory: base damage x your Ability Strength.
+Regulators: innate +150% x strength in with Hornet Strike, plus the x2.5 Peacemaker ramp (a requirement). Neutralizer: +25% x
+strength in with Serration. Pseudo-exalted (Shattered Lash, Landslide, Whipclaw, Blade Storm's Shadow Clones): base x strength,
+"+1x damage per combo multiplier" on every hit, no attack speed (Casting Speed instead), no blocking/heavy/finisher mods. Blade
+Storm has no numbers in the export: 1,500 Finisher (True) per hit with a guaranteed Bleed, from the wiki. Garuda's Talons are her
+innate claws, a normal weapon. The hold-to-cast elemental augments and Thermal Transfer don't apply to exalted weapons. Noctua's Active Attack needs a full
+meter (60 s, -1 s per primary hit), so it's one every 24 s while firing. Not modeled:
+energy waves (Exalted Blade, Desert Wind), Noctua's fragments, Chromatic Blade, Glory's alt-fire exceptions, Mass Vitrify/Splinter
+Storm with Shattered Lash.
 
 Every box on the calculator folds up: click its title.
 

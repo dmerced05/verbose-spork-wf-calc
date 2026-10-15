@@ -12,25 +12,30 @@
 // who casts it matters (see AbilityCast): your own and your subsumed ability use your strength, an ally's uses theirs,
 // and subsumed versions are weaker on some (Helminth values from each frame's Abilities wiki page)
 
-export type AbilityEffect =
+export type AbilityEffect = (
   | { kind: 'factionDamage'; value: number }
   | { kind: 'damageMultiplier'; value: number }
   | { kind: 'baseDamage'; value: number }
   // boostsStatus: also adds to that element's DoT like an elemental mod. forcedProc: the element takes no share of the status
   // procs, it forces one proc of its own on every hit instead (Shock Trooper)
   | { kind: 'element'; damageType: string; value: number; combines: boolean; boostsStatus?: boolean; forcedProc?: boolean }
-  | { kind: 'extraHit'; damageType: string; value: number }
+  // extraHit: a separate hit worth value x the weapon's damage (Xata's Whisper, Resupply, Demonium). forcedProc: it also forces
+  // its element's proc on every hit, sniperValue: Resupply's doubled sniper bonus
+  | { kind: 'extraHit'; damageType: string; value: number; forcedProc?: boolean; sniperValue?: number }
   | { kind: 'attackSpeed'; value: number }
   | { kind: 'flatCritChance'; value: number }
   | { kind: 'critDamageMultiplier'; value: number }
   | { kind: 'critChanceMod'; value: number }
   | { kind: 'critDamageMod'; value: number }
-
+  | { kind: 'statusTypeDamage' | 'statusTypeDuration'; damageType: string; value: number } // Ash's passive, per status type
+  | { kind: 'statusChanceMod' | 'statusDurationMod' | 'weakpointDamage'; value: number } // Prismatic Gem, Seek: added in with mods
+  | { kind: 'targetVulnerability'; value: number } // Petrify: the target takes more damage from everything
+) & { perStack?: boolean } // with ability.stacks: only these effects multiply by the stack count (Ripper's Wail's per-hit part)
 // survivability side (src/calc/warframeStats.ts): % of base armor/health/shields (added in with the mods, like Warcry's wiki
 // formula "Base Armor x (1 + Armor Mods + Warcry Modifier x (1 + Strength Mods))"), or a damage reduction source
 export type DefenseEffect =
   | { kind: 'armorPercent' | 'healthPercent' | 'shieldPercent'; value: number; selfOnly?: boolean }
-  | { kind: 'damageReduction'; perStack: number; stacks: number; cap: number; helminthCap?: number; selfOnly?: boolean }
+  | { kind: 'damageReduction'; perStack: number; stacks: number; cap: number; helminthCap?: number; selfOnly?: boolean; stacksScaleWithDuration?: boolean; stackLabel?: string }
 
 export interface WarframeAbility {
   id: string
@@ -44,6 +49,9 @@ export interface WarframeAbility {
   scalesWithStrength: boolean
   condition?: string // what has to be true in the fight, for the results' requirement list (default: the buff is up)
   stacks?: { label: string; max: number; default: number } // per-stack effects (Thrall Pact: per Thrall)
+  notExalted?: boolean // "does not apply to Exalted Weapons" (the hold-to-cast elemental augments, Thermal Transfer)
+  onlyWeapons?: RegExp // only these weapons (Ensnare's x2 is for Whipclaw)
+  boosts?: Record<string, number> // multiplies another active ability's defense numbers (Hysteria: Warcry armor x3)
   effects: AbilityEffect[]
   defense?: DefenseEffect[] // armor / health / shields / damage reduction, for the Survivability numbers
   quote: string // from the ability's wiki page
@@ -88,7 +96,7 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     },
   },
   {
-    id: 'freezeForce', ability: 'Freeze', augment: 'Freeze Force', name: 'Freeze Force (Freeze augment)', warframe: 'Frost', appliesTo: 'all', scalesWithStrength: true,
+    id: 'freezeForce', notExalted: true, ability: 'Freeze', augment: 'Freeze Force', name: 'Freeze Force (Freeze augment)', warframe: 'Frost', appliesTo: 'all', scalesWithStrength: true,
     effects: [{ kind: 'element', damageType: 'cold', value: 1, combines: false, boostsStatus: true }],
     quote: 'an additional 100% Cold Damage to their attacks. This damage bonus does not combine with other elements',
   },
@@ -113,11 +121,11 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     helminth: { effects: [{ kind: 'flatCritChance', value: 1 }], quote: 'The melee critical chance bonus is reduced to 25% / 50% / 75% / 100%.' },
   },
   {
-    id: 'nullStar', condition: 'all 12 Null Star particles up', ability: 'Null Star', name: 'Null Star (12 particles)', warframe: 'Nova', appliesTo: 'all', scalesWithStrength: true,
+    id: 'nullStar', condition: 'all Null Star particles up', ability: 'Null Star', name: 'Null Star', warframe: 'Nova', appliesTo: 'all', scalesWithStrength: true,
     effects: [],
-    defense: [{ kind: 'damageReduction', perStack: 0.05, stacks: 12, cap: 0.9, helminthCap: 0.75, selfOnly: true }],
-    quote: 'Strength 5% Damage Reduction per particle. Damage reduction is capped at 90%. Each active particle reduces damage to Nova\'s Health and Shields.',
-    note: 'Assumes all 12 particles up. Subsumed cap is 75%.',
+    defense: [{ kind: 'damageReduction', perStack: 0.05, stacks: 12, cap: 0.9, helminthCap: 0.75, selfOnly: true, stacksScaleWithDuration: true, stackLabel: 'particles' }],
+    quote: 'Duration: 12 (particles). 5% Damage Reduction per particle (Strength). Damage reduction is capped at 90%. Each active particle reduces damage to Nova\'s Health and Shields.',
+    note: 'Particles = 12 x Ability Duration (the wiki lists the count under Duration), each worth 5% x Ability Strength. Subsumed cap is 75%.',
   },
   {
     id: 'elementalWardCold', ability: 'Elemental Ward', name: 'Elemental Ward (Cold)', warframe: 'Chroma', appliesTo: 'all', scalesWithStrength: true,
@@ -129,23 +137,23 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
   // ---- augments that add damage (their mod has to be equipped when it's your own frame) ----
   // the "Hold to cast" family, worded like Freeze Force, so the same mechanics (doesn't combine)
   {
-    id: 'fireballFrenzy', ability: 'Fireball', augment: 'Fireball Frenzy', name: 'Fireball Frenzy (Fireball augment)', warframe: 'Ember', appliesTo: 'all', scalesWithStrength: true,
+    id: 'fireballFrenzy', notExalted: true, ability: 'Fireball', augment: 'Fireball Frenzy', name: 'Fireball Frenzy (Fireball augment)', warframe: 'Ember', appliesTo: 'all', scalesWithStrength: true,
     effects: [{ kind: 'element', damageType: 'heat', value: 1, combines: false, boostsStatus: true }],
     quote: 'Hold to cast will grant all allies within 15m an additional 100% Heat Damage to their attacks for 40s.',
   },
   {
-    id: 'shockTrooper', ability: 'Shock', augment: 'Shock Trooper', name: 'Shock Trooper (Shock augment)', warframe: 'Volt', appliesTo: 'all', scalesWithStrength: true,
+    id: 'shockTrooper', notExalted: true, ability: 'Shock', augment: 'Shock Trooper', name: 'Shock Trooper (Shock augment)', warframe: 'Volt', appliesTo: 'all', scalesWithStrength: true,
     effects: [{ kind: 'element', damageType: 'electricity', value: 1, combines: false, boostsStatus: true, forcedProc: true }],
     quote: 'Hold to cast will grant all allies within 15m an additional 100% Electricity Damage to their attacks for 40s. This damage bonus does not combine with other elements, and is additive with elemental mods.',
     note: 'Guaranteed Electricity proc on every hit instead of a share of the status rolls (from you, the wiki page doesn\'t mention it).',
   },
   {
-    id: 'smiteInfusion', ability: 'Smite', augment: 'Smite Infusion', name: 'Smite Infusion (Smite augment)', warframe: 'Oberon', appliesTo: 'all', scalesWithStrength: true,
+    id: 'smiteInfusion', notExalted: true, ability: 'Smite', augment: 'Smite Infusion', name: 'Smite Infusion (Smite augment)', warframe: 'Oberon', appliesTo: 'all', scalesWithStrength: true,
     effects: [{ kind: 'element', damageType: 'radiation', value: 1, combines: false, boostsStatus: true }],
     quote: 'Hold to cast will grant all allies within 15m an additional 100% Radiation Damage to their attacks for 40s.',
   },
   {
-    id: 'venomDose', ability: 'Spores', augment: 'Venom Dose', name: 'Venom Dose (Spores augment)', warframe: 'Saryn', appliesTo: 'all', scalesWithStrength: true,
+    id: 'venomDose', notExalted: true, ability: 'Spores', augment: 'Venom Dose', name: 'Venom Dose (Spores augment)', warframe: 'Saryn', appliesTo: 'all', scalesWithStrength: true,
     effects: [{ kind: 'element', damageType: 'corrosive', value: 1, combines: false, boostsStatus: true }],
     quote: 'Hold to cast will grant all allies within 15m an additional 100% Corrosive Damage to their attacks for 40s.',
   },
@@ -153,19 +161,19 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
   // combine into Blast "equaling the sum of Cold and Heat damage". "Elemental Damage bonus scales with Ability Strength",
   // it "does not combine with modded elements" and is "additive with elemental mods"
   {
-    id: 'thermalTransferHeat', ability: 'Thermal Sunder', augment: 'Thermal Transfer', variant: 'Heat (hold cast)', name: 'Thermal Transfer (Heat)', warframe: 'Gauss', appliesTo: 'all', scalesWithStrength: true,
+    id: 'thermalTransferHeat', notExalted: true, ability: 'Thermal Sunder', augment: 'Thermal Transfer', variant: 'Heat (hold cast)', name: 'Thermal Transfer (Heat)', warframe: 'Gauss', appliesTo: 'all', scalesWithStrength: true,
     condition: 'Heat Thermal Sunder buff up (hold cast)',
     effects: [{ kind: 'element', damageType: 'heat', value: 0.75, combines: false, boostsStatus: true }],
     quote: 'Allies in range gain 75% bonus Elemental Damage for 30s. Hold cast grants Heat damage. The Heat bonus is additive with other Heat bonuses for status.',
   },
   {
-    id: 'thermalTransferCold', ability: 'Thermal Sunder', augment: 'Thermal Transfer', variant: 'Cold (tap cast)', name: 'Thermal Transfer (Cold)', warframe: 'Gauss', appliesTo: 'all', scalesWithStrength: true,
+    id: 'thermalTransferCold', notExalted: true, ability: 'Thermal Sunder', augment: 'Thermal Transfer', variant: 'Cold (tap cast)', name: 'Thermal Transfer (Cold)', warframe: 'Gauss', appliesTo: 'all', scalesWithStrength: true,
     condition: 'Cold Thermal Sunder buff up (tap cast)',
     effects: [{ kind: 'element', damageType: 'cold', value: 0.75, combines: false, boostsStatus: true }],
     quote: 'Allies in range gain 75% bonus Elemental Damage for 30s. Tap cast grants Cold damage.',
   },
   {
-    id: 'thermalTransferBlast', ability: 'Thermal Sunder', augment: 'Thermal Transfer', variant: 'Blast (both casts)', name: 'Thermal Transfer (Blast)', warframe: 'Gauss', appliesTo: 'all', scalesWithStrength: true,
+    id: 'thermalTransferBlast', notExalted: true, ability: 'Thermal Sunder', augment: 'Thermal Transfer', variant: 'Blast (both casts)', name: 'Thermal Transfer (Blast)', warframe: 'Gauss', appliesTo: 'all', scalesWithStrength: true,
     condition: 'both Heat and Cold Thermal Sunder buffs up',
     effects: [{ kind: 'element', damageType: 'blast', value: 1.5, combines: false }],
     quote: 'Both can be active at once and combine into a Blast buff "equaling the sum of Cold and Heat damage" (75% + 75%). Blast does not contribute to status damage.',
@@ -175,6 +183,7 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     condition: 'target frozen',
     effects: [{ kind: 'critChanceMod', value: 2 }, { kind: 'critDamageMod', value: 1 }],
     quote: 'Frost gains +200% Critical Chance and +100% Critical Damage against frozen enemies.',
+    note: 'The wiki table says +200% Critical Damage at max rank, the game export (the mod text above) says +100%. Using the export. No Ability Strength scaling on either.',
   },
   {
     id: 'empoweredQuiver', ability: 'Quiver', augment: 'Empowered Quiver', name: 'Empowered Quiver (Quiver augment)', warframe: 'Ivara', appliesTo: 'all', scalesWithStrength: true,
@@ -183,7 +192,7 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     quote: 'Dashwire grants allies 100% Critical Damage.',
   },
   {
-    id: 'smokeShadow', ability: 'Smoke Screen', augment: 'Smoke Shadow', name: 'Smoke Shadow (Smoke Screen augment)', warframe: 'Ash', appliesTo: 'all', scalesWithStrength: true,
+    id: 'smokeShadow', ability: 'Smoke Screen', augment: 'Smoke Shadow', name: 'Smoke Shadow (Smoke Screen augment)', warframe: 'Ash', appliesTo: 'all', scalesWithStrength: false,
     condition: 'invisible from Smoke Screen',
     effects: [{ kind: 'critChanceMod', value: 1.5 }],
     quote: 'Conceals allies within 15m and grants 150% Critical Chance while invisible.',
@@ -195,12 +204,99 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     quote: 'Hitting 4 enemies with Virulence grants 200% Primary Weapon Critical Chance for 15s.',
   },
   {
-    id: 'thrallPact', ability: 'Enthrall', augment: 'Thrall Pact', name: 'Thrall Pact (Enthrall augment)', warframe: 'Revenant', appliesTo: 'primary', scalesWithStrength: false, selfOnly: true,
+    id: 'thrallPact', ability: 'Enthrall', augment: 'Thrall Pact', name: 'Thrall Pact (Enthrall augment)', warframe: 'Revenant', appliesTo: 'primary', scalesWithStrength: true, selfOnly: true,
     condition: 'Thralls alive',
     stacks: { label: 'Thralls', max: 7, default: 3 },
-    effects: [{ kind: 'baseDamage', value: 0.25 }],
+    effects: [{ kind: 'baseDamage', value: 0.25, perStack: true }],
     quote: 'Gain +25% Primary Weapon Damage for each active Thrall.',
-    note: 'Treated like Serration (added in with damage mods). Thrall cap assumed 7.',
+    note: 'Treated like Serration (added in with damage mods). Enthrall caps at 7 Thralls. The wiki puts the bonus under Ability Strength.',
+  },
+  {
+    id: 'immolation', ability: 'Immolation', name: 'Immolation (max heat)', warframe: 'Ember', appliesTo: 'all', scalesWithStrength: true, condition: 'Immolation at max heat',
+    effects: [],
+    defense: [{ kind: 'damageReduction', perStack: 0.85, stacks: 1, cap: 0.9, selfOnly: true }],
+    quote: 'DR = H × Min(0.90, 0.85 × (1 + Ability Strength)) + (1 − H) × Min(0.50, 0.40 × (1 + Ability Strength)). 10 / 20 / 30 / 40% on cast, 50 / 65 / 75 / 85% at maximum heat.',
+    note: 'Taken at full heat (H = 100%).',
+  },
+  {
+    id: 'ashPassive', name: 'Ash passive (Slash procs)', warframe: 'Ash', appliesTo: 'all', scalesWithStrength: false, selfOnly: true,
+    condition: 'playing Ash',
+    effects: [{ kind: 'statusTypeDamage', damageType: 'slash', value: 0.25 }, { kind: 'statusTypeDuration', damageType: 'slash', value: 0.5 }],
+    quote: 'Slash procs inflicted by Ash\'s weapons and abilities deal 25% more damage and last 50% longer. The damage bonus stacks additively with other Status Damage bonuses, and the duration bonus stacks additively with status duration mods.',
+  },
+  // ---- newer frames' weapon buffs (each frame's Abilities wiki page) ----
+  {
+    id: 'prismaticGem', ability: 'Prismatic Gem', name: 'Prismatic Gem (aurora)', warframe: 'Citrine', appliesTo: 'all', scalesWithStrength: true,
+    condition: 'standing in Prismatic Gem\'s aurora',
+    effects: [{ kind: 'statusChanceMod', value: 1 }, { kind: 'statusDurationMod', value: 1 }],
+    quote: 'Allies inside its aurora get a Status Chance bonus of 60/70/85/100% for their weapons and a Status Duration bonus of 60/70/85/100%. Both scale with Ability Strength.',
+    note: 'Added in with status chance / status duration mods.',
+  },
+  ...['heat', 'cold', 'electricity', 'toxin', 'blast', 'radiation', 'gas', 'magnetic', 'viral', 'corrosive'].map((element): WarframeAbility => ({
+    id: `resupply_${element}`, ability: 'Resupply', variant: element[0].toUpperCase() + element.slice(1), name: `Resupply (${element[0].toUpperCase() + element.slice(1)})`,
+    warframe: 'Cyte-09', appliesTo: 'guns', scalesWithStrength: true,
+    condition: 'ammo pack looted (cleared on reload)',
+    effects: [{ kind: 'extraHit', damageType: element, value: 0.25, sniperValue: 0.5, forcedProc: true }],
+    quote: 'Looting the Ammo packs will instantly refill the equipped weapon\'s magazine, triggering an Extra Hit. 10 / 15 / 20 / 25% weapon damage bonus (20 / 30 / 40 / 50% sniper damage bonus), applies a forced status effect from the selected element.',
+    note: 'An extra hit of the picked element worth 25% x strength (50% on snipers) with its forced proc on every hit.',
+  })),
+  {
+    id: 'seek', ability: 'Seek', name: 'Seek (weak spots)', warframe: 'Cyte-09', appliesTo: 'all', scalesWithStrength: true,
+    condition: 'headshots on enemies Seek marked',
+    effects: [{ kind: 'weakpointDamage', value: 0.75 }],
+    quote: '30% / 45% / 60% / 75% (weak point damage). The bonus stacks additively with the weak point multiplier formula.',
+  },
+  {
+    id: 'deathbringer', ability: 'Symphony of Mercy', name: 'Deathbringer hymn', warframe: 'Jade', appliesTo: 'all', scalesWithStrength: true,
+    condition: 'Deathbringer hymn active',
+    effects: [{ kind: 'baseDamage', value: 1 }],
+    quote: '40 / 60 / 80 / 100 % Deathbringer weapon damage bonus, additive to other damage increases such as Serration.',
+  },
+  {
+    id: 'rippersWail', ability: 'Ripper\'s Wail', name: 'Ripper\'s Wail', warframe: 'Temple', appliesTo: 'all', scalesWithStrength: true,
+    condition: 'Ripper\'s Wail up',
+    stacks: { label: 'Backbeat hits', max: 135, default: 0 },
+    effects: [{ kind: 'element', damageType: 'heat', value: 0.75, combines: false, boostsStatus: true }, { kind: 'element', damageType: 'heat', value: 0.05, combines: false, boostsStatus: true, perStack: true }],
+    quote: 'Weapon Heat damage 30% / 45% / 60% / 75%, each qualifying hit adds 2% / 3% / 4% / 5%, up to a maximum of 750%. Damage bonus is additive with mods and does not combine with a weapon\'s existing elements.',
+    note: '135 Backbeat hits = 750% at 100% strength.',
+  },
+  ...[['Silken Stride', 0.4, ''], ['Silken Stride, wall latched', 0.8, ', wall latched']].map(([label, value, suffix], index): WarframeAbility => ({
+    id: index ? 'silkenStrideLatched' : 'silkenStride', ability: 'Silken Stride', variant: index ? 'Wall latched' : 'Normal', name: String(label), warframe: 'Oraxia',
+    appliesTo: 'guns', scalesWithStrength: true, selfOnly: true, condition: `Silken Stride up${suffix}`,
+    effects: [{ kind: 'extraHit', damageType: 'toxin', value: Number(value), forcedProc: true }],
+    quote: '10% / 20% / 30% / 40% Toxin Weapon Damage, 20% / 40% / 60% / 80% Wall Latch Toxin Weapon Damage. The extra hit has 100% status chance. Only primary and secondary weapons.',
+  })),
+  {
+    id: 'demonium', ability: 'Demonium', name: 'Demonium (Vythelas rune)', warframe: 'Uriel', appliesTo: 'guns', scalesWithStrength: true,
+    condition: 'Vythelas rune collected',
+    effects: [{ kind: 'extraHit', damageType: 'heat', value: 0.3, forcedProc: true }, { kind: 'attackSpeed', value: 0.3 }],
+    quote: '30% Heat damage Extra Hit, exclusive to primary and secondary weapons, guaranteed Heat status effect on every hit, +30% Fire Rate. Scales with Ability Strength.',
+  },
+  {
+    id: 'narinPassive', name: 'Narin passive (Sangodae)', warframe: 'Narin', appliesTo: 'all', scalesWithStrength: false, selfOnly: true,
+    condition: 'Sangodae up',
+    effects: [{ kind: 'extraHit', damageType: 'cold', value: 0.5, forcedProc: true }],
+    quote: 'Weapon hits grant an Extra Hit of 50% bonus Cold damage and a guaranteed Cold status for 15 seconds. The Extra Hit inherits the triggering hit\'s critical damage.',
+  },
+  // ---- synergies and target debuffs ----
+  {
+    id: 'hysteria', ability: 'Hysteria', name: 'Hysteria (Valkyr Talons)', warframe: 'Valkyr', appliesTo: 'all', scalesWithStrength: true, selfOnly: true,
+    condition: 'Hysteria active',
+    effects: [], boosts: { warcry: 3 },
+    quote: 'Warcry\'s armor bonus is multiplied by 3x when used while Hysteria is active.',
+    note: 'On automatically when the calculator\'s weapon is Valkyr Talons.',
+  },
+  {
+    id: 'petrify', ability: 'Petrify', name: 'Petrify', warframe: 'Atlas', appliesTo: 'all', scalesWithStrength: false,
+    condition: 'target petrified',
+    effects: [{ kind: 'targetVulnerability', value: 0.5 }],
+    quote: 'Petrified enemies take +50% Damage Vulnerability.',
+  },
+  {
+    id: 'ensnare', ability: 'Ensnare', name: 'Ensnare (Whipclaw x2)', warframe: 'Khora', appliesTo: 'melee', scalesWithStrength: false, onlyWeapons: /^Whipclaw/,
+    condition: 'target Ensnared',
+    effects: [{ kind: 'damageMultiplier', value: 1 }],
+    quote: 'Against Ensnared enemies, Whipclaw deals 200% damage and refreshes the propagation effect.',
   },
   {
     id: 'excaliburPassive', condition: 'wielding a sword-type melee', name: 'Excalibur passive (swords)', warframe: 'Excalibur', appliesTo: 'melee', scalesWithStrength: false, selfOnly: true,
@@ -243,12 +339,13 @@ export interface WarframeState {
 export const strengthFor = (cast: AbilityCast, state: WarframeState) =>
   cast.by === 'ally' ? state.teammateStrength : state.abilityStrength
 
-export const abilityApplies = (ability: WarframeAbility, weaponCategory: string) =>
-  ability.appliesTo === 'all' ||
-  (ability.appliesTo === 'melee' && weaponCategory === 'Melee') ||
-  (ability.appliesTo === 'guns' && weaponCategory !== 'Melee') ||
-  (ability.appliesTo === 'primary' && weaponCategory === 'Primary')
-// stacks a cast counts (Thrall Pact), 1 for everything else
+export const abilityApplies = (ability: WarframeAbility, weapon: { category: string; name?: string; exalted?: boolean }) =>
+  !(ability.notExalted && weapon.exalted) && (!ability.onlyWeapons || ability.onlyWeapons.test(weapon.name ?? '')) && (
+    ability.appliesTo === 'all' ||
+    (ability.appliesTo === 'melee' && weapon.category === 'Melee') ||
+    (ability.appliesTo === 'guns' && weapon.category !== 'Melee') ||
+    (ability.appliesTo === 'primary' && weapon.category === 'Primary'))
+// stacks a cast counts (Thrall Pact), 1 for everything else. only effects marked perStack use it
 export const castStacks = (ability: WarframeAbility, cast: AbilityCast) =>
   ability.stacks ? Math.max(0, Math.min(ability.stacks.max, cast.stacks ?? ability.stacks.default)) : 1
 
@@ -265,7 +362,7 @@ export const scaledValue = (ability: WarframeAbility, value: number, abilityStre
 
 // ---- Helminth ----
 // which ability each Warframe gives the Helminth (from each frame's Abilities wiki page, "Subsumable to Helminth").
-// frames I couldn't confirm are left out
+// Koumei's page says it has none
 export const SUBSUMABLE: Record<string, string> = {
   Ash: 'Shuriken', Atlas: 'Petrify', Banshee: 'Silence', Baruuk: 'Elude', Caliban: 'Sentient Wrath', Chroma: 'Elemental Ward',
   Dagath: 'Wyrd Scythes', Ember: 'Fire Blast', Equinox: 'Rest & Rage', Excalibur: 'Radial Blind', Frost: 'Freeze',
@@ -277,6 +374,10 @@ export const SUBSUMABLE: Record<string, string> = {
   Saryn: 'Molt', Sevagoth: 'Gloom', Styanax: 'Tharros Strike', Titania: 'Spellbind', Trinity: 'Energy Vampire',
   Valkyr: 'Warcry', Vauban: 'Tesla Nervos', Volt: 'Shock', Voruna: "Lycath's Hunt", Wisp: 'Breach Surge', Wukong: 'Defy',
   Xaku: "Xata's Whisper", Yareli: 'Aquablades', Zephyr: 'Airburst',
+  // newer frames, checked one by one on their Abilities pages (Koumei has none)
+  Citrine: 'Fractured Blast', 'Cyte-09': 'Evade', Dante: 'Dark Verse', Follie: 'Self Portrait', Jade: 'Ophanim Eyes', Narin: 'Neote',
+  Nokko: 'Brightbonnet', Oraxia: 'Webbed Embrace', Qorvex: 'Chyrinka Pillar', 'Sirius & Orion': 'Jade Stars', Temple: 'Pyrotechnics',
+  Uriel: 'Remedium',
 }
 
 // damage buffs (Roar, Eclipse, Xata's Whisper) can only go on frames that already have one, replacing that one

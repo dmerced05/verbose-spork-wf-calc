@@ -59,18 +59,22 @@ const SUBTYPE_COMPAT: Record<string, (weapon: Weapon) => boolean> = {
   Thrown: (weapon) => weapon.type === 'Throwing',
 }
 
+// weapon-specific mods name their weapon in compatName, not always in the same case ("AX-52" vs the weapon's "Ax-52",
+// "EFV-8 Mars" vs "Efv-8 Mars"), so it's a case-insensitive prefix match
+const namedFor = (weapon: Weapon, compatName: string) => weapon.name.toLowerCase().startsWith(compatName.toLowerCase())
+
 export function getCompatibleMods(weapon: Weapon): Mod[] {
   const modType = modTypeFor(weapon)
   return mods.filter((mod) => {
     // weapon augments are filed under odd types sometimes (Range Advantage for the Akjagara is a "Primary Mod", Clip Delegation for
     // the Sobek shotgun too), so a mod naming this weapon goes on it whatever its type
-    if (mod.type !== modType) return mod.type !== 'Warframe Mod' && Boolean(mod.compatName) && !GENERIC_COMPAT.has(mod.compatName!) && !SUBTYPE_COMPAT[mod.compatName!] && weapon.name.startsWith(mod.compatName!)
+    if (mod.type !== modType) return mod.type !== 'Warframe Mod' && Boolean(mod.compatName) && !GENERIC_COMPAT.has(mod.compatName!) && !SUBTYPE_COMPAT[mod.compatName!] && namedFor(weapon, mod.compatName!)
     // Semi-___ Cannonade: "Only compatible with Semi-Auto Trigger" (from the mod's description)
     if (mod.semiOnly && weapon.trigger !== 'Semi') return false
     if (!mod.compatName || GENERIC_COMPAT.has(mod.compatName)) return true
     if (SUBTYPE_COMPAT[mod.compatName]) return SUBTYPE_COMPAT[mod.compatName](weapon)
     // weapon-specific mods/augments, e.g. compatName "Paris Prime" or "Tetra"
-    return weapon.name.startsWith(mod.compatName)
+    return namedFor(weapon, mod.compatName)
   })
 }
 

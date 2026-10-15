@@ -649,6 +649,7 @@ const penta = named('Penta')
 expectClose('Napalm Grenades: +30 final status chance', calculate({ weapon: penta, attack: penta.attacks[0], mods: [{ mod: napalm, rank: napalm.fusionLimit, conditionalStacks: 0 }], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: grineerTarget }).statusChance, penta.attacks[0].statusChance + 0.3)
 expectClose('Range Advantage (filed as a Primary Mod) fits the Akjagara', getCompatibleMods(named('Akjagara')).some((mod) => mod.name === 'Range Advantage') ? 1 : 0, 1)
 expectClose('Clip Delegation (Primary Mod) fits the Sobek shotgun', getCompatibleMods(named('Sobek')).some((mod) => mod.name === 'Clip Delegation') ? 1 : 0, 1)
+expectClose('Biotic Rounds (compat "AX-52") fits the Ax-52', getCompatibleMods(weapons.find((weapon) => weapon.name.startsWith('Ax-52'))!).some((mod) => mod.name === 'Biotic Rounds') ? 1 : 0, 1)
 expectClose("Nira's Contempt fits whips", getCompatibleMods(named('Lecta')).some((mod) => mod.name === "Nira's Contempt") ? 1 : 0, 1)
 
 // requirement list

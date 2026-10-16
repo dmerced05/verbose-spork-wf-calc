@@ -134,7 +134,8 @@ export const maxedDebuffs = (): Debuffs => ({
 })
 
 // ---- Warframe search ----
-interface Group { slot: string | null; options: WarframeAbility[] } // one ability (slot) and its variants, or a passive
+// one ability (slot) and its variants, or a passive. required: a plain passive is always on, so leaving it off isn't a setup
+interface Group { slot: string | null; options: WarframeAbility[]; required?: boolean }
 
 const frameNames = [...new Set(warframes.map((frame) => warframeBaseName(frame.name)))].sort()
 const frameSlots = (frame: string) => warframes.find((candidate) => candidate.name === frame)?.abilities.map((ability) => ability.name) ?? []
@@ -147,7 +148,7 @@ function ownGroups(frame: string, forAllies: boolean): Group[] {
     if (ability.warframe !== frame || !hasEffects(ability)) continue
     if (forAllies && !helpsAllies(ability)) continue
     const key = ability.ability ?? ability.id
-    if (!groups.has(key)) groups.set(key, { slot: ability.ability ?? null, options: [] })
+    if (!groups.has(key)) groups.set(key, { slot: ability.ability ?? null, options: [], required: !ability.ability && !ability.augment })
     groups.get(key)!.options.push(ability)
   }
   return [...groups.values()]
@@ -163,7 +164,7 @@ function* combos(groups: Group[], limit = 400): Generator<WarframeAbility[]> {
       yield picked
       return
     }
-    yield* walk(index + 1, picked)
+    if (!groups[index].required) yield* walk(index + 1, picked)
     for (const option of groups[index].options) yield* walk(index + 1, [...picked, option])
   }
   yield* walk(0, [])
@@ -223,7 +224,9 @@ function searchFrames(snapshot: Snapshot, allyStrength: number): FrameCandidate[
     // the ability that summons an exalted weapon (Exalted Blade, Landslide) can't be swapped out for a subsume
     const slots = frameSlots(loadFrame).filter((slot) => !exaltedRule || slot.toLowerCase() !== exaltedRule.ability.toLowerCase())
     // per frame: the best setup, and the best one without situational abilities (Empowered Quiver), as separate paths
-    let best: FrameCandidate | null = null
+    // with only one frame to try (an exalted weapon), its best few setups become the paths instead
+    const keep = framesToTry.length === 1 ? 5 : 1
+    const top: FrameCandidate[] = []
     let bestPlain: FrameCandidate | null = null
     for (const own of combos(groups)) {
       const usedSlots = new Set(own.flatMap((ability) => (ability.ability ? [ability.ability] : [])))
@@ -242,8 +245,9 @@ function searchFrames(snapshot: Snapshot, allyStrength: number): FrameCandidate[
         const strength = strengthWithFreeSlots(frameObject, REGULAR_SLOTS - augments)
         const score = rescore(snapshot, { frameName: frame === 'Any Warframe' ? loadFrame : frame, abilityStrength: strength, teammateStrength: allyStrength, armor: 0, casts, arcanes: [] }).peakHit
         const situational = picked.flatMap((ability) => (ability.situational ? [`${ability.name}: ${ability.situational}`] : []))
-        const better = (current: FrameCandidate | null) => !current || score > current.score
-        if (better(best) || (!situational.length && better(bestPlain))) {
+        const better = (current: FrameCandidate | null | undefined) => !current || score > current.score
+        const makesTop = top.length < keep || better(top.at(-1))
+        if (makesTop || (!situational.length && better(bestPlain))) {
           const candidate: FrameCandidate = {
             score, situational,
             spec: { frame: frameObject, subsume: subsume ? { warframe: subsume.frame, ability: subsume.name } : null, casts, allyStrength, arcaneIds: [], shards: [] },
@@ -260,13 +264,17 @@ function searchFrames(snapshot: Snapshot, allyStrength: number): FrameCandidate[
               },
             },
           }
-          if (better(best)) best = candidate
+          if (makesTop) {
+            top.push(candidate)
+            top.sort((a, b) => b.score - a.score)
+            if (top.length > keep) top.pop()
+          }
           if (!situational.length && better(bestPlain)) bestPlain = candidate
         }
       }
     }
-    if (best) candidates.push(best)
-    if (bestPlain && bestPlain !== best) candidates.push(bestPlain)
+    candidates.push(...top)
+    if (bestPlain && !top.includes(bestPlain)) candidates.push(bestPlain)
   }
   return candidates.sort((a, b) => b.score - a.score)
 }
@@ -575,7 +583,7 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
   const primedSnapshot = snapshot(primedHead.build, primedHead.debuffs)
   const frames = searchFrames(primedSnapshot, request.allyStrength)
   // the shortlist gets real frame mods, then the weapon mods re-optimized with priming re-picked
-  const shortlist = frames.slice(0, request.thorough ? 8 : 5)
+  const shortlist = frames.slice(0, request.thorough ? 12 : 8)
   const plainBest = frames.find((candidate) => !candidate.situational.length)
   if (plainBest && !shortlist.includes(plainBest)) shortlist.push(plainBest)
   const refined = shortlist.map((candidate) => {
@@ -585,18 +593,23 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
       setup: withLoadout(candidate.setup, candidate.spec, picked.loadout, picked.evaluated), build: primedHead.build,
     })
   }).sort((a, b) => b.build.result.peakHit - a.build.result.peakHit)
+  const singleFrame = new Set(refined.map((option) => option.setup.frame)).size === 1
   const chosen: typeof refined = []
   const seenFrames = new Set<string>()
   for (const option of refined) {
-    if (chosen.length >= 3) break
-    const key = `${option.setup.frame}|${option.candidate.situational.length > 0}`
+    if (chosen.length >= 5) break
+    // distinct frames, except when there's only one frame (exalted weapons): then distinct setups
+    const key = singleFrame ? describe(option.setup) : `${option.setup.frame}|${option.candidate.situational.length > 0}`
     if (seenFrames.has(key)) continue
     seenFrames.add(key)
     chosen.push(option)
   }
   // the best plain one always makes the list
   const plainRefined = refined.find((option) => !option.candidate.situational.length)
-  if (plainRefined && !chosen.includes(plainRefined)) chosen.push(plainRefined)
+  if (plainRefined && !chosen.includes(plainRefined)) {
+    if (chosen.length >= 5) chosen.pop() // still 5 paths, the last situational one makes room
+    chosen.push(plainRefined)
+  }
 
   const paths: CapPath[] = []
   chosen.forEach((option, pathIndex) => {

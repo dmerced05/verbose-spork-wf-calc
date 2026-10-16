@@ -1,17 +1,24 @@
 // which mods are worth trying for an attack, and which ones can't be equipped together
 import { modsConflict } from '../calc/modConflicts'
 import { parseUpgrade, raisesFireRate, type ModEffect } from '../calc/parseMod'
+import { BANE_TARGET } from '../calc/constants'
 import type { Mod } from '../types'
 
 // effects that can raise damage in the neutral scenario. faction banes, headshot/weak point bonuses and
-// utility stats can't, so mods with only those never make the pool
+// utility stats can't, so mods with only those never make the pool. against a real target (Damage Cap, Compare) the
+// bane for its faction and, on headshots, the weak point mods and Acuity get in too
+export interface PoolTarget {
+  faction: string
+  headshot: boolean
+}
+const HEADSHOT_STATS = ['headshotMultiplier', 'weakpointDamage', 'weakpointCritChance']
 const HEAVY_ONLY_STATS = ['heavyCritChance', 'heavyDamage', 'heavyWindUpSpeed']
 // which attack the pool is for: heavy-only stats need a heavy, Seismic Wave a slam, Power Throw a throw
 export interface PoolAttack {
   isHeavy: boolean
   name: string
 }
-const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, name }: PoolAttack) => {
+const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, name }: PoolAttack, target?: PoolTarget) => {
   // magazine/reload mods only matter for sustained/time-window objectives
   switch (effect.kind) {
     case 'damageType':
@@ -23,6 +30,8 @@ const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, na
     case 'forcedProcChance':
     case 'duplicateOnCrit':
       return true
+    case 'faction':
+      return Boolean(target && BANE_TARGET[target.faction] === effect.faction)
     case 'stat':
       if (effect.value <= 0) return false
       if (['fireRate', 'magazineCapacity', 'reloadSpeed'].includes(effect.stat)) return includeFireRate
@@ -30,8 +39,9 @@ const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, na
       if (HEAVY_ONLY_STATS.includes(effect.stat)) return isHeavy
       if (effect.stat === 'slamDamage') return /slam/i.test(name)
       if (effect.stat === 'throwDamage') return /throw$/i.test(name)
+      if (HEADSHOT_STATS.includes(effect.stat)) return Boolean(target?.headshot)
       // heavy efficiency only changes what's left after the hit, not the hit itself
-      return !['headshotMultiplier', 'weakpointDamage', 'weakpointCritChance', 'heavyEfficiency'].includes(effect.stat)
+      return effect.stat !== 'heavyEfficiency'
     default:
       return false
   }
@@ -39,6 +49,7 @@ const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, na
 
 export function damageModPool(
   compatibleMods: Mod[], includeFireRate: boolean, attack: PoolAttack = { isHeavy: false, name: '' }, allowFireRateMods = true,
+  target?: PoolTarget,
 ): Mod[] {
   // one per name (the highest-rank copy), like the in-game rule that same-named mods don't stack
   const byName = new Map<string, Mod>()
@@ -49,10 +60,10 @@ export function damageModPool(
   return [...byName.values()].filter((mod) => {
     const parsed = parseUpgrade(mod.levelStats, mod.fusionLimit)
     // Acuity locks multishot and only pays off on headshots, which the neutral scenario doesn't do
-    if (parsed.effects.some((effect) => effect.kind === 'lockMultishot')) return false
+    if (!target?.headshot && parsed.effects.some((effect) => effect.kind === 'lockMultishot')) return false
     if (!allowFireRateMods && raisesFireRate(mod.levelStats, mod.fusionLimit)) return false
     return [...parsed.effects, ...parsed.conditionals.map((conditional) => conditional.effect)].some((effect) =>
-      usefulEffect(effect, includeFireRate, attack),
+      usefulEffect(effect, includeFireRate, attack, target),
     )
   })
 }

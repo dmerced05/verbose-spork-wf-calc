@@ -69,6 +69,8 @@ export interface OptimizeConstraints {
   // the Calculator's target/debuffs/buffs instead of the leaderboard's neutral scenario
   scenario?: { target: TargetSettings; armor: number; debuffs: Debuffs; buffs: Buffs } | null
   beamWidth?: number
+  // skip the target's extra mods (its bane, weak point mods). set internally for the second run, see the end of optimizeAttack
+  neutralPool?: boolean
 }
 
 // how far a result is from the crit limits, 0 = inside them
@@ -122,7 +124,12 @@ export function optimizeAttack(
   const locked = constraints?.lockedMods ?? []
   const lockedNames = new Set(locked.map((equipped) => equipped.mod.name))
   const excludedNames = new Set(constraints?.excludedModNames ?? [])
-  const pool = damageModPool(getCompatibleMods(weapon), objective.usesFireRate, { isHeavy: Boolean(attack.heavy), name: attack.name }, allowFireRateMods)
+  // a real target (Damage Cap, Compare) also lets its bane and, on headshots, weak point mods into the pool
+  const scenarioTarget = constraints?.neutralPool ? undefined : constraints?.scenario?.target
+  const pool = damageModPool(
+    getCompatibleMods(weapon), objective.usesFireRate, { isHeavy: Boolean(attack.heavy), name: attack.name }, allowFireRateMods,
+    scenarioTarget ? { faction: scenarioTarget.faction, headshot: scenarioTarget.headshot } : undefined,
+  )
     .filter((mod) => !constraints || (!excludedNames.has(mod.name) && !lockedNames.has(mod.name)))
     .map((mod) => equipMod(mod, isMelee))
   // "no fire rate mods" rankings skip fire rate arcanes too
@@ -300,5 +307,16 @@ export function optimizeAttack(
 
   // the reported score is the real one, not the penalized search score
   const result = run(best.mods)
-  return { weapon, attack, score: objective.score(result), result, mods: [...locked, ...best.mods], arcane, perks, passives, bonusElement }
+  const found: OptimizedBuild = { weapon, attack, score: objective.score(result), result, mods: [...locked, ...best.mods], arcane, perks, passives, bonusElement }
+  // a bigger pool can walk the beam into a worse corner (Exalted Blade vs Grineer: the bane crowds out a better crit
+  // build early), so with a real target I also search the plain pool and keep whichever ends up better
+  if (scenarioTarget && (scenarioTarget.faction !== 'None' || scenarioTarget.headshot)) {
+    const plain = optimizeAttack(weapon, attack, objective, allowFireRateMods, heavyMode, { ...constraints, neutralPool: true })
+    const searchScore = (build: OptimizedBuild) => {
+      const miss = critViolation(build.result.critChance, constraints)
+      return miss > 0 ? build.score * Math.exp(-20 * miss) * 1e-3 : build.score
+    }
+    if (searchScore(plain) > searchScore(found) * (1 + 1e-9)) return plain
+  }
+  return found
 }

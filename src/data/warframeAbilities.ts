@@ -291,6 +291,7 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     effects: [{ kind: 'oneShotFlat', value: 5000 }],
     quote: 'Stored damage is added to the weapon\'s base damage as flat bonus damage (max 5,000 at rank 3, Ability Strength raises the cap). Base damage mods don\'t affect it, modded elements, crit, faction and headshots do. One projectile only.',
     note: 'Only the released shot gets it, so it counts toward the biggest hit, not DPS.',
+    situational: 'one charged shot every so often, not every hit: good for a one-off cap hit, not a consistent one like Thermal Sunder or Roar',
   },
   {
     id: 'furiousJavelin', ability: 'Radial Javelin', augment: 'Furious Javelin', name: 'Furious Javelin', warframe: 'Excalibur', appliesTo: 'melee', scalesWithStrength: true, selfOnly: true,
@@ -404,8 +405,9 @@ export const SUBSUMABLE: Record<string, string> = {
   Uriel: 'Remedium',
 }
 
-// damage buffs (Roar, Eclipse, Xata's Whisper) can only go on frames that already have one, replacing that one
-// (Roar wiki: "When placed on Chroma, Cyte-09, Mirage, ... Subsumed Roar can only replace Vex Armor, Resupply, Eclipse ...")
+// damage buffs (Roar, Eclipse, Xata's Whisper) on a frame that already has one can only replace that one (Roar wiki:
+// "When placed on Chroma, Cyte-09, Mirage, ... Subsumed Roar can only replace Vex Armor, Resupply, Eclipse ..."). every
+// other frame can put them in any slot
 export const RESTRICTED_SUBSUMES = new Set(['Roar', 'Eclipse', "Xata's Whisper"])
 export const DAMAGE_BUFF_SLOT: Record<string, string> = {
   Chroma: 'Vex Armor', 'Cyte-09': 'Resupply', Mirage: 'Eclipse', Octavia: 'Amp', Oraxia: 'Silken Stride', Rhino: 'Roar',
@@ -414,6 +416,6 @@ export const DAMAGE_BUFF_SLOT: Record<string, string> = {
 
 // can this subsumed ability go into that slot of that frame?
 export function canSubsumeInto(frameName: string, slotAbility: string, subsumed: string) {
-  if (!RESTRICTED_SUBSUMES.has(subsumed)) return true
+  if (!RESTRICTED_SUBSUMES.has(subsumed) || !(frameName in DAMAGE_BUFF_SLOT)) return true
   return DAMAGE_BUFF_SLOT[frameName] === slotAbility
 }

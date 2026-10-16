@@ -552,7 +552,8 @@ expectClose('subsumed Roar 30% x your 200% strength', run(plainShotAttack, { buf
 const nourishSubsumed = run(testAttack({ impact: 100 }), { buffs: { roar: 0, warframe: { ...rhinoState, casts: [{ id: 'nourish', by: 'helminth' }] } } })
 expectClose('subsumed Nourish 45% viral x 200%', typeValue(nourishSubsumed, 'viral'), Math.floor(0.9 * 32 + 0.5) / 32 * 100)
 expectClose('Excalibur passive needs you on Excalibur', runMelee(swing, { buffs: { roar: 0, warframe: { ...rhinoState, casts: [{ id: 'excaliburPassive', by: 'ally' }] } } }).hit.normal, 100)
-expectClose('Roar can only replace damage buffs', canSubsumeInto('Chroma', 'Vex Armor', 'Roar') && !canSubsumeInto('Chroma', 'Effigy', 'Roar') && !canSubsumeInto('Saryn', 'Molt', 'Roar') && canSubsumeInto('Saryn', 'Molt', 'Nourish') ? 1 : 0, 1)
+expectClose('Roar on a damage-buff frame only replaces that buff', canSubsumeInto('Chroma', 'Vex Armor', 'Roar') && !canSubsumeInto('Chroma', 'Effigy', 'Roar') ? 1 : 0, 1)
+expectClose('Roar goes in any slot on other frames', canSubsumeInto('Saryn', 'Molt', 'Roar') && canSubsumeInto('Excalibur', 'Slash Dash', 'Roar') ? 1 : 0, 1)
 expectClose('Steel Charge on melee via aura damage', runMelee(swing, { buffs: { roar: 0, warframe: { ...rhinoState, casts: [], auraDamage: { melee: 0.6, rifle: 0, sniper: 0, pistol: 0, shotgun: 0 } } } }).hit.normal, 160)
 
 // ---- survivability (src/calc/warframeStats.ts) ----

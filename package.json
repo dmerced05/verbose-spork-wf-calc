@@ -16,7 +16,7 @@
     "leaderboard": "tsx scripts/build-leaderboard.ts"
   },
   "dependencies": {
-    "@wfcd/items": "^1.1276.19",
+    "@wfcd/items": "^1.1276.24",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

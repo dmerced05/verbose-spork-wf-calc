@@ -124,6 +124,16 @@ function multishotRule(weapon, attack) {
   return {}
 }
 
+// attacks the export ships with no damage numbers, from their wiki pages (Haalvu: "33 per shot, 100% Tau",
+// alt-fire "34 per projectile, 100% Tau"). only used while the export's own damage is empty
+const ATTACK_DAMAGE_FIXES = {
+  Haalvu: { 'Normal Attack': { tau: 33 }, 'Alt-Fire': { tau: 34 } },
+}
+const attackDamage = (weapon, attack) => {
+  const listed = Object.entries(attack.damage ?? {}).map(([damageType, amount]) => [damageType, Number(amount)]).filter(([, amount]) => amount > 0)
+  return listed.length ? listed : Object.entries(ATTACK_DAMAGE_FIXES[weapon.name]?.[attack.name] ?? {})
+}
+
 // one weapon in the shape the calc wants. also used for the exalted weapons below
 function toWeapon(weapon) {
   return {
@@ -157,11 +167,7 @@ function toWeapon(weapon) {
       critChance: (attack.crit_chance ?? 0) / 100,
       critMultiplier: attack.crit_mult ?? 1,
       statusChance: (attack.status_chance ?? 0) / 100,
-      damage: Object.fromEntries(
-        Object.entries(attack.damage ?? {})
-          .map(([damageType, amount]) => [damageType, Number(amount)])
-          .filter(([, amount]) => amount > 0),
-      ),
+      damage: Object.fromEntries(attackDamage(weapon, attack)),
       // heavy slams use up the combo and get its multiplier too (wiki Heavy_Attack)
       ...(weapon.category === 'Melee' && /heavy slam/i.test(attack.name) ? { heavy: true } : {}),
       ...glaiveDetonation(weapon, attack),

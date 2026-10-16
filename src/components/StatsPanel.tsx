@@ -1,4 +1,5 @@
 import { SUSTAINED_FIGHT_SECONDS, type CalcResult } from '../calc/damage'
+import { INT_LIMIT, onScreen } from '../calc/damageCap'
 
 // windows for the damage-over-time table. the Monte Carlo runs all of them in one pass
 const RANGE_WINDOWS = [3, 10, 30, SUSTAINED_FIGHT_SECONDS]
@@ -161,13 +162,25 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
         <tbody>
           <tr><td>Normal hit</td><td><DamageNumber value={result.hit.normal} /></td></tr>
           <tr><td>Crit hit ({CRIT_TIER_NAMES[Math.min(result.critTier, 3)]})</td><td><DamageNumber value={result.hit.crit} /></td></tr>
-          <tr><td>Average hit</td><td><DamageNumber value={result.hit.average} /></td></tr>
+          <tr><td>Average hit{result.beam && result.beamMerge > 1 ? ' (one beam)' : ''}</td><td><DamageNumber value={result.hit.average} /></td></tr>
+          {result.beam && result.beamMerge > 1 && (
+            <tr title="Wiki Multishot: extra beams on one target merge into one damage tick with the summed damage and status chance. This is the one instance the target takes">
+              <td>Merged tick (× {formatNumber(result.beamMerge, 2)} beams)</td><td>{formatNumber(result.hit.average * result.beamMerge)}</td>
+            </tr>
+          )}
           <tr>
             <td>{result.duplicateStrikes > 1 ? `Average attack (× ${formatNumber(result.duplicateStrikes, 2)} strikes, Melee Duplicate)` : 'Average shot (× multishot)'}</td>
             <td>{formatNumber(result.averageShot)}</td>
           </tr>
           <tr title="Every pellet/strike plus the full DoT of each proc this one attack lands (forced procs included)">
             <td>Whole attack (hit + its procs)</td><td>{formatNumber(result.attackTotal)}</td>
+          </tr>
+          <tr title="Top crit tier (or a Devouring Attrition non-crit), one instance. Past 2,147,483,647 the number on screen shows as -2,147,483,648, see the Damage Cap tab">
+            <td>Biggest single instance</td>
+            <td>
+              {formatNumber(result.peakHit)}
+              {result.peakHit > INT_LIMIT && <div className="negative-number">on screen {onScreen(result.peakHit).toLocaleString()}</div>}
+            </td>
           </tr>
         </tbody>
       </table>
@@ -178,8 +191,23 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
           <tr><td>Modded base damage</td><td>{formatNumber(result.moddedBaseDamage)}</td></tr>
           <tr><td>Crit chance</td><td>{formatPercent(result.critChance)}</td></tr>
           <tr><td>Crit multiplier</td><td>{formatNumber(result.critMultiplier, 2)}x</td></tr>
-          <tr><td>Status chance</td><td>{formatPercent(result.statusChance)}</td></tr>
-          <tr><td>Multishot{result.multishotLocked ? ' (locked by Acuity)' : ''}</td><td>{formatNumber(result.multishot, 2)}</td></tr>
+          <tr><td>Status chance{result.beam && result.beamMerge > 1 ? ' (per beam)' : ''}</td><td>{formatPercent(result.statusChance)}</td></tr>
+          {result.beam && result.beamMerge > 1 && (
+            <tr title="The merged tick rolls the summed status chance: past 100% it's guaranteed procs plus a chance at one more. Same proc count as separate beams, but each damaging proc (Slash, Heat, Toxin, Electricity, Blast, Gas) comes off the bigger merged tick">
+              <td>Status per merged tick</td><td>{formatPercent(result.statusChance * result.beamMerge)} ({formatNumber(result.statusChance * result.beamMerge, 2)} procs)</td>
+            </tr>
+          )}
+          <tr>
+            <td>
+              Multishot{result.multishotLocked ? ' (locked by Acuity)' : result.multishotModsIgnored ? ' (multishot mods don\'t apply to this attack)' : ''}
+              {result.beam && (
+                <span className="muted-inline" title="Wiki Multishot: extra beams on one target merge into a single tick with the summed damage and status chance. Slash, Heat, Toxin, Electricity, Blast and Gas procs come off that merged tick, so they scale with multishot twice. Forced procs (Hunter Munitions etc.) are one per tick.">
+                  {' '}(beam: merged ticks)
+                </span>
+              )}
+            </td>
+            <td>{formatNumber(result.multishot, 2)}</td>
+          </tr>
           <tr>
             <td>{result.melee ? (result.melee.windUp !== null ? 'Heavy attacks per second' : 'Attack speed') : 'Fire rate'}{result.fireRateLocked ? ' (locked by Cannonade)' : ''}</td>
             <td>{formatNumber(result.fireRate, 2)}</td>
@@ -212,7 +240,9 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
           <tr><td>Status types for CO ({result.statusTypeSource === 'build' ? 'from build' : 'from debuffs'})</td><td>{result.activeStatusTypes}</td></tr>
           {result.conditionOverload.bonus > 0 && (
             <tr>
-              <td>CO-type bonus ({result.conditionOverload.mode === 'multiply' ? 'multiplicative' : 'additive'})</td>
+              <td title={result.conditionOverload.note}>
+                CO-type bonus ({result.conditionOverload.mode === 'multiply' ? 'multiplicative' : 'additive'}, {result.conditionOverload.source === 'sheet' ? 'GunCO sheet' : result.conditionOverload.source})
+              </td>
               <td>+{formatPercent(result.conditionOverload.bonus)}</td>
             </tr>
           )}

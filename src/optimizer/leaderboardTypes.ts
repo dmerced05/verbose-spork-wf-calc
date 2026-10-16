@@ -54,6 +54,9 @@ export interface LeaderboardFile {
   scenario: string
   upgrades: { id: string; name: string }[] // shared table for mods + arcanes
   boards: Record<string, CompactEntry[]> // keyed by boardKey(): 'sustained', 'sustained-nofr', ...
+  // for the incremental rebuild (scripts/leaderboardFingerprint.ts), the site ignores these
+  engine?: string
+  fingerprints?: Record<string, string> // weapon uniqueName -> its fingerprint when its entries were built
 }
 
 export interface Leaderboard {

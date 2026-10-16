@@ -16,6 +16,9 @@ export interface Attack {
   windUp?: number | null // heavy attack wind-up in seconds
   heavyMultiplier?: number // Heavy Attack only: how much bigger than the normal attack it is
   forcedProcs?: string[] // guaranteed procs on every hit (glaive detonations: "Explosion inflicts a guaranteed Impact and Slash proc")
+  continuous?: boolean // beam: multishot beams merge into one tick per target (wiki Multishot)
+  noMultishotMods?: boolean // hitscan explosions, beam blasts, speargun throws: multishot mods do nothing
+  hitscanAoE?: boolean // the explosion of a hitscan/beam shot. only the directly hit enemy gets CO
 }
 
 export interface Weapon {
@@ -24,6 +27,7 @@ export interface Weapon {
   type: string // Rifle, Sniper, Launcher, Bow, Shotgun, Pistol, Dual Pistols, Throwing, Melee
   category: string
   disposition: number | null
+  rivenDisposition?: number | null // the multiplier behind the dots (x0.5..x1.55), null = can't take a riven
   multishot: number
   trigger?: string | null // Auto, Semi, Burst, Charge, Held, ...
   magazineSize?: number | null

@@ -25,6 +25,8 @@ import { expectedDamage, simulateDamage, type DamageRange, type ShotModel } from
 // "sustained" = average DPS over a fight this long: reloads, DoT ramp-up and Heat stacking count, and DoT ticks
 // after the fight ends don't (so long Status Duration tails stop inflating it)
 export const SUSTAINED_FIGHT_SECONDS = 60
+// the DoTs a beam's merged tick feeds twice (wiki Multishot)
+const BEAM_MERGED_DOTS = ['slash', 'heat', 'toxin', 'electricity', 'blast', 'gas'] // wiki Multishot's list, Blast included
 import type { Attack, Buffs, Debuffs, EquippedArcane, EquippedMod, TargetSettings, Weapon } from '../types'
 
 export interface CalcInput {
@@ -81,6 +83,9 @@ export interface CalcResult {
   statusChance: number
   multishot: number
   multishotLocked: boolean
+  beam: boolean // multishot beams merge into one tick (wiki Multishot)
+  beamMerge: number // beams per merged tick (multishot on a beam, 1 otherwise): one instance = hit x beamMerge
+  multishotModsIgnored: boolean // hitscan explosion / beam blast / speargun throw
   fireRate: number
   factionMultiplier: number
   activeStatusTypes: number
@@ -88,6 +93,10 @@ export interface CalcResult {
   headshot: { applied: boolean; factor: number; weakPointMultiplier: number; headshotBonus: number; headcrit: boolean }
   armor: { before: number; after: number; damageMultiplier: number }
   hit: { normal: number; crit: number; average: number } // per projectile vs target
+  // the biggest single damage instance this attack can land: top crit tier (or a Devouring Attrition non-crit if that's
+  // bigger), a beam's merged tick. what matters for the 32-bit damage limit. DoT ticks are their own instances
+  peakHit: number
+  peakDotTick: { damageType: string; value: number } | null
   averageShot: number
   attackTotal: number // one attack: every pellet/duplicate + the full DoT of its procs
   duplicateStrikes: number // Melee Duplicate: average strikes per attack (1 without it)
@@ -159,7 +168,7 @@ export function calculate({
   const bonus: Record<StatKey, number> = {
     damage: 0, damagePerStatusType: 0, damagePerColdStack: 0, critChance: 0, weakpointCritChance: 0,
     critDamage: 0, multishot: 0, fireRate: 0, statusChance: 0, statusDamage: 0, headshotMultiplier: 0, weakpointDamage: 0,
-    magazineCapacity: 0, reloadSpeed: 0,
+    magazineCapacity: 0, reloadSpeed: 0, ammoEfficiency: 0,
     critChancePerCombo: 0, statusChancePerCombo: 0, heavyCritChance: 0, heavyDamage: 0, heavyWindUpSpeed: 0, heavyEfficiency: 0,
     statusDuration: 0, slamDamage: 0, throwDamage: 0,
   }
@@ -363,6 +372,7 @@ export function calculate({
   let abilityCritDamageScale = 1 // Electric Shield, multiplies every other crit damage source
   const extraHits: Record<string, number> = {} // separate hits worth this share of the weapon's damage (Xata's Whisper Void, Resupply...)
   let abilityVulnerability = 0 // Petrify: the target takes more from everything
+  let oneShotFlat = 0 // Ballistic Battery: flat base damage on one shot, only for the biggest-hit numbers
   const uncombinedElements: Record<string, number> = {} // Freeze Force / Electric Shield: don't combine, do proc
   const statusElementBonus: Record<string, number> = {} // uncombined ability elements that still count for their DoT
   const activeAbilities: string[] = []
@@ -378,6 +388,21 @@ export function calculate({
               : aura.rifle + (weapon.type === 'Sniper' ? aura.sniper : 0)
     }
     bonus.weakpointCritChance += warframe.weakpointCritChance ?? 0
+    // Archon Shards: additive with the matching mods ("Melee Critical Damage is additive with Organ Shatter"), and they
+    // work on exalted weapons of the same class. the Violet electricity goes in after the mods in the combine order
+    const shards = warframe.shards
+    if (shards) {
+      if (weapon.category === 'Melee') bonus.critDamage += shards.meleeCritDamage
+      if (weapon.category === 'Primary') {
+        bonus.statusChance += shards.primaryStatusChance
+        if (shards.primaryElectricity > 0) {
+          if (!('electricity' in elementBonus)) elementOrder.push('electricity')
+          elementBonus.electricity = (elementBonus.electricity ?? 0) + shards.primaryElectricity
+        }
+      }
+      if (weapon.category === 'Secondary') bonus.critChance += shards.secondaryCritChance
+      if (shards.toxinStatusDamage) statusDamageByType.toxin = (statusDamageByType.toxin ?? 0) + shards.toxinStatusDamage
+    }
     // the same buff twice doesn't stack, the strongest one applies (Shock Trooper wiki: "Multiple Shock Troopers don't stack.
     // The one with the highest Ability Strength applies")
     const strongest = new Map<string, AbilityCast>()
@@ -390,6 +415,8 @@ export function calculate({
       if (!ability || !abilityApplies(ability, weapon)) continue
       // passives only work on that frame, cast by you
       if (ability.selfOnly && (cast.by !== 'self' || ability.warframe !== warframe.frameName)) continue
+      // caster-only buffs (Eclipse, Xata's Whisper) do nothing when a teammate casts them
+      if (ability.casterOnly && cast.by === 'ally') continue
       const times = castStacks(ability, cast)
       const effects = effectsFor(ability, cast.by)
       if (effects.length === 0 || effects.every((effect) => effect.perStack && times <= 0)) continue
@@ -462,6 +489,9 @@ export function calculate({
             break
           case 'targetVulnerability':
             abilityVulnerability += value
+            break
+          case 'oneShotFlat':
+            oneShotFlat += value
         }
       }
     }
@@ -517,6 +547,7 @@ export function calculate({
   const perkBase = { damage: 0, critChance: 0, critMultiplier: 0, statusChance: 0, multishot: 0 }
   const perkFlat = { critChance: 0, statusChance: 0 }
   let nonCritChanceBonus = 0 // expected extra damage on non-crits (chance x bonus)
+  let nonCritPeakBonus = 0 // the bonus itself, for the biggest possible hit
   let armorStripPerPuncture = 0
   for (const { perk, stacks: perkStacks } of incarnonPerks) {
     for (const statement of perk.statements) {
@@ -531,7 +562,10 @@ export function calculate({
       if (effect.kind === 'base') perkBase[effect.stat] += effect.value * times
       else if (effect.kind === 'flat') perkFlat[effect.stat] += effect.value * times
       else if (effect.kind === 'mod') applyEffect(effect.effect, times)
-      else if (effect.kind === 'nonCritBonus') nonCritChanceBonus += effect.chance * effect.value
+      else if (effect.kind === 'nonCritBonus') {
+        nonCritChanceBonus += effect.chance * effect.value
+        nonCritPeakBonus += effect.value
+      }
       else armorStripPerPuncture += effect.value
     }
     for (const statement of perk.statements) {
@@ -603,10 +637,13 @@ export function calculate({
   // additive weapons: base x [(1 + mods) x other multipliers + CO]
   // multiplicative weapons: base x (1 + mods) x (1 + CO) x other multipliers
   const co = coBehavior ?? resolveCoBehavior(weapon, attack)
+  // the adding kind ignores "Evolution base damage increases on Incarnon" (wiki CO page), so its share is worked out
+  // on the base before the evolution's +N. the multiplying kind (Kunai Incarnon) does get it
+  const coBaseShare = co.mode === 'add' ? 1 / baseDamageScale : 1
   const coBonus =
     co.mode === 'none'
       ? 0
-      : (bonus.damagePerStatusType * activeStatusTypes + bonus.damagePerColdStack * Math.min(stacks('cold'), 10)) * co.scale
+      : (bonus.damagePerStatusType * activeStatusTypes + bonus.damagePerColdStack * Math.min(stacks('cold'), 10)) * co.scale * coBaseShare
   if (coBonus > 0 || (damagePerStatusTypePassive > 0 && activeStatusTypes > 0) || (critPerStatusType > 0 && activeStatusTypes > 0)) {
     requirements.push(`Target already has ${activeStatusTypes} status type${activeStatusTypes === 1 ? '' : 's'} on it (Condition Overload style bonuses)`)
   }
@@ -664,7 +701,13 @@ export function calculate({
 
   const factionMultiplier = 1 + factionBonus
   // Acuity: multishot mods/arcanes don't apply, the weapon keeps its base (Incarnon base multishot perks still count)
-  const multishot = weapon.category === 'Melee' ? 1 : weapon.multishot * (multishotLocked ? 1 : 1 + bonus.multishot)
+  // hitscan explosions, beam blasts and speargun throws keep their innate multishot too (build-data noMultishotMods)
+  const multishot = weapon.category === 'Melee' ? 1 : weapon.multishot * (multishotLocked || attack.noMultishotMods ? 1 : 1 + bonus.multishot)
+  // beams (wiki Multishot): extra beams on one target "merge into a singular damage tick" with the summed damage and
+  // status chance, so damaging procs come from a tick worth all the beams. "Damaging status effects (Slash, Heat,
+  // Toxin, Electricity, Blast, Gas) are affected twice by multishot on all continuous weapons." forced procs land after
+  // the merge, one per tick, so those don't get the second helping
+  const beamMerge = attack.continuous ? Math.max(1, multishot) : 1
   // charged attacks (wiki Damage/Calculation): effective rate = 1 / (charge time + 1 / fire rate), and fire rate
   // mods also speed up the charge (modded charge time = base / (1 + speed bonuses))
   // pseudo-exalted speed comes from Casting Speed, attack speed mods do nothing
@@ -742,12 +785,13 @@ export function calculate({
   const procRates: Record<string, number> = {}
   for (const damageType of Object.keys(moddedByType)) procRates[damageType] = procsPerSecond * procShare(damageType)
   // Hunter Munitions: chance per crit, so it caps once every pellet crits
-  procRates.slash = (procRates.slash ?? 0) + Math.min(critChance, 1) * slashOnCritChance * pelletsPerSecond
+  // (on a beam that's per merged tick, not per beam)
+  procRates.slash = (procRates.slash ?? 0) + Math.min(critChance, 1) * slashOnCritChance * pelletsPerSecond / beamMerge
   // Internal Bleeding: doubled when fire rate is below 2.5
   procRates.slash += (procRates.impact ?? 0) * slashOnImpactChance * (fireRate < 2.5 ? 2 : 1)
-  // guaranteed procs ride on every pellet, on top of the status chance rolls
+  // guaranteed procs ride on every pellet, on top of the status chance rolls (one per merged tick on a beam)
   for (const [damageType, perPellet] of Object.entries(forcedProcsPerPellet)) {
-    procRates[damageType] = (procRates[damageType] ?? 0) + perPellet * pelletsPerSecond
+    procRates[damageType] = (procRates[damageType] ?? 0) + perPellet * pelletsPerSecond / beamMerge
   }
 
   // procs inherit the crit of the hit that applied them, so I keep the normal/crit/average split.
@@ -770,9 +814,10 @@ export function calculate({
     .map(([damageType, info]) => {
       const elementMultiplier = info.usesElementMods ? 1 + (elementBonus[damageType] ?? 0) + (statusElementBonus[damageType] ?? 0) : 1
       const headshotPart = !isHeadshot ? 1 : info.fullHeadshot ? headshotFactor : 1 + bonus.headshotMultiplier
+      const merged = BEAM_MERGED_DOTS.includes(damageType) ? beamMerge : 1
       const beforeCrit =
         info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage + (statusDamageByType[damageType] ?? 0)) *
-        (1 + vulnerability) * headshotPart
+        (1 + vulnerability) * headshotPart * merged
       const tick = critSplit(beforeCrit * typeMultiplier(damageType, info.bypassesArmor))
       // Status Duration stretches the DoT, at one tick per second that's more ticks (wiki Status_Duration).
       // Blast is a single hit so it doesn't care
@@ -800,6 +845,19 @@ export function calculate({
     })
   const dotDps = sum(dots.map((dot) => dot.dps))
 
+  // ---- biggest single instance (damage cap tab) ----
+  // any crit chance means the top tier can roll. a non-crit can only happen below 100%, Gotva's override rolls its own tiers
+  const peakMultiplier = Math.max(
+    critChance > 0 ? critHitMultiplier : normalCritMultiplier,
+    critChance < 1 && nonCritPeakBonus > 0 ? 1 + nonCritPeakBonus : 0,
+    critOverride ? 1 + Math.ceil(critOverride.critChance) * (critMultiplier - 1) : 0,
+  )
+  // Ballistic Battery adds to the base after damage mods, then elements/crit/faction/head scale it like the rest
+  const batteryScale = moddedBaseDamage > 0 && oneShotFlat > 0 ? (moddedBaseDamage + oneShotFlat) / moddedBaseDamage : 1
+  const peakHit = vsTargetNoCrit * peakMultiplier * beamMerge * batteryScale
+  const peakDot = dots.filter((dot) => dot.damageType !== 'blast').sort((a, b) => b.tick.crit - a.tick.crit)[0]
+  const peakDotTick = peakDot ? { damageType: peakDot.damageType, value: peakDot.tick.crit } : null
+
   // ---- 6. magazine + reload (wiki Damage/Calculation, Reload_Speed) ----
   // melee has no magazine, and Incarnon forms run on Incarnon charge which the data doesn't have, so neither reloads here
   const reloads = weapon.category !== 'Melee' && !isIncarnonAttack && Boolean(weapon.magazineSize) && Boolean(weapon.reloadTime)
@@ -811,7 +869,9 @@ export function calculate({
   const reloadTime = !reloads
     ? null
     : reloadOverride ?? (shellReload ? (shellReload.delay + shellReload.perShell * magazineSize!) : weapon.reloadTime!) / reloadSpeedScale
-  const uptime = magazineSize && reloadTime ? magazineSize / (fireRate * reloadTime + magazineSize) : 1
+  // Ammo Efficiency (riven): that share of shots is free, so a magazine fires magazine / (1 - efficiency) shots
+  const shotsPerMagazine = magazineSize ? magazineSize / Math.max(0.01, 1 - Math.min(0.99, bonus.ammoEfficiency)) : null
+  const uptime = shotsPerMagazine && reloadTime ? shotsPerMagazine / (fireRate * reloadTime + shotsPerMagazine) : 1
   const steadyStateDps = (burstDps + dotDps) * uptime
 
   // shots over time with procs on their own clocks (src/calc/simulate.ts)
@@ -819,7 +879,7 @@ export function calculate({
   const shotModel: ShotModel = {
     fireRate,
     multishot: hitsPerAttack,
-    magazineSize,
+    magazineSize: shotsPerMagazine,
     reloadTime,
     hit,
     critChance,
@@ -886,6 +946,11 @@ export function calculate({
     statusChance,
     multishot,
     multishotLocked,
+    peakHit,
+    peakDotTick,
+    beam: Boolean(attack.continuous),
+    beamMerge,
+    multishotModsIgnored: Boolean(attack.noMultishotMods),
     fireRate,
     factionMultiplier,
     activeStatusTypes,

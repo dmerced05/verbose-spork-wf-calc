@@ -72,6 +72,58 @@ const glaiveDetonation = (weapon, attack) =>
     ? { heavy: true, windUp: null, forcedProcs: GLAIVE_DETONATION_PROCS[weapon.name] }
     : {}
 
+// beams (wiki Multishot): "additional beams that hit the same target instead merge into a singular damage tick".
+// the data has no beam flag, so a beam is a hit-scan attack on a Held-trigger weapon, or one named Held/Beam
+// (Basmu's held beam sits on an Auto weapon). Held-trigger weapons' projectiles/explosions aren't beams
+// Incarnon forms that turn into beams on a non-Held weapon: Torid ("becomes a continuous beam ... 2.3 m damage radius at
+// the impact point") and Boar ("becomes a continuous beam weapon that can fire up to 3 beams")
+const BEAM_INCARNON = /^(Torid|Boar|Boar Prime)$/
+const isContinuous = (weapon, attack) =>
+  attack.shot_type === 'Hit-Scan' && (weapon.trigger === 'Held' || /^Held$|\bBeam\b/i.test(attack.name) ||
+    (BEAM_INCARNON.test(weapon.name) && /^Incarnon Form$/.test(attack.name)))
+
+// which attack an AoE belongs to: "Charged Shot AoE" -> "Charged Shot", "Spear Explosion" -> "Spear Throw",
+// a bare "Radial Attack"/"Explosion" -> the weapon's first direct attack. AoEs without an explosion-ish suffix
+// (Ferrox's Attraction Field, Pox's cloud) don't get a parent
+const AOE_SUFFIX = /\s*\b(AoE|Radial Attack|Explosion|Detonation)$/i
+function aoeParent(weapon, attack) {
+  if (!AOE_SUFFIX.test(attack.name)) return null
+  const direct = weapon.attacks.filter((other) => other.shot_type !== 'AoE')
+  const stem = attack.name.replace(AOE_SUFFIX, '').trim()
+  if (!stem) return direct[0] ?? null
+  const words = stem.split(' ')
+  const shared = (other) => {
+    const otherWords = other.name.split(' ')
+    let count = 0
+    while (count < words.length && otherWords[count] === words[count]) count++
+    return count
+  }
+  let best = null
+  for (const other of direct) if (shared(other) > (best ? shared(best) : 0)) best = other
+  // Cedo's "Glaive Radial Attack" belongs to "Alt-Fire Glaive". no match at all = unknown, not a guess
+  return best ?? direct.find((other) => other.name.split(' ').includes(words.at(-1))) ?? null
+}
+
+// Incarnon forms the GunCO sheet (Feb 2025) says "suffer from hitscan AoE characteristics (no MS, but gets CO)"
+const NO_MULTISHOT_INCARNON = /^(Braton|Mk1-Braton|Braton Prime|Braton Vandal|Burston|Burston Prime|Zylok|Zylok Prime)$/
+
+// attacks multishot mods don't touch. hitscan explosions are one explosion per trigger pull (GunCO sheet / wiki CO
+// page: "AoE ignores multishot"), a beam's blast radius too (wiki Multishot: "no effect on the spherical blast radius
+// of continuous weapons"), and "Multishot has no effect on the thrown component of Spearguns"
+function multishotRule(weapon, attack) {
+  if (attack.shot_type === 'AoE') {
+    const parent = aoeParent(weapon, attack)
+    if (parent && (parent.shot_type === 'Hit-Scan' || isContinuous(weapon, parent))) {
+      return { noMultishotMods: true, hitscanAoE: true }
+    }
+  }
+  if (weapon.category === 'Primary' && /\bSpear\b|\bThrow\b/.test(attack.name) && weapon.attacks.some((other) => /Throw/.test(other.name))) {
+    return { noMultishotMods: true }
+  }
+  if (NO_MULTISHOT_INCARNON.test(weapon.name) && /^Incarnon Form/.test(attack.name)) return { noMultishotMods: true }
+  return {}
+}
+
 // one weapon in the shape the calc wants. also used for the exalted weapons below
 function toWeapon(weapon) {
   return {
@@ -80,6 +132,8 @@ function toWeapon(weapon) {
     type: weapon.type,
     category: weapon.category,
     disposition: weapon.disposition ?? null,
+    // the actual riven multiplier behind the dots (Soma Prime: 3 dots = x1.1). exalted weapons don't take rivens
+    rivenDisposition: weapon.omegaAttenuation ?? null,
     multishot: weapon.multishot ?? 1,
     trigger: weapon.trigger ?? null, // Auto, Semi, Burst, Charge, Held... (Semi-___ Cannonade needs Semi)
     magazineSize: weapon.magazineSize ?? null,
@@ -111,6 +165,8 @@ function toWeapon(weapon) {
       // heavy slams use up the combo and get its multiplier too (wiki Heavy_Attack)
       ...(weapon.category === 'Melee' && /heavy slam/i.test(attack.name) ? { heavy: true } : {}),
       ...glaiveDetonation(weapon, attack),
+      ...(isContinuous(weapon, attack) ? { continuous: true } : {}),
+      ...multishotRule(weapon, attack),
     }))),
   }
 }
@@ -151,7 +207,10 @@ const exaltedWeapons = readJson('Misc')
     }
     const weapon = toWeapon(source)
     // Garuda's Talons are her innate claws, a normal weapon
-    if (!/^Garuda/.test(item.name)) weapon.exalted = true
+    if (!/^Garuda/.test(item.name)) {
+      weapon.exalted = true
+      weapon.rivenDisposition = null // the export gives them 1, but exalted weapons have no riven slot
+    }
     if (/^Shadow Clones/.test(item.name)) weapon.attacks = weapon.attacks.map((attack) => ({ ...attack, forcedProcs: ['slash'] }))
     // Noctua's Active Attack "needs a full meter, which takes 60 seconds to recharge. Primary hits reduce recharge by 1 second each".
     // firing the primary (1.5/s) the whole time, 60 - 1.5t = t gives one every 24 s
@@ -284,4 +343,22 @@ writeFileSync(new URL('arcanes.json', outDir), JSON.stringify(arcanes))
 writeFileSync(new URL('weapons.json', outDir), JSON.stringify(weapons))
 writeFileSync(new URL('mods.json', outDir), JSON.stringify(mods))
 writeFileSync(new URL('enemies.json', outDir), JSON.stringify(enemies))
+
+// riven stat pools per riven type, straight from the export's upgradeEntries (already has Update 44.1's spliced stats).
+// the export value is per rank-unit, x90 gives the wiki's max rank base (Rifle Cold 0.01 -> 90%)
+const RIVEN_TYPES = { Rifle: 'LotusRifleRandomModRare', Shotgun: 'LotusShotgunRandomModRare', Pistol: 'LotusPistolRandomModRare', Melee: 'PlayerMeleeWeaponRandomModRare' }
+const rivens = Object.fromEntries(Object.entries(RIVEN_TYPES).map(([rivenType, id]) => {
+  const riven = allMods.find((mod) => mod.uniqueName.endsWith(`/${id}`))
+  return [rivenType, riven.upgradeEntries.map((entry) => {
+    const [main] = entry.upgradeValues
+    return {
+      tag: entry.tag,
+      // "|val|% <DT_FIRE_COLOR>Heat" -> "% Heat"
+      text: main.locTag.replace(/<[^>]+>/g, '').replace(/\|(val|STAT1)\|/, '').trim(),
+      base: Math.round(main.value * 90 * 1e6) / 1e6,
+      ...(main.reverseValueSymbol ? { reversed: true } : {}),
+    }
+  })]
+}))
+writeFileSync(new URL('rivens.json', outDir), JSON.stringify(rivens))
 console.log(`wrote ${weapons.length} weapons, ${warframes.length} warframes, ${mods.length} mods, ${arcanes.length} arcanes, ${enemies.length} enemies to src/data/`)

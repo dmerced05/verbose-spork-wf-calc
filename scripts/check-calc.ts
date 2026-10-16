@@ -16,6 +16,12 @@ import { objectiveById } from '../src/optimizer/objectives'
 import type { Attack, Debuffs, EquippedMod, Mod, Weapon } from '../src/types'
 import { canSubsumeInto, type WarframeState } from '../src/data/warframeAbilities'
 type EquippedModList = EquippedMod[]
+import { RIVEN_MOD_ID, applySplice, availableSplices, emptyRiven, rivenIssues, rivenMod, rivenPool, rivenRange, rivenRoll, type RivenConfig, type RivenStat } from '../src/calc/riven'
+import { emptyPath, runPath, type ComparePath, type CompareRequest } from '../src/optimizer/compare'
+import { INT_LIMIT, onScreen } from '../src/calc/damageCap'
+import { elementCombos, maxedDebuffs, ownStatusTypes, primedDebuffs } from '../src/optimizer/damageCap'
+import { evaluateFrame, optimizeFrameMods, type FrameSpec } from '../src/optimizer/frameBuild'
+import { rank30Energy, shardTotals } from '../src/data/archonShards'
 
 let failures = 0
 const expectClose = (label: string, actual: number, expected: number) => {
@@ -539,7 +545,8 @@ expectClose('Corrosive Projection counted', wfBuild('Jade', ['Corrosive Projecti
 // own frame's abilities use your strength, others the teammate's
 const rhinoState: WarframeState = { frameName: 'Rhino', abilityStrength: 2, teammateStrength: 1, armor: 0, casts: [{ id: 'roar', by: 'self' }] }
 expectClose('Roar at your 200% strength', run(plainShotAttack, { buffs: { roar: 0, warframe: rhinoState }, target: grineerTarget }).factionMultiplier, 2)
-expectClose('ally Eclipse at teammate 100% strength', run(plainShotAttack, { buffs: { roar: 0, warframe: { ...rhinoState, casts: [{ id: 'eclipse', by: 'ally' }] } } }).hit.average, plainHit * 3)
+// (Eclipse used to be the example here, but the wiki only has it buffing Mirage herself, so it's caster-only now)
+expectClose('ally Roar at teammate 100% strength', run(plainShotAttack, { buffs: { roar: 0, warframe: { ...rhinoState, frameName: 'Excalibur', casts: [{ id: 'roar', by: 'ally' }] } }, target: grineerTarget }).factionMultiplier, 1.5)
 // subsumed: your strength, Helminth numbers (Roar 30%, Nourish 45%)
 expectClose('subsumed Roar 30% x your 200% strength', run(plainShotAttack, { buffs: { roar: 0, warframe: { ...rhinoState, frameName: 'Chroma', casts: [{ id: 'roar', by: 'helminth' }] } }, target: grineerTarget }).factionMultiplier, 1.6)
 const nourishSubsumed = run(testAttack({ impact: 100 }), { buffs: { roar: 0, warframe: { ...rhinoState, casts: [{ id: 'nourish', by: 'helminth' }] } } })
@@ -738,6 +745,243 @@ const withDuplicate = runGlaive(detonation, {
 })
 expectClose('Melee Duplicate doubles a 100%+ crit detonation', withDuplicate.averageShot / withDuplicate.hit.average, 2)
 expectClose('whole attack = 2 strikes + their procs', withDuplicate.attackTotal > withDuplicate.averageShot ? 1 : 0, 1)
+
+// ---- beams (wiki Multishot) ----
+// +100% multishot on a beam: 2 beams merge into one tick. direct damage x2 like anything else, procs x2 from the
+// summed status chance, and each Heat proc is worth the merged tick so x2 again -> Heat DoT x4 overall
+const doubleShot = equipFake('Split Chamber', ['+100% Multishot'])
+const heatBeam = testAttack({ heat: 100 }, { statusChance: 0.5, continuous: true })
+const heatBullet = testAttack({ heat: 100 }, { statusChance: 0.5 })
+const beamDot = (attack: Attack, mods = [doubleShot]) => dotOf(run(attack, { mods, target: neutral }), 'heat')
+expectClose('beam Heat procs/s same as bullets', beamDot(heatBeam).procsPerSecond, beamDot(heatBullet).procsPerSecond)
+expectClose('beam Heat per proc x multishot', beamDot(heatBeam).perProc.average / beamDot(heatBullet).perProc.average, 2)
+expectClose('beam Heat DoT x multishot squared', beamDot(heatBeam).dps / beamDot(heatBeam, []).dps, 4)
+expectClose('bullet Heat DoT x multishot once', beamDot(heatBullet).dps / beamDot(heatBullet, []).dps, 2)
+// forced procs come after the merge: one per tick, worth the merged tick -> same total as on bullets
+const hunterMunitions = mods.find((mod) => mod.name === 'Hunter Munitions')!
+const hmRun = (attack: Attack) => dotOf(run({ ...attack, statusChance: 0, critChance: 1, critMultiplier: 1 }, {
+  mods: [doubleShot, { mod: hunterMunitions, rank: hunterMunitions.fusionLimit, conditionalStacks: 0 }], target: neutral }), 'slash')
+const slashBeam = testAttack({ impact: 100 }, { continuous: true })
+const slashBullet = testAttack({ impact: 100 })
+expectClose('beam Hunter Munitions: half the procs (one per tick)', hmRun(slashBeam).procsPerSecond / hmRun(slashBullet).procsPerSecond, 0.5)
+expectClose('beam Hunter Munitions: same total DoT', hmRun(slashBeam).dps / hmRun(slashBullet).dps, 1)
+expectClose('Phage is a beam', named('Phage').attacks[0].continuous ? 1 : 0, 1)
+expectClose('Phantasma bombs aren\'t beams', named('Phantasma').attacks.find((attack) => attack.name === 'Plasma Bomb Impact')!.continuous ? 1 : 0, 0)
+// Blast is on the wiki's "affected twice" list too
+const blastBeam = testAttack({ blast: 100 }, { statusChance: 0.5, continuous: true })
+const blastDot = (mods = [doubleShot]) => dotOf(run(blastBeam, { mods, target: neutral }), 'blast')
+expectClose('beam Blast per proc x multishot', blastDot().perProc.average / blastDot([]).perProc.average, 2)
+// the single-instance score on a beam is the merged tick
+const singleScore = objectiveById('single').score
+expectClose('beam single instance = merged tick', singleScore(run(heatBeam, { mods: [doubleShot], target: neutral })), 2 * singleScore(run(heatBeam, { target: neutral })))
+expectClose('bullet single instance = one bullet', singleScore(run(heatBullet, { mods: [doubleShot], target: neutral })), singleScore(run(heatBullet, { target: neutral })))
+expectClose('Torid Incarnon is a beam', named('Torid').attacks.find((attack) => attack.name === 'Incarnon Form')!.continuous ? 1 : 0, 1)
+expectClose('Boar Prime Incarnon is a beam', named('Boar Prime').attacks.find((attack) => attack.name === 'Incarnon Form')!.continuous ? 1 : 0, 1)
+expectClose('Torid grenade isn\'t a beam', named('Torid').attacks.find((attack) => attack.name === 'Grenade Impact')!.continuous ? 1 : 0, 0)
+
+// ---- multishot on hitscan explosions / spearguns ----
+// "Explosion does not scale with multishot mods!" (GunCO sheet), "AoE ignores multishot" (wiki CO page)
+const opticor = named('Opticor')
+const opticorAoE = opticor.attacks.find((attack) => attack.name === 'Charged Shot AoE')!
+expectClose('Opticor AoE flagged', opticorAoE.noMultishotMods && opticorAoE.hitscanAoE ? 1 : 0, 1)
+expectClose('Opticor AoE ignores Split Chamber', calculate({ weapon: opticor, attack: opticorAoE, mods: [maxed('Split Chamber')], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral }).multishot, 1)
+expectClose('Opticor hitscan still gets it', calculate({ weapon: opticor, attack: opticor.attacks[0], mods: [maxed('Split Chamber')], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral }).multishot, 1.9)
+// projectile explosions still get one per projectile
+expectClose('Acceltra explosion keeps multishot', named('Acceltra').attacks.find((attack) => attack.isAoE)!.noMultishotMods ? 1 : 0, 0)
+expectClose('Scourge spear throw ignores multishot', named('Scourge').attacks.find((attack) => attack.name === 'Spear Throw Impact')!.noMultishotMods ? 1 : 0, 1)
+
+// ---- CO table (wiki Oct 2026) ----
+const coRule = (weaponName: string, attackName: string) => {
+  const weapon = named(weaponName)
+  return resolveCoBehavior(weapon, weapon.attacks.find((option) => option.name === attackName)!)
+}
+expectClose('Opticor AoE adds at 250%', coRule('Opticor', 'Charged Shot AoE').scale, 2.5)
+expectClose('Ferrox radial adds at 350%', coRule('Ferrox', 'Radial Attack').scale, 3.5)
+expectClose('Paris charged: uncharged base only', coRule('Paris', 'Charged Shot').scale, 0.5)
+expectClose('Zarr bomblet contact 167%', coRule('Zarr', 'Cannon Mode Cluster Bomb Contact').scale, 1.67)
+expectClose('Zarr bomblet explosion none', coRule('Zarr', 'Cannon Mode Cluster Bomb Explosion').mode === 'none' ? 1 : 0, 1)
+expectClose('Coda Bassocyst alt-fire none', coRule('Coda Bassocyst', 'Alt-Fire').mode === 'none' ? 1 : 0, 1)
+expectClose('Latron Incarnon AoE none', coRule('Latron', 'Incarnon Form AoE').mode === 'none' ? 1 : 0, 1)
+expectClose('unlisted hitscan AoE adds (Battacor)', coRule('Battacor', 'Secondary Fire AoE').mode === 'add' ? 1 : 0, 1)
+// adding-type CO ignores the Incarnon evolution's +base damage: Daring Reverie 35 -> 39, CO share is 35/39
+const coIncarnon = (stacks: number) => calculate({ weapon: bratonPrime, attack: bratonPrime.attacks[0], mods: coInput.mods, debuffs: coInput.debuffs,
+  incarnonPerks: [{ perk: perkFor('Braton Prime', 'II', 'Daring Reverie'), stacks }], coBehavior: { mode: 'add', scale: 1, source: 'override' },
+  armor: 0, buffs: { roar: 0 }, target: neutral }).conditionOverload.bonus
+expectClose('CO skips Incarnon base damage', coIncarnon(0) / calculate({ weapon: bratonPrime, attack: bratonPrime.attacks[0], mods: coInput.mods,
+  debuffs: coInput.debuffs, coBehavior: { mode: 'add', scale: 1, source: 'override' }, armor: 0, buffs: { roar: 0 }, target: neutral }).conditionOverload.bonus, 35 / 39)
+
+// ---- rivens ----
+const somaPrime = named('Soma Prime')
+expectClose('Soma Prime riven disposition', somaPrime.rivenDisposition!, 1.1)
+const rifleCritBase = rivenPool('Rifle').find((def) => def.tag === 'WeaponCritChanceMod')!.base * 100 // 149.994 in the export
+expectClose('Rifle riven crit base ~150%', Math.round(rifleCritBase), 150)
+// 2 positives + 1 negative: 150% x 1.1 x 1.2375 = 204.2%, roll 90-110%
+const somaStats: RivenStat[] = [
+  { tag: 'WeaponCritChanceMod', value: 200, negative: false },
+  { tag: 'WeaponFireIterationsMod', value: 100, negative: false },
+  { tag: 'WeaponZoomFovMod', value: -30, negative: true },
+]
+const critRange = rivenRange('Rifle', 1.1, somaStats, somaStats[0])!
+expectClose('crit range low (2+1)', critRange[0], rifleCritBase * 1.1 * 1.2375 * 0.9)
+expectClose('crit range high (2+1)', critRange[1], rifleCritBase * 1.1 * 1.2375 * 1.1)
+expectClose('3 positives no negative weight', rivenRange('Rifle', 1, [...somaStats.slice(0, 2), { tag: 'WeaponDamageAmountMod', value: 1, negative: false }], somaStats[0])![1], rifleCritBase * 0.75 * 1.1)
+const somaRiven = rivenMod(somaPrime, { ...emptyRiven(), stats: somaStats })!
+const somaWith = (rank: number) => calculate({ weapon: somaPrime, attack: somaPrime.attacks[0], mods: [{ mod: somaRiven, rank, conditionalStacks: 0 }],
+  armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral })
+expectClose('riven crit at rank 8', somaWith(8).critChance, somaPrime.attacks[0].critChance * 3)
+expectClose('riven multishot at rank 8', somaWith(8).multishot, 2)
+expectClose('rank 0 is 1/9 of max (shown like the game, 11.1%)', somaWith(0).multishot, 1.111)
+expectClose('riven is never offered to the optimizer', getCompatibleMods(somaPrime).some((mod) => mod.uniqueName === RIVEN_MOD_ID) ? 1 : 0, 0)
+// "Fire Rate (x2 for Bows)"
+const parisRiven = rivenMod(named('Paris'), { ...emptyRiven(), stats: [{ tag: 'WeaponFireRateMod', value: 50, negative: false }] })!
+expectClose('bow riven fire rate doubled', parisRiven.levelStats[8][0] === '+100% Fire Rate' ? 1 : 0, 1)
+// faction stats read like the Expel mods: +45% -> x1.45, incl. the spliced Techrot/Scaldra ones
+const factionRiven = (tag: string) => rivenMod(somaPrime, { ...emptyRiven(), stats: [{ tag, value: 45, negative: false }] })!
+const vsFaction = (tag: string, faction: string) => calculate({ weapon: somaPrime, attack: somaPrime.attacks[0], mods: [{ mod: factionRiven(tag), rank: 8, conditionalStacks: 0 }],
+  armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...neutral, faction } }).factionMultiplier
+expectClose('riven Damage to Grineer', vsFaction('WeaponFactionDamageGrineer', 'Grineer'), 1.45)
+expectClose('spliced Damage to Techrot', vsFaction('WeaponFactionDamageTechrot', 'Techrot'), 1.45)
+expectClose('spliced Damage to Scaldra', vsFaction('WeaponFactionDamageScaldra', 'Scaldra'), 1.45)
+// Ammo Efficiency (spliced): 50% -> a magazine lasts twice as many shots
+const ammoRiven = rivenMod(somaPrime, { ...emptyRiven(), stats: [{ tag: 'WeaponAmmoEfficiency', value: 50, negative: false }] })!
+expectClose('Ammo Efficiency line', ammoRiven.levelStats[8][0] === '+50% Ammo Efficiency' ? 1 : 0, 1)
+const somaUptime = (mods: EquippedModList) => calculate({ weapon: somaPrime, attack: somaPrime.attacks[0], mods, armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral })
+const plainSoma = somaUptime([])
+const ammoSoma = somaUptime([{ mod: ammoRiven, rank: 8, conditionalStacks: 0 }])
+const shotsPerMag = (uptime: number, result: typeof plainSoma) => (uptime * result.fireRate * result.reloadTime!) / (1 - uptime)
+expectClose('Ammo Efficiency 50% doubles shots per magazine', shotsPerMag(ammoSoma.uptime, ammoSoma) / shotsPerMag(plainSoma.uptime, plainSoma), 2)
+// splicing: Heat (110% roll) + Cold (95% roll) -> Blast at the better roll, a fresh positive row for the random trait
+const heatCold: RivenConfig = { ...emptyRiven(), stats: [
+  { tag: 'WeaponFireDamageMod', value: 90 * 1.1 * 0.99 * 1.1, negative: false },
+  { tag: 'WeaponFreezeDamageMod', value: 90 * 1.1 * 0.99 * 0.95, negative: false },
+] }
+const recipe = availableSplices('Rifle', heatCold).find(([result]) => result === 'WeaponBlastDamageMod')!
+const spliced = applySplice('Rifle', 1.1, heatCold, recipe)
+expectClose('splice consumes both traits', spliced.stats.filter((stat) => /Fire|Freeze/.test(stat.tag)).length, 0)
+expectClose('spliced Blast keeps the better roll', Math.round(100 * rivenRoll('Rifle', 1.1, spliced.stats.filter((stat) => stat.tag), spliced.stats.find((stat) => stat.tag === 'WeaponBlastDamageMod')!)!) / 100, 1.1)
+expectClose('splice leaves a slot for the random trait', spliced.stats.filter((stat) => !stat.tag && !stat.negative).length, 1)
+expectClose('only one splice per riven', availableSplices('Rifle', { ...spliced, stats: [...spliced.stats, { tag: 'WeaponToxinDamageMod', value: 90, negative: false }, { tag: 'WeaponElectricityDamageMod', value: 90, negative: false }] }).length, 0)
+expectClose('spliced stat can\'t be negative', rivenIssues('Rifle', 1.1, { ...emptyRiven(), stats: [
+  { tag: 'WeaponCritChanceMod', value: 180, negative: false }, { tag: 'WeaponDamageAmountMod', value: 200, negative: false },
+  { tag: 'WeaponStatusDamage', value: -50, negative: true }] }).some((issue) => /always positive/.test(issue)) ? 1 : 0, 1)
+// the parser reads every damage-relevant riven stat
+for (const def of rivenPool('Rifle').concat(rivenPool('Melee'))) {
+  if (/Zoom|Recoil|Ammo Maximum|Projectile Speed|Punch Through|Holstered|Range|Parry|Combo Duration|Initial Combo|Combo Count|Finisher|Slide/.test(def.text)) continue
+  const weaponFor = /Melee|Heavy|Slam/.test(def.tag) || def.text.includes('Attack Speed') || def.text.includes('Heavy Attacks') ? named('Skana') : somaPrime
+  const mod = rivenMod(weaponFor, { ...emptyRiven(), stats: [{ tag: def.tag, value: 50, negative: false }] })!
+  const parsed = parseUpgrade(mod.levelStats, 8)
+  if (parsed.effects.length === 0) expectClose(`riven stat parses: ${def.text}`, 0, 1)
+}
+
+// ---- Compare tab: optimizer rules ----
+const phenmor = named('Phenmor')
+const compareRequest = (paths: ComparePath[], boards = ['single']): CompareRequest =>
+  ({ weaponId: phenmor.uniqueName, attackIndex: 1, boards, paths, scenario: null, thorough: false })
+const unconstrained = optimizeAttack(phenmor, phenmor.attacks[1], objectiveById('single'))
+const freePath = runPath(compareRequest([emptyPath('free')]), 0, 'single')
+expectClose('empty rules = the plain search', freePath.entry.score, Math.round(unconstrained.score * 100) / 100)
+const antiCrit = runPath(compareRequest([{ ...emptyPath('anti'), lockedPerks: { V: 'Devouring Attrition' }, maxCritChance: 0.15 }]), 0, 'single')
+expectClose('locked perk is on the build', antiCrit.entry.perks.some((perk) => perk.name === 'Devouring Attrition') ? 1 : 0, 1)
+expectClose('crit cap respected', antiCrit.entry.stats.critChance <= 0.15 ? 1 : 0, 1)
+expectClose('reachable cap = no miss', antiCrit.critMiss, 0)
+const unreachable = runPath(compareRequest([{ ...emptyPath('impossible'), maxCritChance: 0 }]), 0, 'single')
+expectClose('unreachable cap is flagged', unreachable.critMiss > 0 ? 1 : 0, 1)
+const banned = runPath(compareRequest([{ ...emptyPath('ban'), excludedModNames: ['Galvanized Aptitude', 'Primed Cryo Rounds'], excludedPerkNames: ['Survivor\'s Edge'] }]), 0, 'single')
+expectClose('banned mods stay out', banned.entry.mods.some(([, name]) => name === 'Galvanized Aptitude' || name === 'Primed Cryo Rounds') ? 1 : 0, 0)
+expectClose('banned perk stays out', banned.entry.perks.some((perk) => perk.name === 'Survivor\'s Edge') ? 1 : 0, 0)
+const splitChamber = mods.find((mod) => mod.name === 'Split Chamber')!
+const lockedIn = runPath(compareRequest([{ ...emptyPath('lock'), lockedModIds: [splitChamber.uniqueName], lockedArcaneId: 'none' }]), 0, 'single')
+expectClose('locked mod is on the build', lockedIn.entry.mods.some(([id]) => id === splitChamber.uniqueName) ? 1 : 0, 1)
+expectClose('still 8 mods with a lock', lockedIn.entry.mods.length, 8)
+expectClose('"no arcane" is respected', lockedIn.entry.arcane === null ? 1 : 0, 1)
+const rivenPath = runPath(compareRequest([{ ...emptyPath('riven'), riven: { ...emptyRiven(), stats: [{ tag: 'WeaponDamageAmountMod', value: 200, negative: false }, { tag: 'WeaponFireIterationsMod', value: 100, negative: false }] } }]), 0, 'single')
+expectClose('riven path carries the riven', rivenPath.entry.mods.some(([id]) => id === RIVEN_MOD_ID) ? 1 : 0, 1)
+
+// ---- damage cap: biggest single instance + the 32-bit wrap ----
+expectClose('on screen below the limit', onScreen(1_000_000), 1_000_000)
+expectClose('limit itself', onScreen(INT_LIMIT), INT_LIMIT)
+expectClose('one past shows the bottom value', onScreen(INT_LIMIT + 1), -2_147_483_648)
+expectClose('3 billion on screen', onScreen(3_000_000_000), -2_147_483_648)
+expectClose('47.7 billion on screen', onScreen(47_753_672_618), -2_147_483_648)
+const peakOf = (extra: Partial<Attack>) => run(testAttack({ slash: 100 }, extra), { target: neutral }).peakHit
+expectClose('no crit chance: peak = normal hit', peakOf({ critChance: 0, critMultiplier: 3 }), 100)
+expectClose('10% crit: a yellow crit can still roll', peakOf({ critChance: 0.1, critMultiplier: 3 }), 300)
+expectClose('150% crit: top tier is orange (2 tiers)', peakOf({ critChance: 1.5, critMultiplier: 3 }), 500)
+expectClose('beam peak = the merged tick', run(testAttack({ heat: 100 }, { continuous: true, critChance: 0 }), { mods: [doubleShot], target: neutral }).peakHit, 200)
+// Devouring Attrition: a non-crit can roll +2000%, bigger than a 2x crit at 10% crit chance
+const phenmorPeak = calculate({ weapon: phenmor, attack: phenmor.attacks[1], mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral,
+  incarnonPerks: [{ perk: perkFor('Phenmor', 'V', 'Devouring Attrition'), stacks: 0 }] })
+expectClose('Devouring Attrition non-crit is the peak', phenmorPeak.peakHit / (phenmorPeak.hit.normal), 21)
+
+// Furious Javelin: x(1 + 15% x Strength x enemies hit), wiki example 100 x 2.65 (Pressure Point... here Serration) x (1 + 0.15 x 1.3 x 5)
+const javelinFrame = (stacks: number, strength = 1.3): WarframeState => ({ frameName: 'Excalibur', abilityStrength: strength, teammateStrength: 1, armor: 0, casts: [{ id: 'furiousJavelin', by: 'self', stacks }] })
+expectClose('Furious Javelin x enemies hit', runMelee(testAttack({ slash: 100 }), { buffs: { roar: 0, warframe: javelinFrame(5) } }).hit.normal, 100 * (1 + 0.15 * 1.3 * 5))
+expectClose('Furious Javelin is Excalibur\'s only', runMelee(testAttack({ slash: 100 }), { buffs: { roar: 0, warframe: { ...javelinFrame(5), frameName: 'Kullervo' } } }).hit.normal, 100)
+// Ballistic Battery: flat 5000 x strength on the base, after damage mods, before crit/faction. biggest hit only
+const batteryFrame: WarframeState = { frameName: 'Mesa', abilityStrength: 2, teammateStrength: 1, armor: 0, casts: [{ id: 'ballisticBattery', by: 'self' }] }
+const batteryShot = run(testAttack({ impact: 100 }), { mods: [equipFake('Serration', ['+100% Damage'])], buffs: { roar: 0, warframe: batteryFrame }, target: neutral })
+expectClose('Ballistic Battery in the biggest hit', batteryShot.peakHit, 200 + 10000)
+expectClose('...but not in the average hit', batteryShot.hit.average, 200)
+// caster-only: an ally's Eclipse does nothing for you
+const eclipseBy = (by: 'self' | 'ally') => run(testAttack({ slash: 100 }), { buffs: { roar: 0, warframe: { frameName: 'Mirage', abilityStrength: 1, teammateStrength: 1, armor: 0, casts: [{ id: 'eclipse', by }] } }, target: neutral }).hit.normal
+expectClose('own Eclipse x3', eclipseBy('self'), 300)
+expectClose('ally Eclipse does nothing', eclipseBy('ally'), 100)
+// maxed debuffs count every status type for CO
+expectClose('maxed debuffs: every status type + lifted', run(testAttack({ slash: 100 }, { statusChance: 0.1 }), { debuffs: maxedDebuffs(), target: neutral }).activeStatusTypes, STATUS_TYPES.length + 1)
+
+// Archon Shards. Excalibur: 150 at rank 30, Primed Flow x2.85 = 427.5, a Tauforged Azure +75 (flat, after) = 502.5 > 500
+const excalibur = warframes.find((frame) => frame.name === 'Excalibur')!
+expectClose('Excalibur rank 30 energy', rank30Energy(excalibur), 150)
+expectClose('Excalibur Umbra rank 30 energy', rank30Energy(warframes.find((frame) => frame.name === 'Excalibur Umbra')!), 225)
+const violet = (count: number) => Array.from({ length: count }, () => ({ buffId: 'violet-melee-cd', tauforged: true }))
+const azure = { buffId: 'azure-energy', tauforged: true }
+expectClose('4 Violet + Azure past 500: 4 x 75%', shardTotals([...violet(4), azure], 427.5).weapon.meleeCritDamage, 3)
+expectClose('5 Violet under 500: 5 x 37.5%', shardTotals(violet(5), 427.5).weapon.meleeCritDamage, 1.875)
+expectClose('exactly 500 doesn\'t double', shardTotals(violet(1), 500).weapon.meleeCritDamage, 0.375)
+expectClose('Violet electricity: 45% + 15% x 3 Crimson/Azure/Violet', shardTotals([{ buffId: 'violet-primary-electricity', tauforged: true }, azure, { buffId: 'crimson-strength', tauforged: true }], 0).weapon.primaryElectricity, 0.45 + 0.15 * 3)
+// warframeTotals with Primed Flow in a slot
+const primedFlow = mods.find((mod) => mod.name === 'Primed Flow')!
+const shardedTotals = warframeTotals({
+  frame: excalibur, mods: [{ mod: primedFlow, rank: primedFlow.fusionLimit }], arcanes: [], extraStrength: 0, extraArmor: 0, teammateStrength: 1, casts: [],
+  shards: [...violet(4), azure],
+})
+expectClose('panel max energy 427.5 + 75', shardedTotals.energy, 503)
+expectClose('panel Violet doubled', shardedTotals.shards.meleeCritDamage, 3)
+// the video's Exalted Blade crit: 2.0 x (1 + 4 x 75% + 120% Galvanized (4 kills) + 85% Amalgam Organ Shatter + 60% Gladiator Might) = 13.3x
+const exaltedBlade = weapons.find((weapon) => weapon.name === 'Exalted Blade')!
+const shardMeleeMod = (name: string) => {
+  const mod = mods.find((candidate) => candidate.name === name && candidate.type === 'Melee Mod')!
+  return { mod, rank: mod.fusionLimit, conditionalStacks: 4 }
+}
+const bladeCrit = (warframe?: WarframeState) => calculate({
+  weapon: exaltedBlade, attack: exaltedBlade.attacks[0], mods: ['Galvanized Steel', 'Amalgam Organ Shatter', 'Gladiator Might'].map(shardMeleeMod),
+  armor: 0, debuffs: noDebuffs(), buffs: { roar: 0, warframe }, target: neutral,
+}).critMultiplier
+const excalSpec = (shards = [] as typeof azure[], casts: FrameSpec['casts'] = []): FrameSpec => ({ frame: excalibur, subsume: null, casts, allyStrength: 1, arcaneIds: [], shards })
+const withFlow = { regular: [primedFlow], aura: [], exilus: null }
+expectClose('Exalted Blade crit without shards', bladeCrit(), 2 * (1 + 1.2 + 0.85 + 0.6))
+expectClose('Exalted Blade crit with 4 Violet + Azure (+ Primed Flow)', bladeCrit(evaluateFrame(excalSpec([...violet(4), azure]), withFlow).state), 13.3)
+expectClose('...not doubled without the Flow mod', bladeCrit(evaluateFrame(excalSpec([...violet(4), azure]), { regular: [], aura: [], exilus: null }).state), 2 * (1 + 1.5 + 2.65))
+expectClose('Crimson Strength shards add to the strength', evaluateFrame(excalSpec(Array(5).fill({ buffId: 'crimson-strength', tauforged: true })), { regular: [], aura: [], exilus: null }).strength, 1.75)
+// the frame mod search, Strength only: Furious Javelin locked, then Blind Rage 99 + Umbral Intensify 44 x1.75 (all 3 Umbral
+// pieces) + Transient Fortitude 55 + Augur Secrets 24 + Amar's Hatred 15 + Power Drift 15 (exilus) + Growing Power 25 (aura)
+const strengthBuild = optimizeFrameMods(excalSpec([], [{ id: 'furiousJavelin', by: 'self', stacks: 20 }]), (evaluated) => evaluated.strength)
+console.log('Strength build:', [...strengthBuild.loadout.regular, ...strengthBuild.loadout.aura, strengthBuild.loadout.exilus].map((mod) => mod?.name).join(', '))
+expectClose('max Strength with Furious Javelin locked', strengthBuild.evaluated.strength, 1 + 0.99 + 0.77 + 0.55 + 0.24 + 0.15 + 0.15 + 0.25)
+expectClose('augment stays in', strengthBuild.loadout.regular.some((mod) => mod.name === 'Furious Javelin') ? 1 : 0, 1)
+expectClose('8 regular slots max', strengthBuild.loadout.regular.length <= 8 ? 1 : 0, 1)
+
+// solo priming: a companion weapon's combo can't reuse a base element (Viral + Corrosive both need Toxin)
+const combos2 = elementCombos(2).map((combo) => combo.join('+'))
+expectClose('Viral + Corrosive impossible', combos2.includes('corrosive+viral') ? 1 : 0, 0)
+expectClose('Viral + Radiation possible', combos2.includes('radiation+viral') ? 1 : 0, 1)
+const dirigaCombos = elementCombos(3, 'electricity').map((combo) => [...combo].sort().join('+'))
+expectClose('Diriga: Heat + Cold + Toxin separately', dirigaCombos.includes('cold+heat+toxin') ? 1 : 0, 1)
+expectClose('Diriga: no Electricity-based combos', dirigaCombos.some((combo) => /corrosive|magnetic|radiation|electricity/.test(combo)) ? 1 : 0, 0)
+const ownRun = run(testAttack({ slash: 60, impact: 40 }, { statusChance: 0.3 }), { mods: [equipFake('Hellfire', ['+90% Heat'])], target: neutral })
+expectClose('own statuses: slash, impact, heat', ownStatusTypes(ownRun).join(',') === 'heat,impact,slash' ? 1 : 0, 1)
+expectClose('primed Viral at 10 stacks', primedDebuffs(['viral']).stacks.viral, 10)
+expectClose('primed Heat strips armor', primedDebuffs(['heat']).heatArmorStrip, 0.5)
 
 // sanity: standard Braton Prime build, element combining in slot order
 const braton = weapons.find((weapon) => weapon.name === 'Braton Prime')!

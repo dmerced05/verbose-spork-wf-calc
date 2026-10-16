@@ -41,7 +41,9 @@ export function BaseStats({ weapon, attack }: { weapon: Weapon; attack: Attack }
     stats.push(['Reload', `${fixed(weapon.reloadTime!)}s${shellReload ? ` (${fixed(shellReload.perShell)}s / shell)` : ''}`])
   }
   if (weapon.trigger) stats.push(['Trigger', weapon.trigger])
-  stats.push(['Riven disposition', weapon.disposition ? `${fixed(weapon.disposition)}` : '?'])
+  stats.push(['Riven disposition', weapon.rivenDisposition
+    ? `${weapon.disposition ? `${'●'.repeat(weapon.disposition)} ` : ''}x${weapon.rivenDisposition}`
+    : weapon.exalted ? 'no riven slot' : '?'])
 
   // multi-hit heavies (Heavy Scythes, Dual Swords...) get a flag with the per-hit breakdown on hover
   const multiHit = combo

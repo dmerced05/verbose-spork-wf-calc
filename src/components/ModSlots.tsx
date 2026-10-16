@@ -46,6 +46,8 @@ interface Props {
   onArcanesChange: (arcaneSlots: (ArcaneSlot | null)[]) => void
   onPolaritiesChange: (polarities: SlotPolarity[]) => void
   onCatalystChange: (hasCatalyst: boolean) => void
+  // weapons that take a riven: the synthesized riven Mod (src/calc/riven.ts) and its editor
+  riven?: { mod: Mod; editor: React.ReactNode } | null
 }
 
 const maxRankOf = (levelStats: string[][]) => levelStats.length - 1
@@ -103,6 +105,7 @@ const RemoveButton = ({ onRemove }: { onRemove: () => void }) => (
 
 interface ModCardProps {
   slot: ModSlot | null
+  mod: Mod | undefined
   conflictWith: string | null // another equipped mod this one can't go with (old/loaded builds)
   slotPolarity: SlotPolarity
   isExilusSlot: boolean
@@ -113,8 +116,7 @@ interface ModCardProps {
   onRemove: () => void
 }
 
-function ModCard({ slot, conflictWith, slotPolarity, isExilusSlot, isAuraSlot, selected, onSelect, onCyclePolarity, onRemove }: ModCardProps) {
-  const mod = slot ? modsById.get(slot.modId) : undefined
+function ModCard({ slot, mod, conflictWith, slotPolarity, isExilusSlot, isAuraSlot, selected, onSelect, onCyclePolarity, onRemove }: ModCardProps) {
   // auras add capacity (shown as +N), everything else uses it
   const auraBonus = mod && slot && isAuraSlot ? auraCapacity(mod.baseDrain, slot.rank, mod.polarity, slotPolarity) : 0
   const drain = mod && slot ? (isAuraSlot ? -auraBonus : modDrain(mod.baseDrain, slot.rank, mod.polarity, slotPolarity)) : 0
@@ -190,8 +192,11 @@ export function ModSlots(props: Props) {
   const {
     weaponName, isMelee, compatibleMods, compatibleArcanes, slots, arcaneSlots, polarities, hasCatalyst,
     onSlotsChange, onArcanesChange, onPolaritiesChange, onCatalystChange,
-    capacityLabel = 'Orokin Catalyst', auraCount = 0, isAura = () => false,
+    capacityLabel = 'Orokin Catalyst', auraCount = 0, isAura = () => false, riven = null,
   } = props
+  // the riven isn't in the mod data, it's built from the user's stats
+  const modFor = (modId: string) => (riven && modId === riven.mod.uniqueName ? riven.mod : modsById.get(modId))
+  const rivenEquipped = Boolean(riven && slots.some((slot) => slot?.modId === riven.mod.uniqueName))
   const isAuraIndex = (index: number) => index >= AURA_SLOT_START && index < AURA_SLOT_START + auraCount
   // nothing selected = no mod browser. clicking a slot opens it, clicking it again (or Close / Esc) hides it
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null)
@@ -206,12 +211,12 @@ export function ModSlots(props: Props) {
 
   // auras add to the capacity, every other slot uses it
   const auraBonus = slots.reduce((total, slot, index) => {
-    const mod = slot && isAuraIndex(index) ? modsById.get(slot.modId) : undefined
+    const mod = slot && isAuraIndex(index) ? modFor(slot.modId) : undefined
     return mod && slot ? total + auraCapacity(mod.baseDrain, slot.rank, mod.polarity, polarities[index]) : total
   }, 0)
   const capacity = capacityFor(hasCatalyst) + auraBonus
   const usedCapacity = slots.reduce((total, slot, index) => {
-    const mod = slot && !isAuraIndex(index) ? modsById.get(slot.modId) : undefined
+    const mod = slot && !isAuraIndex(index) ? modFor(slot.modId) : undefined
     return mod && slot ? total + modDrain(mod.baseDrain, slot.rank, mod.polarity, polarities[index]) : total
   }, 0)
 
@@ -235,11 +240,11 @@ export function ModSlots(props: Props) {
     }
     return [...byName.values()]
   }, [compatibleMods])
-  const equippedNames = new Set(slots.flatMap((slot) => (slot ? [modsById.get(slot.modId)!.name] : [])))
+  const equippedNames = new Set(slots.flatMap((slot) => (slot ? [modFor(slot.modId)!.name] : [])))
   // incompatible pairs (Serration + Spectral Serration, Hell's Chamber + Galvanized Hell...). the mod in the slot
   // being filled doesn't count, since picking a new one replaces it
   const equippedExcept = (skipIndex: number) =>
-    slots.flatMap((slot, index) => (slot && index !== skipIndex ? [modsById.get(slot.modId)!] : []))
+    slots.flatMap((slot, index) => (slot && index !== skipIndex ? [modFor(slot.modId)!] : []))
   const othersForSelected = equippedExcept(selectedSlot ?? -1)
   const blockerFor = (mod: Mod) => blockingMod(mod, othersForSelected)
 
@@ -288,7 +293,7 @@ export function ModSlots(props: Props) {
   }
 
   // the selected thing's controls (rank, conditional stacks) work the same for mods and the arcane
-  const selectedMod = !arcaneSelected && selectedSlot !== null && slots[selectedSlot] ? modsById.get(slots[selectedSlot]!.modId) : undefined
+  const selectedMod = !arcaneSelected && selectedSlot !== null && slots[selectedSlot] ? modFor(slots[selectedSlot]!.modId) : undefined
   const selectedArcane = arcaneSelected && arcaneSlot ? arcanesById.get(arcaneSlot.arcaneId) : undefined
   const selectedState = arcaneSelected ? arcaneSlot : selectedSlot !== null ? slots[selectedSlot] : null
   const selectedItem = selectedMod ?? selectedArcane
@@ -313,8 +318,9 @@ export function ModSlots(props: Props) {
     <ModCard
       key={index}
       slot={slots[index]}
+      mod={slots[index] ? modFor(slots[index]!.modId) : undefined}
       conflictWith={(() => {
-        const mod = slots[index] ? modsById.get(slots[index]!.modId) : undefined
+        const mod = slots[index] ? modFor(slots[index]!.modId) : undefined
         return mod ? blockingMod(mod, equippedExcept(index))?.name ?? null : null
       })()}
       slotPolarity={polarities[index]}
@@ -385,6 +391,8 @@ export function ModSlots(props: Props) {
         </div>
       )}
 
+      {riven && rivenEquipped && riven.editor}
+
       {selectedSlot === null && <p className="muted-inline slot-hint">Click a slot to add or change a mod.</p>}
       {selectedSlot !== null && (
       <div className="mod-browser" onKeyDown={(event) => event.key === 'Escape' && setSelectedSlot(null)}>
@@ -400,6 +408,15 @@ export function ModSlots(props: Props) {
           </span>
         </div>
         <div className="browser-grid">
+          {riven && !rivenEquipped && !arcaneSelected && !exilusSelected && !auraSelected && !searchText && (
+            <button className="browser-card rarity-riven" onClick={() => equipMod(riven.mod)}>
+              <span className="browser-top">
+                <span className="mod-name">Riven Mod</span>
+                <span className="muted-inline">your rolls</span>
+              </span>
+              <span className="browser-line">Type in your riven's stats. Not used by the optimizer or leaderboard.</span>
+            </button>
+          )}
           {browserMods.map(({ mod, blocker }) => (
             <button
               key={mod.uniqueName}

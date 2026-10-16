@@ -37,9 +37,10 @@ export const OBJECTIVES: Objective[] = [
     id: 'single',
     label: 'Single damage instance',
     unit: 'per hit',
-    description: 'One hit from one projectile (or one melee swing), crits averaged in, DoTs not included',
+    description: 'One hit from one projectile (or one melee swing, or one merged beam tick), crits averaged in, DoTs not included',
     usesFireRate: false,
-    score: (result) => result.hit.average,
+    // a beam's extra beams merge into one tick on the target, so its single instance is the whole merged tick
+    score: (result) => result.hit.average * result.beamMerge,
   },
   {
     // what a heavy / glaive detonation actually does: Glaive Prime's detonation lives on its forced Slash proc,

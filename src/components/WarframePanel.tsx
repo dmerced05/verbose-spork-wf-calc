@@ -13,11 +13,16 @@ import {
 import type { Warframe, WarframeAbilityInfo, Weapon } from '../types'
 import { AURA_SLOT_START, EXILUS_SLOT, ModSlots, TOTAL_SLOTS, type ArcaneSlot, type ModSlot } from './ModSlots'
 import { SearchSelect } from './SearchSelect'
+import type { FrameLoad } from '../optimizer/damageCap'
+import { defaultConditionalStacks, maxConditionalStacks } from '../calc/parseMod'
+import { SHARD_BUFFS, SHARD_COLORS, SHARD_SLOTS, VIOLET_ENERGY_THRESHOLD, shardBuffsById, type ShardSlot } from '../data/archonShards'
 
 interface Props {
   isMelee: boolean
   weapon: Weapon // the calculator's weapon: which abilities apply, and Valkyr Talons switch Hysteria on
   onWarframeChange: (state: WarframeState, corrosiveProjections: number) => void
+  // a setup to load (Damage Cap tab), or 'clear' to switch every ability, ally and arcane off (leaderboard builds)
+  loadRequest?: { nonce: number; load: FrameLoad | 'clear' } | null
 }
 
 const percent = (fraction: number) => `${Math.round(fraction * 1000) / 10}%`
@@ -85,7 +90,7 @@ const subsumeByKey = new Map(SUBSUME_OPTIONS.map((option) => [option.key, option
 // abilities an ally can bring (passives can't be shared)
 const ALLY_OPTIONS = WARFRAME_ABILITIES.filter(helpsAllies)
 
-export function WarframePanel({ isMelee, weapon, onWarframeChange }: Props) {
+export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest }: Props) {
   const [frameId, setFrameId] = useState(defaultFrameId)
   const frame = warframesById.get(frameId)!
   const baseName = warframeBaseName(frame.name)
@@ -105,6 +110,7 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange }: Props) {
   const [arcaneSlots, setArcaneSlots] = useState<(ArcaneSlot | null)[]>([null, null])
   const [shieldInnateDr, setShieldInnateDr] = useState(true)
   const [otherDr, setOtherDr] = useState(0)
+  const [shards, setShards] = useState<(ShardSlot | null)[]>(() => Array(SHARD_SLOTS).fill(null))
 
   const subsumed = helminth ? subsumeByKey.get(helminth.key) ?? null : null
   const compatibleMods = useMemo(
@@ -144,6 +150,7 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange }: Props) {
     extraStrength,
     extraDuration,
     extraArmor,
+    shards,
     teammateStrength,
     casts,
   }
@@ -153,6 +160,74 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange }: Props) {
   // push the derived numbers up to the calculator whenever they change
   const stateKey = JSON.stringify([state, totals.corrosiveProjections])
   useEffect(() => onWarframeChange(state, totals.corrosiveProjections), [stateKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // rebuild a setup from outside: frame, the Helminth slot, which casts are on (and their variant/stacks), the augment mods
+  // they need, allies, arcanes, and Strength as "extra" on top of the (augment-only) mods
+  useEffect(() => {
+    if (!loadRequest) return
+    const { load } = loadRequest
+    if (load === 'clear') {
+      // no Warframe investment at all: mods (Strength, auras), Helminth, abilities, allies, arcanes. the frame stays picked
+      const current = warframesById.get(frameId)!
+      setSlots(emptySlotsFor(current))
+      setHelminth(null)
+      setActiveOwn({})
+      setAbilityStacks({})
+      setExtraStrength(0)
+      setTeammateStrength(1)
+      setAllies([])
+      setArcaneSlots([null, null])
+      setShards(Array(SHARD_SLOTS).fill(null))
+      return
+    }
+    const next = warframes.find((candidate) => candidate.name === load.frame) ?? warframesById.get(frameId)!
+    const helminthSlot = load.subsume ? next.abilities.findIndex((info) => info.name === load.subsume!.replaces) : -1
+    const nextHelminth = load.subsume && helminthSlot >= 0 ? { slot: helminthSlot, key: `${load.subsume.from}:${load.subsume.name}` } : null
+    const nextActive: Record<string, boolean> = {}
+    const nextVariants: Record<string, string> = {}
+    const nextStacks: Record<string, number> = {}
+    const augments: string[] = []
+    for (const cast of load.casts) {
+      const ability = abilitiesById.get(cast.id)
+      if (!ability || cast.by === 'ally') continue
+      const key = cast.by === 'helminth' ? 'helminth' : ability.ability ? `own:${ability.ability}` : ability.id
+      nextActive[key] = true
+      if (ability.ability) nextVariants[key] = ability.id
+      if (cast.stacks !== undefined) nextStacks[ability.id] = cast.stacks
+      if (ability.augment) augments.push(ability.augment)
+    }
+    // the augments go in the first slots so their abilities count as equipped
+    const frameMods = getWarframeMods(next, load.subsume ? { warframe: load.subsume.from, ability: load.subsume.name } : null)
+    const nextSlots = emptySlotsFor(next)
+    const slotFor = (name: string): ModSlot | null => {
+      const mod = frameMods.find((candidate) => candidate.name === name)
+      return mod ? { modId: mod.uniqueName, rank: mod.fusionLimit, conditionalStacks: defaultConditionalStacks(mod.levelStats, mod.fusionLimit, { isMelee, bodyShots: false }) } : null
+    }
+    // the ladder's frame mod build (augments first), or just the augments
+    const regular = load.mods?.regular.length ? load.mods.regular : augments
+    regular.slice(0, EXILUS_SLOT).forEach((name, index) => { nextSlots[index] = slotFor(name) })
+    if (load.mods?.exilus) nextSlots[EXILUS_SLOT] = slotFor(load.mods.exilus)
+    load.mods?.aura.forEach((name, index) => { if (AURA_SLOT_START + index < nextSlots.length) nextSlots[AURA_SLOT_START + index] = slotFor(name) })
+    const arcaneSlot = (arcaneId: string): ArcaneSlot | null => {
+      const arcane = arcanesById.get(arcaneId)
+      if (!arcane) return null
+      const rank = arcane.levelStats.length - 1
+      // at max, like the Damage Cap ladder took them
+      return { arcaneId, rank, conditionalStacks: maxConditionalStacks(arcane.levelStats, rank) }
+    }
+    setFrameId(next.uniqueName)
+    setSlots(nextSlots)
+    setPolarities(polaritiesFor(next))
+    setHelminth(nextHelminth)
+    setActiveOwn(nextActive)
+    setVariantPick(nextVariants)
+    setAbilityStacks(nextStacks)
+    setExtraStrength(0) // all of it comes from the mods now
+    setTeammateStrength(load.allyStrength)
+    setAllies(load.casts.filter((cast) => cast.by === 'ally').map((cast) => cast.id))
+    setArcaneSlots([load.arcaneIds[0] ? arcaneSlot(load.arcaneIds[0]) : null, load.arcaneIds[1] ? arcaneSlot(load.arcaneIds[1]) : null])
+    setShards(Array.from({ length: SHARD_SLOTS }, (_, index) => load.shards?.[index] ?? null))
+  }, [loadRequest?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const pickFrame = (id: string | null) => {
     if (!id) return
@@ -203,6 +278,7 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange }: Props) {
             {entry.by === 'helminth' && modeled.helminth && ' · subsumed value'}
             {!applies && ` · ${APPLIES_LABEL[modeled.appliesTo]}`}
             {missingAugment && ` · equip ${modeled.augment} to use it`}
+            {modeled.situational && <span className="warn-inline" title={modeled.situational}> · ⚠ situational: {modeled.situational}</span>}
           </label>
         ) : null}
         {entry.variants.length > 1 && modeled && (
@@ -244,7 +320,9 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange }: Props) {
         <div><span className="label">Health</span><span className="value">{totals.health.toLocaleString()}</span></div>
         <div><span className="label">Shields</span><span className="value">{totals.shields.toLocaleString()}</span></div>
         <div><span className="label">Armor</span><span className="value">{totals.armor.toLocaleString()}</span></div>
-        <div><span className="label">Energy</span><span className="value">{frame.energy}</span></div>
+        <div title="Rank 30 energy x (1 + Flow mods) + Azure shards. Violet shards double their crit damage above 500">
+          <span className="label">Max Energy</span><span className="value">{totals.energy.toLocaleString()}</span>
+        </div>
       </div>
 
       <ModSlots
@@ -266,19 +344,50 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange }: Props) {
       />
 
       <div className="form-grid">
-        <label title="Archon Shards, arcanes, anything not in the mods (+%)">
+        <label title="Anything not in the mods or the shard slots (+%)">
           Extra Ability Strength %
           <input type="number" step={1} value={Math.round(extraStrength * 100)} onChange={(event) => setExtraStrength(Number(event.target.value) / 100)} />
         </label>
-        <label title="Archon Shards, arcanes, anything not in the mods (+%). Null Star's particle count scales with it">
+        <label title="Anything not in the mods or the shard slots (+%). Null Star's particle count scales with it">
           Extra Ability Duration %
           <input type="number" step={1} value={Math.round(extraDuration * 100)} onChange={(event) => setExtraDuration(Number(event.target.value) / 100)} />
         </label>
-        <label title="Flat armor from Archon Shards etc. Feeds Primary Bulwark (+1% damage per armor past 1,000)">
+        <label title="Flat armor not from the shard slots. Feeds Primary Bulwark (+1% damage per armor past 1,000)">
           Extra armor
           <input type="number" min={0} step={10} value={extraArmor} onChange={(event) => setExtraArmor(Math.max(0, Number(event.target.value)))} />
         </label>
       </div>
+      <h3>Archon Shards</h3>
+      <div className="shard-slots">
+        {shards.map((slot, index) => {
+          const shard = slot ? shardBuffsById.get(slot.buffId) : undefined
+          const setSlot = (next: ShardSlot | null) => setShards(shards.map((other, otherIndex) => (otherIndex === index ? next : other)))
+          return (
+            <div key={index} className={`shard-slot ${shard ? `shard-${shard.color.toLowerCase()}` : ''}`} title={shard ? `“${shard.quote}”${shard.effect === 'none' ? '\nNot modeled (no effect on weapon damage here)' : ''}` : 'Empty shard slot'}>
+              <select value={slot?.buffId ?? ''} onChange={(event) => setSlot(event.target.value ? { buffId: event.target.value, tauforged: slot?.tauforged ?? true } : null)}>
+                <option value="">Empty</option>
+                {SHARD_COLORS.map((color) => (
+                  <optgroup key={color} label={color}>
+                    {SHARD_BUFFS.filter((buff) => buff.color === color).map((buff) => (
+                      <option key={buff.id} value={buff.id}>{buff.label}{buff.effect === 'none' ? ' (not modeled)' : ''}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <label className="inline-check" title="Tauforged: x1.5">
+                <input type="checkbox" checked={slot?.tauforged ?? true} disabled={!slot} onChange={(event) => slot && setSlot({ ...slot, tauforged: event.target.checked })} />
+                Tauforged
+              </label>
+            </div>
+          )
+        })}
+      </div>
+      {shards.some((slot) => slot?.buffId === 'violet-melee-cd') && (
+        <p className={totals.violetDoubled ? 'proc-note' : 'warn-inline'}>
+          Violet crit damage {totals.violetDoubled ? 'doubled' : 'not doubled'}: max Energy {totals.energy.toLocaleString()}
+          {totals.violetDoubled ? ` is over ${VIOLET_ENERGY_THRESHOLD}` : ` needs to be ${VIOLET_ENERGY_THRESHOLD + 1}+ (Flow / Primed Flow, an Azure energy shard)`}
+        </p>
+      )}
       {totals.lines.length > 0 && <p className="proc-note">From mods: {totals.lines.join(' · ')}</p>}
       {setSummary(totals.setPieces).length > 0 && (
         <p className="proc-note" title="Set pieces on the Warframe count together with the ones on the weapon in the calculator. The weapon side shows in the results">

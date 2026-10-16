@@ -321,6 +321,17 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .kit-description { font-size: 0.74rem; color: var(--muted); line-height: 1.35; }
 .kit-effect { font-size: 0.76rem; display: flex; gap: 6px; align-items: baseline; cursor: pointer; }
 .kit-effect.inactive { opacity: 0.55; }
+/* Archon Shard slots, border in the shard's color */
+.shard-slots { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 760px) { .shard-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.shard-slot { border: 1px solid var(--border); border-left-width: 4px; border-radius: 6px; padding: 6px; display: grid; gap: 4px; font-size: 0.76rem; min-width: 0; }
+.shard-slot select { width: 100%; min-width: 0; font-size: 0.74rem; }
+.shard-crimson { border-left-color: #d9455f; }
+.shard-azure { border-left-color: #4aa3ff; }
+.shard-amber { border-left-color: #f0a640; }
+.shard-violet { border-left-color: #a46cf0; }
+.shard-topaz { border-left-color: #e8c34a; }
+.shard-emerald { border-left-color: #3fc77d; }
 /* allies' abilities */
 .ally-row { margin-bottom: 6px; }
 .inline-number { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--muted); }
@@ -373,3 +384,78 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .survivability tr.inactive-row td { color: var(--muted); }
 .set-bonuses { margin: 0; padding-left: 18px; font-size: 0.8rem; color: var(--muted); }
 .set-bonuses b { color: var(--text); }
+
+/* ---- riven ---- */
+.mod-card.rarity-riven { border-top: 2px solid #b48cf0; }
+.browser-card.rarity-riven { border-left: 3px solid #b48cf0; }
+.riven-editor { margin-top: 12px; border: 1px solid #4a3a66; border-radius: 6px; padding: 10px; display: grid; gap: 8px; }
+.riven-title { color: #c9a8ff; }
+.riven-stats { width: 100%; border-collapse: collapse; }
+.riven-stats td { padding: 4px 6px 4px 0; vertical-align: middle; }
+.riven-stats select { max-width: 100%; }
+.riven-stats tr.negative .riven-sign, .riven-stats tr.negative select { color: #ff8a8a; }
+.riven-sign { width: 14px; font-weight: 600; color: #8fd18f; }
+.riven-value { width: 80px; margin-right: 4px; }
+.out-of-range { color: #ff6b6b; border-color: #ff6b6b; }
+.remove-inline { padding: 0 6px; }
+.riven-splice button { font-size: 0.8rem; }
+.riven-issues { margin: 0; padding-left: 18px; color: #ff8a8a; font-size: 0.8rem; }
+@media (max-width: 600px) { .riven-stats td { display: block; padding: 2px 0; } .riven-stats tr { display: block; border-bottom: 1px solid var(--border); padding: 4px 0; } }
+.riven-stats td:nth-child(2) { width: 45%; }
+.riven-stats td:nth-child(2) select { width: 100%; }
+
+/* ---- compare tab ---- */
+.compare { display: grid; gap: 16px; }
+.compare-controls input:not([type='checkbox']):not(.cap-input):not(.stack-input) { min-width: 220px; }
+.compare-boards { margin: 10px 0; gap: 4px 14px; }
+.path-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+.path-editor { display: grid; gap: 10px; }
+.path-letter { font-weight: 700; color: var(--accent); font-size: 1.1rem; }
+.path-name { flex: 1; min-width: 0; }
+.path-section { display: grid; gap: 6px; }
+.path-section .label { font-size: 0.75rem; color: var(--muted); }
+.lock-chip { border-color: rgba(143, 209, 143, 0.5); color: #c9efc9; }
+.ban-chip { border-color: rgba(255, 138, 138, 0.5); color: #ffc9c9; text-decoration: line-through; }
+.chip-x { border: 0; background: transparent; padding: 0 0 0 4px; color: var(--muted); line-height: 1; }
+.perk-row { gap: 4px; }
+.perk-row .evo-label { width: 28px; font-size: 0.75rem; color: #c9a8ff; }
+.perk-toggle { font-size: 0.75rem; padding: 3px 8px; }
+.perk-toggle.locked { border-color: #8fd18f; color: #c9efc9; background: rgba(143, 209, 143, 0.08); }
+.perk-toggle.banned { border-color: #ff8a8a; color: #ffc9c9; text-decoration: line-through; }
+.add-path { min-height: 120px; border-style: dashed; color: var(--muted); }
+.table-scroll { overflow-x: auto; }
+.compare-table { width: 100%; border-collapse: collapse; }
+.compare-table td, .compare-table th { padding: 6px 10px 6px 0; vertical-align: top; }
+.compare-table tbody tr { cursor: pointer; }
+.compare-table tbody tr.selected td:first-child { color: var(--accent); }
+.compare-table td.best b { color: var(--accent); }
+.warn-inline { color: #ffb36b; font-size: 0.75rem; }
+.beats-tag { display: inline-block; font-size: 0.72rem; color: #8fd18f; border: 1px solid rgba(143, 209, 143, 0.5); border-radius: 4px; padding: 0 5px; }
+.build-detail .build-mods { margin: 8px 0; padding-left: 20px; font-size: 0.85rem; }
+button.primary { border-color: var(--accent); color: var(--accent); }
+code { font-size: 0.8rem; background: var(--bg); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); }
+.compare > *, .path-grid > * { min-width: 0; }
+.compare code { word-break: break-all; }
+.compare-table td.muted-inline:last-child { max-width: 360px; }
+
+/* ---- damage cap tab ---- */
+.cap-input { width: 140px; }
+.cap-summary { margin: 10px 0; padding-left: 18px; display: grid; gap: 2px; }
+.cap-summary b { color: var(--text); font-weight: 500; margin-right: 4px; }
+.cap-verdict { margin: 0 0 10px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); }
+.cap-verdict.capped { border-color: rgba(143, 209, 143, 0.6); background: rgba(143, 209, 143, 0.06); }
+.cap-bar { height: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; width: 160px; max-width: 100%; margin-bottom: 2px; }
+.cap-bar span { display: block; height: 100%; background: var(--accent); }
+.cap-table tr.over-cap .cap-bar span { background: #8fd18f; }
+.cap-table tr.over-cap td:first-child { color: #8fd18f; }
+.negative-number { color: #ff8a8a; }
+.tabs { flex-wrap: wrap; }
+.cap-table td.cap-setup { font-size: 0.8rem; min-width: 220px; max-width: 340px; white-space: normal; text-align: left; }
+.cap-table th:last-child { text-align: left; }
+.cap-paths { display: grid; gap: 4px; margin: 0 0 12px; }
+.cap-path { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+.cap-path.selected { border-color: var(--accent); }
+.cap-path-label { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.situational-chip { border-color: rgba(255, 179, 107, 0.6); color: #ffcf9e; }
+.over-cap-text { color: #8fd18f; font-size: 0.8rem; }
+.cap-situational { margin: 0 0 10px; }

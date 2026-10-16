@@ -8,6 +8,7 @@ import { abilitiesById, type AbilityCast, type WarframeState } from '../data/war
 import type { Arcane, Mod, Warframe } from '../types'
 import { parseUpgrade, type FrameStat, type ModEffect } from './parseMod'
 import { countSets, setEnhancement, type SetPieces } from './modSets'
+import { NO_SHARD_BONUS, rank30Energy, shardTotals, type ShardSlot, type ShardWeaponBonus } from '../data/archonShards'
 
 export interface EquippedWarframeMod {
   mod: Mod
@@ -24,9 +25,10 @@ export interface WarframeBuild {
   frame: Warframe
   mods: EquippedWarframeMod[]
   arcanes: EquippedWarframeArcane[] // the frame's two arcane slots
-  extraStrength: number // archon shards, anything not in the mods (fraction, 0.1 = +10%)
+  extraStrength: number // anything not in the mods or shards (fraction, 0.1 = +10%)
   extraDuration?: number // same for Ability Duration
-  extraArmor: number // flat armor from shards etc.
+  extraArmor: number // flat armor not from shards
+  shards?: (ShardSlot | null)[] // the 5 Archon Shard slots
   teammateStrength: number // strength allies cast at
   casts: AbilityCast[] // your abilities, your subsumed one and allies' (built by the panel)
   shieldInnateDr?: boolean // shields' innate 50% DR, on unless turned off
@@ -45,6 +47,10 @@ export interface WarframeTotals {
   armor: number
   health: number
   shields: number
+  energy: number // max energy: rank 30 x (1 + Flow...) + Azure shards
+  shards: ShardWeaponBonus // what the shards give weapons
+  shardStrength: number // the part of abilityStrength that's from shards (Damage Cap splits it out)
+  violetDoubled: boolean
   // damage reduction, multiplicative between sources
   drSources: DrSource[]
   healthDr: number // total vs health (armor included)
@@ -68,7 +74,7 @@ const combineDr = (values: number[]) => 1 - values.reduce((taken, value) => take
 
 export function warframeTotals(build: WarframeBuild): WarframeTotals {
   const flat = { armor: build.extraArmor, health: 0 }
-  const scaling = { strength: build.extraStrength, duration: build.extraDuration ?? 0, armorPercent: 0, healthPercent: 0, shieldPercent: 0 }
+  const scaling = { strength: build.extraStrength, duration: build.extraDuration ?? 0, armorPercent: 0, healthPercent: 0, shieldPercent: 0, energyPercent: 0 }
   const drSources: DrSource[] = []
   const auraDamage = { melee: 0, rifle: 0, sniper: 0, pistol: 0, shotgun: 0 }
   let weakpointCritChance = 0
@@ -144,6 +150,16 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
     if (cap) damageCap = { source: arcane.name, armorNeeded: Number(cap[1].replace(/,/g, '')), perSecond: Number(cap[2].replace(/,/g, '')), active: false }
   }
 
+  // Archon Shards: flat Energy goes on after Flow ("after all bonuses"), then Violet checks the 500
+  const energyBeforeShards = rank30Energy(build.frame) * (1 + scaling.energyPercent)
+  const shards = shardTotals(build.shards ?? [], energyBeforeShards)
+  scaling.strength += shards.strength
+  scaling.duration += shards.duration
+  flat.armor += shards.armor
+  flat.health += shards.health
+  if (shards.lines.length) lines.push(`Archon Shards: ${shards.lines.join(', ')}`)
+  const energy = rank30Energy(build.frame) > 0 ? Math.round(energyBeforeShards + shards.energy) : 0
+
   const abilityStrength = Math.max(0, 1 + scaling.strength)
   const abilityDuration = Math.max(0, 1 + scaling.duration)
 
@@ -175,7 +191,7 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
 
   const armor = Math.max(0, Math.round(build.frame.armor * (1 + scaling.armorPercent) + flat.armor))
   const health = Math.max(1, Math.round(build.frame.health * (1 + scaling.healthPercent) + flat.health))
-  const shields = shieldsRemovedBy ? 0 : Math.max(0, Math.round(build.frame.shield * (1 + scaling.shieldPercent)))
+  const shields = shieldsRemovedBy ? 0 : Math.max(0, Math.round(build.frame.shield * (1 + scaling.shieldPercent) + shards.shields))
   if (shieldsRemovedBy) lines.push(`${shieldsRemovedBy}: shields removed`)
   if (damageCap) damageCap.active = armor > damageCap.armorNeeded
 
@@ -190,7 +206,8 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
   const effectiveHealth = health / Math.max(1e-6, 1 - healthDr) + shields / Math.max(1e-6, 1 - shieldDr)
 
   return {
-    abilityStrength, abilityDuration, armor, health, shields,
+    abilityStrength, abilityDuration, armor, health, shields, energy,
+    shards: shards.weapon ?? NO_SHARD_BONUS, shardStrength: shards.strength, violetDoubled: shards.violetDoubled,
     drSources: allSources, healthDr, shieldDr, effectiveHealth, damageCap, setPieces,
     auraDamage, weakpointCritChance, corrosiveProjections, lines,
   }
@@ -209,5 +226,7 @@ export function warframeStateFor(build: WarframeBuild, totals: WarframeTotals): 
     arcanes: build.arcanes.map(({ arcane, rank, conditionalStacks }) => ({ arcaneId: arcane.uniqueName, rank, conditionalStacks })),
     auraDamage: totals.auraDamage,
     weakpointCritChance: totals.weakpointCritChance,
+    shards: totals.shards,
+    shardStrength: totals.shardStrength,
   }
 }

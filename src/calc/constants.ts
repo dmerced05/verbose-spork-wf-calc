@@ -39,7 +39,7 @@ export const FACTION_DAMAGE_MODIFIERS: Record<string, Record<string, number>> = 
 export const FACTIONS = ['None', ...Object.keys(FACTION_DAMAGE_MODIFIERS)]
 
 // which Bane/Primed Bane mod ("x1.3 Damage to Grineer") counts against which faction
-// TODO: double check Scaldra/Techrot/Narmer don't take any bane
+// Scaldra/Techrot/Orokin bonuses come from Expel mods and spliced riven stats ("Damage to Techrot")
 export const BANE_TARGET: Record<string, string> = {
   Grineer: 'Grineer',
   'Kuva Grineer': 'Grineer',
@@ -49,6 +49,8 @@ export const BANE_TARGET: Record<string, string> = {
   'Infested Deimos': 'Infested',
   Orokin: 'Orokin',
   'The Murmur': 'Murmur',
+  Scaldra: 'Scaldra',
+  Techrot: 'Techrot',
 }
 
 export interface StatusInfo {

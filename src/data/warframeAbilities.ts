@@ -30,6 +30,9 @@ export type AbilityEffect = (
   | { kind: 'statusTypeDamage' | 'statusTypeDuration'; damageType: string; value: number } // Ash's passive, per status type
   | { kind: 'statusChanceMod' | 'statusDurationMod' | 'weakpointDamage'; value: number } // Prismatic Gem, Seek: added in with mods
   | { kind: 'targetVulnerability'; value: number } // Petrify: the target takes more damage from everything
+  // Ballistic Battery: stored damage added flat to the next shot's base (damage mods don't touch it, elements, crit,
+  // faction and headshots do). one shot, so it only shows up in the biggest-hit numbers, not DPS
+  | { kind: 'oneShotFlat'; value: number }
 ) & { perStack?: boolean } // with ability.stacks: only these effects multiply by the stack count (Ripper's Wail's per-hit part)
 // survivability side (src/calc/warframeStats.ts): % of base armor/health/shields (added in with the mods, like Warcry's wiki
 // formula "Base Armor x (1 + Armor Mods + Warcry Modifier x (1 + Strength Mods))"), or a damage reduction source
@@ -43,6 +46,8 @@ export interface WarframeAbility {
   augment?: string // needs this augment mod equipped (Freeze Force), when it's on your own frame
   variant?: string // abilities with several ways to cast (Thermal Transfer heat / cold / both), picked on the ability card
   selfOnly?: boolean // a passive: only when you're playing that Warframe, a teammate can't give it to you
+  casterOnly?: boolean // buffs whoever casts it (you, or you with it subsumed) but not teammates (Eclipse, Xata's Whisper)
+  situational?: string // works, but hard to keep up in a real fight. the Damage Cap tab flags it and melee avoids it
   name: string
   warframe: string
   appliesTo: 'all' | 'melee' | 'guns' | 'primary'
@@ -67,7 +72,7 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     helminth: { effects: [{ kind: 'factionDamage', value: 0.3 }], quote: "Subsumed Roar's damage bonus is reduced to 2% / 9% / 15% / 30%." },
   },
   {
-    id: 'eclipse', condition: 'standing in light', ability: 'Eclipse', name: 'Solar Eclipse', warframe: 'Mirage', appliesTo: 'all', scalesWithStrength: true,
+    id: 'eclipse', casterOnly: true, condition: 'standing in light', ability: 'Eclipse', name: 'Solar Eclipse', warframe: 'Mirage', appliesTo: 'all', scalesWithStrength: true,
     effects: [{ kind: 'damageMultiplier', value: 2 }],
     quote: '+200% weapon damage. The damage buff is an unique multiplier.',
     note: 'Assumes full light.',
@@ -81,7 +86,7 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     note: 'The wiki doesn\'t say if Scorn is % of base or modded armor, treated like Warcry (base, added in with armor mods).',
   },
   {
-    id: 'xatasWhisper', ability: "Xata's Whisper", name: "Xata's Whisper", warframe: 'Xaku', appliesTo: 'all', scalesWithStrength: true,
+    id: 'xatasWhisper', casterOnly: true, ability: "Xata's Whisper", name: "Xata's Whisper", warframe: 'Xaku', appliesTo: 'all', scalesWithStrength: true,
     effects: [{ kind: 'extraHit', damageType: 'void', value: 0.26 }],
     quote: '26% of total weapon damage as Void damage. Damage bonus is a separate damage instance.',
     note: 'Its own Void procs aren\'t modeled. The wiki lists no separate subsumed value.',
@@ -115,7 +120,7 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     helminth: { effects: [{ kind: 'attackSpeed', value: 0.3 }], quote: "Subsumed Warcry's attack speed bonus is reduced to 9% / 12% / 15% / 30%." },
   },
   {
-    id: 'wrathfulAdvance', condition: 'after a Wrathful Advance teleport', ability: 'Wrathful Advance', name: 'Wrathful Advance', warframe: 'Kullervo', appliesTo: 'melee', scalesWithStrength: true,
+    id: 'wrathfulAdvance', casterOnly: true, condition: 'after a Wrathful Advance teleport', ability: 'Wrathful Advance', name: 'Wrathful Advance', warframe: 'Kullervo', appliesTo: 'melee', scalesWithStrength: true,
     effects: [{ kind: 'flatCritChance', value: 2 }],
     quote: '+200% melee critical chance, a "final" bonus applied after mods (25% becomes 225%)',
     helminth: { effects: [{ kind: 'flatCritChance', value: 1 }], quote: 'The melee critical chance bonus is reduced to 25% / 50% / 75% / 100%.' },
@@ -188,6 +193,7 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
   {
     id: 'empoweredQuiver', ability: 'Quiver', augment: 'Empowered Quiver', name: 'Empowered Quiver (Quiver augment)', warframe: 'Ivara', appliesTo: 'all', scalesWithStrength: true,
     condition: 'standing in a Dashwire',
+    situational: 'only while standing in a Dashwire (Ivara\'s zipline). Hard to keep up while meleeing, especially pseudo-exalteds like Landslide',
     effects: [{ kind: 'critDamageMod', value: 1 }],
     quote: 'Dashwire grants allies 100% Critical Damage.',
   },
@@ -278,6 +284,21 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     effects: [{ kind: 'extraHit', damageType: 'cold', value: 0.5, forcedProc: true }],
     quote: 'Weapon hits grant an Extra Hit of 50% bonus Cold damage and a guaranteed Cold status for 15 seconds. The Extra Hit inherits the triggering hit\'s critical damage.',
   },
+  // ---- big single-hit sources (Damage Cap tab) ----
+  {
+    id: 'ballisticBattery', ability: 'Ballistic Battery', name: 'Ballistic Battery (full charge)', warframe: 'Mesa', appliesTo: 'guns', scalesWithStrength: true, selfOnly: true,
+    condition: 'battery charged to its cap, released on this shot',
+    effects: [{ kind: 'oneShotFlat', value: 5000 }],
+    quote: 'Stored damage is added to the weapon\'s base damage as flat bonus damage (max 5,000 at rank 3, Ability Strength raises the cap). Base damage mods don\'t affect it, modded elements, crit, faction and headshots do. One projectile only.',
+    note: 'Only the released shot gets it, so it counts toward the biggest hit, not DPS.',
+  },
+  {
+    id: 'furiousJavelin', ability: 'Radial Javelin', augment: 'Furious Javelin', name: 'Furious Javelin', warframe: 'Excalibur', appliesTo: 'melee', scalesWithStrength: true, selfOnly: true,
+    condition: 'Radial Javelin hit the enemies within 16 s',
+    stacks: { label: 'enemies hit', max: 40, default: 10 },
+    effects: [{ kind: 'damageMultiplier', value: 0.15, perStack: true }],
+    quote: '"Each enemy hit will increase Excalibur\'s Melee Damage by 15% for 16s." Multiplicative: Base x (1 + Damage Mods) x (1 + 15% x Strength x Enemies Hit). Applies to Exalted Blade too.',
+  },
   // ---- synergies and target debuffs ----
   {
     id: 'hysteria', ability: 'Hysteria', name: 'Hysteria (Valkyr Talons)', warframe: 'Valkyr', appliesTo: 'all', scalesWithStrength: true, selfOnly: true,
@@ -334,6 +355,9 @@ export interface WarframeState {
   arcanes?: { arcaneId: string; rank: number; conditionalStacks: number }[] // the frame's arcanes, some buff weapons (Arcane Avenger)
   auraDamage?: { melee: number; rifle: number; sniper: number; pistol: number; shotgun: number }
   weakpointCritChance?: number
+  // Archon Shards' weapon buffs (additive with the matching mods), and how much of abilityStrength is from shards
+  shards?: { meleeCritDamage: number; primaryStatusChance: number; secondaryCritChance: number; primaryElectricity: number; toxinStatusDamage: number }
+  shardStrength?: number
 }
 
 export const strengthFor = (cast: AbilityCast, state: WarframeState) =>
@@ -351,7 +375,7 @@ export const castStacks = (ability: WarframeAbility, cast: AbilityCast) =>
 
 // does an ally casting it do anything for you? (Null Star only protects Nova)
 export const helpsAllies = (ability: WarframeAbility) =>
-  !ability.selfOnly && (ability.effects.length > 0 || (ability.defense ?? []).some((effect) => !effect.selfOnly))
+  !ability.selfOnly && !ability.casterOnly && (ability.effects.length > 0 || (ability.defense ?? []).some((effect) => !effect.selfOnly))
 
 // subsumed abilities use their Helminth numbers when the wiki gives different ones
 export const effectsFor = (ability: WarframeAbility, by: CastBy) => (by === 'helminth' && ability.helminth ? ability.helminth.effects : ability.effects)

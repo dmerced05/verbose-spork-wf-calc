@@ -16,6 +16,7 @@ export type StatKey =
   | 'weakpointDamage' // Primary/Secondary Acuity, added to the weak point multiplier (x1.5 on heads)
   | 'magazineCapacity'
   | 'reloadSpeed'
+  | 'ammoEfficiency' // riven splice stat: share of shots that don't use ammo, so a magazine lasts longer
   | 'critChancePerCombo' // Blood Rush, x (combo multiplier - 1)
   | 'statusChancePerCombo' // Weeping Wounds, x (combo multiplier - 1)
   | 'heavyCritChance' // crit chance that only counts on heavy attacks (Melee Animosity, the 2nd half of "x2 for Heavy Attacks")
@@ -42,7 +43,7 @@ export type ModEffect =
   | { kind: 'forcedProcChance'; damageType: string; value: number } // extra proc chance on every hit, outside the damage split
 
 // armor/health are flat ("+900 Armor"), the *Percent ones % of base, damageResistance is one multiplicative DR source
-export type FrameStat = 'armor' | 'armorPercent' | 'health' | 'healthPercent' | 'shieldPercent' | 'strength' | 'duration' | 'damageResistance'
+export type FrameStat = 'armor' | 'armorPercent' | 'health' | 'healthPercent' | 'shieldPercent' | 'energyPercent' | 'strength' | 'duration' | 'damageResistance'
 
 // Warframe arcanes that buff one weapon type ("+180% Melee Damage to Melee Weapons", "+120% Fire Rate to Pistols")
 export type WeaponScope = 'melee' | 'primary' | 'primaryNoShotgun' | 'secondary' | 'shotgun' | 'sniper' | 'guns'
@@ -83,6 +84,7 @@ const FRAME_STAT_PATTERNS: [RegExp, FrameStat][] = [
   [/^\+([\d,.]+) Max Health$/, 'health'],
   [/^([+-][\d.]+)% Health$/, 'healthPercent'],
   [/^([+-][\d.]+)% Shield Capacity$/, 'shieldPercent'],
+  [/^([+-][\d.]+)% Energy Max$/, 'energyPercent'], // Flow, Primed Flow, Archon Flow
   [/^([+-][\d.]+)% Ability Strength$/, 'strength'],
   [/^([+-][\d.]+)% Ability Duration$/, 'duration'],
   // Adaptation is per damage type, against one kind of enemy that's all of it
@@ -122,6 +124,7 @@ const STAT_PATTERNS: [RegExp, StatKey][] = [
   [/^([+-][\d.]+)% Weak Point Damage$/, 'weakpointDamage'],
   [/^([+-][\d.]+)% Magazine Capacity$/, 'magazineCapacity'],
   [/^([+-][\d.]+)% Reload Speed$/, 'reloadSpeed'],
+  [/^([+-][\d.]+)% Ammo Efficiency$/, 'ammoEfficiency'],
 ]
 
 export function parseStatLine(line: string): ModEffect | null {

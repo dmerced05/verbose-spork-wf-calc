@@ -17,6 +17,10 @@ import type { WarframeState } from './data/warframeAbilities'
 import { ModSlots, TOTAL_SLOTS, EXILUS_SLOT, type ArcaneSlot, type ModSlot } from './components/ModSlots'
 import type { SlotPolarity } from './calc/capacity'
 import { SearchSelect } from './components/SearchSelect'
+import { RivenEditor } from './components/RivenEditor'
+import { RIVEN_MOD_ID, emptyRiven, rivenMod, rivenTypeFor, type RivenConfig } from './calc/riven'
+import type { CompareScenario } from './optimizer/compare'
+import type { FrameLoad } from './optimizer/damageCap'
 import { StatsPanel } from './components/StatsPanel'
 import { TargetPanel, resolveArmor, resolveEnemy } from './components/TargetPanel'
 import type { Buffs, Debuffs, EquippedMod, TargetSettings } from './types'
@@ -27,6 +31,10 @@ import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from './optimizer/s
 export interface BuildToLoad {
   entry: LeaderboardEntry
   nonce: number
+  riven?: RivenConfig | null // Compare tab builds can carry one
+  keepScenario?: boolean // Compare runs against the calculator's own target keep it
+  // Damage Cap steps: the rest of the step's setup. frame 'keep' = leave the Warframe panel alone (panel-mode runs)
+  setup?: { headshot: boolean; debuffs: Debuffs; combo: number; frame: FrameLoad | 'clear' | 'keep'; target?: TargetSettings }
 }
 
 const emptySlots = () => Array<ModSlot | null>(TOTAL_SLOTS).fill(null)
@@ -66,7 +74,13 @@ const DEFAULT_DEBUFFS: Debuffs = {
   statusTypeSource: 'build',
 }
 
-export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null }) {
+interface CalculatorProps {
+  buildToLoad: BuildToLoad | null
+  onScenarioChange?: (scenario: CompareScenario) => void
+  onRivenChange?: (riven: { weaponId: string; config: RivenConfig }) => void
+}
+
+export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: CalculatorProps) {
   const [weaponId, setWeaponId] = useState(defaultWeaponId)
   const [attackIndex, setAttackIndex] = useState(0)
   const [slots, setSlots] = useState(emptySlots)
@@ -86,17 +100,23 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
   const [warframeState, setWarframeState] = useState<WarframeState | null>(null)
   const [warframeCorrosive, setWarframeCorrosive] = useState(0)
   const [loadedFrom, setLoadedFrom] = useState<string | null>(null)
+  // the riven's stats live here, the slot just holds RIVEN_MOD_ID. per weapon, so it resets when the weapon changes
+  const [rivenConfig, setRivenConfig] = useState(emptyRiven)
+  // passed down to the Warframe panel when a loaded build brings (or clears) a Warframe setup
+  const [frameLoad, setFrameLoad] = useState<{ nonce: number; load: FrameLoad | 'clear' } | null>(null)
 
   // "Load build" on the leaderboard: set the weapon, attack, mods, arcane and perks, and switch the target/debuffs
   // to the leaderboard scenario so the numbers match what the leaderboard showed
   useEffect(() => {
     if (!buildToLoad) return
-    const { entry } = buildToLoad
+    const { entry, riven, keepScenario, setup } = buildToLoad
     const loadedWeapon = weaponsById.get(entry.weaponId)
     if (!loadedWeapon) return
     const nextSlots = emptySlots()
     entry.mods.forEach((mod, index) => {
-      if (index < EXILUS_SLOT && modsById.has(mod.id)) nextSlots[index] = { modId: mod.id, rank: mod.rank, conditionalStacks: mod.conditionalStacks }
+      if (index < EXILUS_SLOT && (modsById.has(mod.id) || (mod.id === RIVEN_MOD_ID && riven))) {
+        nextSlots[index] = { modId: mod.id, rank: mod.rank, conditionalStacks: mod.conditionalStacks }
+      }
     })
     setWeaponId(entry.weaponId)
     setAttackIndex(Math.max(0, loadedWeapon.attacks.findIndex((option) => option.name === entry.attack)))
@@ -112,10 +132,21 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
     setIncarnonStacks({})
     setPassiveStacks(defaultPassiveStacks(loadedWeapon.name))
     setBonusElement(entry.bonusElement ?? null)
-    setTarget(SCENARIO_TARGET)
-    setDebuffs(SCENARIO_DEBUFFS)
-    setBuffs(SCENARIO_BUFFS)
-    setLoadedFrom(`${entry.weaponName} (${entry.attack})`)
+    setRivenConfig(riven ?? emptyRiven()) // leaderboard builds never have one
+    if (setup) {
+      // a Damage Cap step: its headshot / debuffs / combo, and its Warframe setup into the panel
+      setTarget((current) => ({ ...(setup.target ?? current), headshot: setup.headshot }))
+      setDebuffs(setup.debuffs)
+      setBuffs((current) => ({ ...current, roar: 0, combo: setup.combo }))
+      if (setup.frame !== 'keep') setFrameLoad({ nonce: buildToLoad.nonce, load: setup.frame })
+    } else if (!keepScenario) {
+      // leaderboard builds are scored with no Warframe, so the panel's abilities, allies and arcanes go off too
+      setTarget(SCENARIO_TARGET)
+      setDebuffs(SCENARIO_DEBUFFS)
+      setBuffs(SCENARIO_BUFFS)
+      setFrameLoad({ nonce: buildToLoad.nonce, load: 'clear' })
+    }
+    setLoadedFrom(keepScenario ? null : `${entry.weaponName} (${entry.attack})`)
   }, [buildToLoad])
 
   const weapon = weaponsById.get(weaponId)!
@@ -135,9 +166,13 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
   const selectedPassives = weaponPassives.map((passive) => ({ passive, stacks: passiveStacks[passive.name] ?? 0 }))
   const showBonusElement = hasBonusElement(weapon.name)
 
-  const equippedMods: EquippedMod[] = slots.flatMap((slot) =>
-    slot ? [{ mod: modsById.get(slot.modId)!, rank: slot.rank, conditionalStacks: slot.conditionalStacks }] : [],
-  )
+  const rivenType = rivenTypeFor(weapon)
+  const riven = useMemo(() => rivenMod(weapon, rivenConfig), [weapon, rivenConfig])
+  const modFor = (modId: string) => (modId === RIVEN_MOD_ID ? riven : modsById.get(modId))
+  const equippedMods: EquippedMod[] = slots.flatMap((slot) => {
+    const mod = slot ? modFor(slot.modId) : null
+    return slot && mod ? [{ mod, rank: slot.rank, conditionalStacks: slot.conditionalStacks }] : []
+  })
   const equippedArcane = arcaneSlot
     ? { arcane: arcanesById.get(arcaneSlot.arcaneId)!, rank: arcaneSlot.rank, conditionalStacks: arcaneSlot.conditionalStacks }
     : null
@@ -163,6 +198,16 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
   const bodyKill = killFor(false)
   const headKill = killFor(true)
 
+  // the Compare tab can run against this setup. state values as deps so it only fires on real changes
+  useEffect(() => {
+    onScenarioChange?.({
+      target, armor: resolveArmor(target),
+      debuffs: { ...debuffs, corrosiveProjections: Math.min(4, debuffs.corrosiveProjections + warframeCorrosive) },
+      buffs: { ...buffs, warframe: warframeState ?? undefined },
+    })
+  }, [target, debuffs, buffs, warframeState, warframeCorrosive, onScenarioChange])
+  useEffect(() => onRivenChange?.({ weaponId, config: rivenConfig }), [weaponId, rivenConfig, onRivenChange])
+
   const pickWeapon = (id: string | null) => {
     if (!id) return
     setWeaponId(id)
@@ -175,6 +220,7 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
     setIncarnonStacks({})
     setPassiveStacks(defaultPassiveStacks(weaponsById.get(id)!.name))
     setBonusElement(null)
+    setRivenConfig(emptyRiven()) // a riven belongs to one weapon
   }
 
   // every box folds up: click its title to collapse/expand it. done on the DOM (one class on the panel) so the panels
@@ -220,7 +266,7 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
               <select id="co-mode" value={coOverride} onChange={(event) => setCoOverride(event.target.value as CoMode | 'auto')}>
                 <option value="auto">
                   Auto: {CO_MODE_LABELS[wikiCo.mode]}{wikiCo.scale !== 1 ? ` (${Math.round(wikiCo.scale * 100)}%)` : ''}
-                  {wikiCo.source === 'wiki' ? ' (wiki)' : ' (default)'}
+                  {wikiCo.source === 'wiki' ? ' (wiki)' : wikiCo.source === 'sheet' ? ' (GunCO sheet)' : ' (default)'}
                 </option>
                 <option value="add">Additive</option>
                 <option value="multiply">Multiplicative</option>
@@ -293,11 +339,19 @@ export function Calculator({ buildToLoad }: { buildToLoad: BuildToLoad | null })
             onSlotsChange={setSlots}
             onPolaritiesChange={setPolarities}
             onCatalystChange={setHasCatalyst}
+            riven={riven && rivenType ? {
+              mod: riven,
+              editor: (
+                <RivenEditor type={rivenType} disposition={weapon.rivenDisposition!} dots={weapon.disposition}
+                  config={rivenConfig} onChange={setRivenConfig} />
+              ),
+            } : null}
           />
 
           <WarframePanel
             isMelee={isMelee} weapon={weapon}
             onWarframeChange={(state, corrosive) => { setWarframeState(state); setWarframeCorrosive(corrosive) }}
+            loadRequest={frameLoad}
           />
           <TargetPanel target={target} onChange={setTarget} />
           <DebuffsPanel debuffs={debuffs} buffs={buffs} onDebuffsChange={setDebuffs} onBuffsChange={setBuffs} />

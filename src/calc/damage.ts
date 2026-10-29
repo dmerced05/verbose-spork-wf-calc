@@ -6,7 +6,7 @@
 // status DoTs use the same modded base, but faction applies twice and only literal element mods count.
 
 import {
-  BANE_TARGET, BLAST_DETONATION_MULTIPLIER, GLADIATOR_CRIT_PER_PIECE, GLADIATOR_MAX_PIECES, MAX_HEAVY_EFFICIENCY, hitsPerComboTier, maxComboFor, HEADCRIT_MULTIPLIER, WEAK_POINT_BONUS_RATE_ON_HEAD, hasHeadcrits, headMultiplierFor, COMBINED_ELEMENTS, DOT_STATUSES, FACTION_DAMAGE_MODIFIERS, PHYSICAL_TYPES, PRIMARY_ELEMENTS,
+  AMMO_EFFICIENCY_CAP, BANE_TARGET, BLAST_DETONATION_MULTIPLIER, CAPPED_STATUS_STACKS, GLADIATOR_CRIT_PER_PIECE, GLADIATOR_MAX_PIECES, MAX_HEAVY_EFFICIENCY, hitsPerComboTier, maxComboFor, HEADCRIT_MULTIPLIER, WEAK_POINT_BONUS_RATE_ON_HEAD, hasHeadcrits, headMultiplierFor, COMBINED_ELEMENTS, DOT_STATUSES, FACTION_DAMAGE_MODIFIERS, PHYSICAL_TYPES, PRIMARY_ELEMENTS,
   coldCritMultiplierBonus, magneticMultiplier, punctureCritChanceBonus, tauStatusChanceBonus, viralMultiplier,
 } from './constants'
 import { parseUpgrade, scopeApplies, type ModEffect, type StatKey } from './parseMod'
@@ -72,6 +72,35 @@ export interface DotRow {
   dps: number
   aoe: { label: string; damage: CritSplit } | null // damage to *other* enemies (Blast detonation)
   note: string
+  // what the tick is made of (the formula panel), tick = fraction x statusBase x element x faction x (1 + status damage)
+  // x (1 + vulnerability) x headshot x merged x type, crits on top
+  factors: {
+    fraction: number; statusBase: number; element: number; faction: number; statusDamage: number; vulnerability: number
+    headshot: number; merged: number; type: number
+  }
+}
+
+// the factors behind one hit (the formula panel). hit.average = (sum of modded x type + extraHit) x faction x
+// (1 + vulnerability) x headshot x (critAverage + attrition)
+export interface HitBreakdown {
+  baseDamage: number
+  damageBonus: number // damage mods (Serration...), as a fraction
+  separateMultiplier: number // Sharpshot, slam/throw bonuses, exalted finals...
+  coMode: 'add' | 'multiply' | 'none'
+  coBonus: number
+  heavyCombo: number // heavy attack / exalted combo multiplier, 1 otherwise
+  damageScale: number
+  types: { damageType: string; share: number; modded: number; type: number }[] // share = quantized fraction of base
+  extraHit: number // Xata's Whisper style separate hits (faction already in)
+  faction: number
+  vulnerability: number
+  headshot: number
+  critChance: number
+  critMultiplier: number
+  critAverage: number
+  critNormal: number
+  critHit: number
+  attrition: number
 }
 
 export interface CalcResult {
@@ -131,9 +160,32 @@ export interface CalcResult {
   } | null
   statusTypeSource: 'build' | 'debuffs'
   unparsed: string[]
+  breakdown: HitBreakdown
 }
 
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
+
+// Secondary Enervate (wiki): every hit adds a flat `step` crit chance ("Critical chance is an absolute bonus"), and it all
+// resets after `resets` Big Critical Hits ("any tier above regular Critical Hits", so orange or better). a hit at crit c is
+// big with chance c - 1 between 100% and 200%, always above. I follow the chance of being at each big-crit count hit by
+// hit through one cycle; average crit per hit = expected crit summed over the cycle / expected cycle length
+export function enervateAverageCrit(startCrit: number, step: number, resets: number): number {
+  let alive: number[] = Array.from({ length: resets }, (_, index) => (index === 0 ? 1 : 0)) // chance of being on hit k with j big crits
+  let critSum = 0
+  let hits = 0
+  for (let hit = 0; hit < 100000; hit++) {
+    const mass = sum(alive)
+    if (mass < 1e-12) break
+    const crit = startCrit + step * hit
+    critSum += mass * crit
+    hits += mass
+    const bigChance = Math.min(1, Math.max(0, crit - 1))
+    const next = alive.map((share) => share * (1 - bigChance))
+    for (let big = 0; big + 1 < resets; big++) next[big + 1] += alive[big] * bigChance // the last big crit ends the cycle
+    alive = next
+  }
+  return hits > 0 ? critSum / hits : startCrit
+}
 // rounds to the nearest 1/32, sign(x) * floor(|x| * 32 + 0.5) / 32
 const quantize = (proportion: number) => (Math.sign(proportion) * Math.floor(Math.abs(proportion) * 32 + 0.5)) / 32
 
@@ -160,6 +212,18 @@ export function calculate({
   if (exalted?.strength === 'base') {
     attack = { ...attack, damage: Object.fromEntries(Object.entries(attack.damage).map(([damageType, amount]) => [damageType, amount * exaltedStrength])) }
   }
+  // the target's status behaviour: an immune one has no statuses on it at all (no CO count, no Viral, no Heat strip, no
+  // procs), a capped one holds at most 4 stacks of each
+  const statusMode = target.statusMode ?? 'normal'
+  if (statusMode !== 'normal') {
+    const immune = statusMode === 'immune'
+    debuffs = {
+      ...debuffs,
+      stacks: Object.fromEntries(Object.entries(debuffs.stacks).map(([statusType, count]) => [statusType, immune ? 0 : Math.min(count, CAPPED_STATUS_STACKS)])),
+      heatArmorStrip: immune ? 0 : debuffs.heatArmorStrip,
+      liftedOrKnockedDown: immune ? false : debuffs.liftedOrKnockedDown,
+    }
+  }
   const stacks = (statusType: string) => debuffs.stacks[statusType] ?? 0
   // CO counts status *types*, not stacks. Lifted/knocked down is a hidden status that also counts
   const debuffStatusTypes = Object.values(debuffs.stacks).filter((count) => count > 0).length
@@ -183,6 +247,8 @@ export function calculate({
   let multishotLocked = false // Acuity mods
   let duplicateOnCritChance = 0 // Melee Duplicate
   const modFlat = { critChance: 0, statusChance: 0 } // "+20 Final Status Chance" (Entropy Burst, Napalm Grenades)
+  let critPerHit: { value: number; resetsAfter: number } | null = null // Secondary Enervate
+  let infiniteAmmo = false
   const fireRateLocked = mods.some(({ mod }) => mod.locksFireRate) // Semi-___ Cannonade: fire rate stays at base
   const unparsed: string[] = []
   // elements added on top of the weapon's own (Melee Exposure's Corrosive, Tonkkatt's Heat, Lesion's Toxin): they add
@@ -197,6 +263,8 @@ export function calculate({
     switch (effect.kind) {
       case 'stat':
         bonus[effect.stat] += effect.value * times
+        // a single 100%+ Ammo Efficiency source (Skull Shots, Brain Storm, Arcane Pistoleer) is "Infinite Ammo" now
+        if (effect.stat === 'ammoEfficiency' && effect.value >= 1 && times > 0) infiniteAmmo = true
         break
       case 'faction':
         if (BANE_TARGET[target.faction] === effect.faction) factionBonus += effect.value * times
@@ -218,6 +286,9 @@ export function calculate({
         break
       case 'flatStat':
         modFlat[effect.stat] += effect.value * times
+        break
+      case 'critPerHit':
+        if (times > 0) critPerHit = { value: effect.value, resetsAfter: effect.resetsAfter }
         break
       case 'forcedProcChance':
         forcedProcsPerPellet[effect.damageType] = (forcedProcsPerPellet[effect.damageType] ?? 0) + effect.value * times
@@ -625,7 +696,7 @@ export function calculate({
 
   // which status types the target has, for CO / Galvanized. by default it's the build's own damage types
   // (base physical + modded elements), so a gun can't count statuses it never applies
-  const buildStatusTypes = attack.statusChance > 0
+  const buildStatusTypes = attack.statusChance > 0 && statusMode !== 'immune'
     ? Object.entries(proportions).filter(([damageType, proportion]) => damageType !== 'true' && quantize(proportion) > 0).length
     : 0
   const activeStatusTypes =
@@ -672,10 +743,14 @@ export function calculate({
   const headMultiplier = target.headshotMultiplier ?? headMultiplierFor(target.faction)
   const headcrit = target.headcrit ?? hasHeadcrits(target.faction)
   const weakpointCritBonus = isHeadshot ? bonus.weakpointCritChance : 0
-  const critBeforeVigilante =
+  const critBeforeEnervate =
     attack.critChance * (1 + bonus.critChance + weakpointCritBonus + critFromCombo + (isHeavy ? bonus.heavyCritChance : 0)) +
     perkFlat.critChance + passiveFlat.critChance + modFlat.critChance + frameArcaneFlatCrit + critPerStatusType * activeStatusTypes + abilityFlatCritChance +
     (attack.isAoE ? 0 : punctureCritChanceBonus(stacks('puncture')))
+  // Enervate's stacks are flat on top of everything, taken as their average over a build-up-and-reset cycle
+  const enervate = critPerHit as { value: number; resetsAfter: number } | null // set inside the effect loop, TS can't see it
+  const critBeforeVigilante = enervate ? enervateAverageCrit(critBeforeEnervate, enervate.value, enervate.resetsAfter) : critBeforeEnervate
+  if (enervate) requirements.push(`Secondary Enervate: +${Math.round(enervate.value * 100)}% crit per hit, reset after ${enervate.resetsAfter} big crits (averaged: +${Math.round((critBeforeVigilante - critBeforeEnervate) * 100)}%)`)
   // Vigilante set: "X% chance to enhance Critical Hits from Primary Weapons", a crit that gets enhanced goes up one tier, which
   // averages out the same as that much more crit chance on every hit that crits
   const vigilanteChance = weapon.category === 'Primary' ? VIGILANTE_ENHANCE_PER_PIECE * Math.min(6, setPieces.Vigilante ?? 0) : 0
@@ -794,6 +869,9 @@ export function calculate({
     procRates[damageType] = (procRates[damageType] ?? 0) + perPellet * pelletsPerSecond / beamMerge
   }
 
+  // an immune target takes no procs at all, forced ones included
+  if (statusMode === 'immune') for (const damageType of Object.keys(procRates)) procRates[damageType] = 0
+
   // procs inherit the crit of the hit that applied them, so I keep the normal/crit/average split.
   // modded base here is NOT quantized and uses the full base damage, not just that element's share.
   // procs carry the CO bonus from the hit that applied them (wiki: Blast/Electricity/Gas carry it into their radius)
@@ -824,6 +902,9 @@ export function calculate({
       const durationScale = 1 + bonus.statusDuration + (statusDurationByType['*'] ?? 0) + (statusDurationByType[damageType] ?? 0)
       const ticks = info.ticks > 1 ? Math.max(1, Math.floor(info.ticks * durationScale + 1e-9)) : info.ticks
       const perProc = scaleSplit(tick, ticks)
+      // a status-capped target only holds 4 stacks: past procs/s x duration = 4, extra procs replace running ones, so
+      // the DoT can't go above 4 running at once
+      if (statusMode === 'capped' && ticks > 1) procRates[damageType] = Math.min(procRates[damageType], CAPPED_STATUS_STACKS / ticks)
 
       let aoe: DotRow['aoe'] = null
       if (damageType === 'blast') {
@@ -841,6 +922,11 @@ export function calculate({
         dps: perProc.average * procRates[damageType],
         aoe,
         note: info.note,
+        factors: {
+          fraction: info.fraction, statusBase, element: elementMultiplier, faction: factionMultiplier,
+          statusDamage: bonus.statusDamage + (statusDamageByType[damageType] ?? 0), vulnerability, headshot: headshotPart, merged,
+          type: typeMultiplier(damageType, info.bypassesArmor),
+        },
       }
     })
   const dotDps = sum(dots.map((dot) => dot.dps))
@@ -869,8 +955,10 @@ export function calculate({
   const reloadTime = !reloads
     ? null
     : reloadOverride ?? (shellReload ? (shellReload.delay + shellReload.perShell * magazineSize!) : weapon.reloadTime!) / reloadSpeedScale
-  // Ammo Efficiency (riven): that share of shots is free, so a magazine fires magazine / (1 - efficiency) shots
-  const shotsPerMagazine = magazineSize ? magazineSize / Math.max(0.01, 1 - Math.min(0.99, bonus.ammoEfficiency)) : null
+  // Ammo Efficiency: that share of shots is free, so a magazine fires magazine / (1 - efficiency) shots. capped at 75% in
+  // total since Hotfix 44.1.3 ("only 1 in 4 shots uses ammo"); what used to be 100% is now "Infinite Ammo", which ignores it
+  const ammoEfficiency = (infiniteAmmo as boolean) ? 0.99 : Math.min(AMMO_EFFICIENCY_CAP, bonus.ammoEfficiency)
+  const shotsPerMagazine = magazineSize ? magazineSize / Math.max(0.01, 1 - ammoEfficiency) : null
   const uptime = shotsPerMagazine && reloadTime ? shotsPerMagazine / (fireRate * reloadTime + shotsPerMagazine) : 1
   const steadyStateDps = (burstDps + dotDps) * uptime
 
@@ -890,7 +978,7 @@ export function calculate({
       tick: dot.damageType === 'blast' ? dot.perProc : dot.tick,
       ticks: dot.damageType === 'blast' ? 1 : dot.ticks,
       firstTickAt: dot.damageType === 'blast' ? 1.5 : dot.damageType === 'electricity' || dot.damageType === 'gas' ? 0 : 1,
-      refreshes: dot.damageType === 'heat',
+      refreshes: dot.damageType === 'heat' && statusMode !== 'capped', // capped Heat can't pile past 4
     })),
   }
   const damageInWindow = (seconds: number) => expectedDamage(shotModel, seconds)
@@ -1000,6 +1088,16 @@ export function calculate({
       : null,
     statusTypeSource: debuffs.statusTypeSource === 'debuffs' ? 'debuffs' : 'build',
     unparsed,
+    breakdown: {
+      baseDamage, damageBonus: bonus.damage, separateMultiplier: separateDamageMultiplier, coMode: co.mode, coBonus,
+      heavyCombo: heavyComboFactor, damageScale,
+      types: Object.entries(moddedByType).map(([damageType, modded]) => ({
+        damageType, share: moddedBaseDamage > 0 ? modded / moddedBaseDamage : 0, modded, type: typeMultiplier(damageType),
+      })).sort((a, b) => b.modded - a.modded),
+      extraHit: extraHitNoCrit, faction: factionMultiplier, vulnerability, headshot: headshotFactor,
+      critChance, critMultiplier, critAverage: averageCritMultiplier, critNormal: normalCritMultiplier, critHit: critHitMultiplier,
+      attrition: attritionBonus,
+    },
   }
 }
 

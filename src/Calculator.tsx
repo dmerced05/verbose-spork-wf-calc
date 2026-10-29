@@ -18,9 +18,10 @@ import { ModSlots, TOTAL_SLOTS, EXILUS_SLOT, type ArcaneSlot, type ModSlot } fro
 import type { SlotPolarity } from './calc/capacity'
 import { SearchSelect } from './components/SearchSelect'
 import { RivenEditor } from './components/RivenEditor'
-import { RIVEN_MOD_ID, emptyRiven, rivenMod, rivenTypeFor, type RivenConfig } from './calc/riven'
+import { RIVEN_MOD_ID, emptyRiven, rivenMod, rivenTypeFor, type RivenConfig, RIVEN_DISPOSITION } from './calc/riven'
 import type { CompareScenario } from './optimizer/compare'
 import type { FrameLoad } from './optimizer/damageCap'
+import { FormulaPanel } from './components/FormulaPanel'
 import { StatsPanel } from './components/StatsPanel'
 import { TargetPanel, resolveArmor, resolveEnemy } from './components/TargetPanel'
 import type { Buffs, Debuffs, EquippedMod, TargetSettings } from './types'
@@ -342,7 +343,7 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
             riven={riven && rivenType ? {
               mod: riven,
               editor: (
-                <RivenEditor type={rivenType} disposition={weapon.rivenDisposition!} dots={weapon.disposition}
+                <RivenEditor type={rivenType} disposition={RIVEN_DISPOSITION}
                   config={rivenConfig} onChange={setRivenConfig} />
               ),
             } : null}
@@ -368,6 +369,7 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
           <StatsPanel result={result} body={bodyResult} head={headResult} canHeadshot={!attack.isAoE} />
         </div>
       </div>
+      <FormulaPanel result={result} />
     </>
   )
 }

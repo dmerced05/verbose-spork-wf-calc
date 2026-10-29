@@ -1,5 +1,5 @@
 // checks the calc against worked examples from the wiki. run with: npm run check
-import { calculate, type CalcInput } from '../src/calc/damage'
+import { calculate, enervateAverageCrit, type CalcInput } from '../src/calc/damage'
 import { STATUS_TYPES } from '../src/calc/constants'
 import { arcanes, getCompatibleMods, mods, warframes, weapons } from '../src/data'
 import { warframeTotals } from '../src/calc/warframeStats'
@@ -16,7 +16,7 @@ import { objectiveById } from '../src/optimizer/objectives'
 import type { Attack, Debuffs, EquippedMod, Mod, Weapon } from '../src/types'
 import { canSubsumeInto, type WarframeState } from '../src/data/warframeAbilities'
 type EquippedModList = EquippedMod[]
-import { RIVEN_MOD_ID, applySplice, availableSplices, emptyRiven, rivenIssues, rivenMod, rivenPool, rivenRange, rivenRoll, type RivenConfig, type RivenStat } from '../src/calc/riven'
+import { RIVEN_DISPOSITION, RIVEN_MOD_ID, applySplice, availableSplices, emptyRiven, rivenIssues, rivenMod, rivenPool, rivenRange, rivenRoll, type RivenConfig, type RivenStat } from '../src/calc/riven'
 import { emptyPath, runPath, type ComparePath, type CompareRequest } from '../src/optimizer/compare'
 import { INT_LIMIT, onScreen } from '../src/calc/damageCap'
 import { elementCombos, maxedDebuffs, ownStatusTypes, primedDebuffs } from '../src/optimizer/damageCap'
@@ -983,6 +983,56 @@ const ownRun = run(testAttack({ slash: 60, impact: 40 }, { statusChance: 0.3 }),
 expectClose('own statuses: slash, impact, heat', ownStatusTypes(ownRun).join(',') === 'heat,impact,slash' ? 1 : 0, 1)
 expectClose('primed Viral at 10 stacks', primedDebuffs(['viral']).stacks.viral, 10)
 expectClose('primed Heat strips armor', primedDebuffs(['heat']).heatArmorStrip, 0.5)
+
+// target status behaviour
+const procAttack = testAttack({ slash: 100 }, { statusChance: 1, fireRate: 10 })
+const modeRun = (statusMode: 'normal' | 'capped' | 'immune', debuffs = noDebuffs()) => run(procAttack, { target: { ...neutral, statusMode }, debuffs })
+expectClose('immune: no DoTs', modeRun('immune').dots.length, 0)
+expectClose('immune: Viral stacks do nothing', modeRun('immune', { ...noDebuffs(), stacks: { ...noDebuffs().stacks, viral: 10 } }).hit.normal, modeRun('normal').hit.normal)
+expectClose('immune: no status types for CO', modeRun('immune', maxedDebuffs()).activeStatusTypes, 0)
+// 10 Slash procs/s x 6 ticks = 60 running normally, capped at 4 -> procs/s 4/6
+expectClose('capped: Slash at 4 running stacks', dotOf(modeRun('capped'), 'slash').procsPerSecond, 4 / 6)
+expectClose('capped: Viral 10 counts as 4', modeRun('capped', { ...noDebuffs(), stacks: { ...noDebuffs().stacks, viral: 10 } }).hit.normal / modeRun('normal').hit.normal, 2 + 0.25 * 3)
+
+// the formula panel's factors multiply back to the calc's own numbers
+{
+  const result = run(testAttack({ slash: 60, heat: 40 }, { statusChance: 0.4, critChance: 0.3, critMultiplier: 2 }), {
+    mods: [equipFake('Serration', ['+165% Damage']), equipFake('Hellfire', ['+90% Heat'])], target: grineerTarget, armor: 500,
+    debuffs: { ...noDebuffs(), stacks: { ...noDebuffs().stacks, viral: 3 } },
+  })
+  const b = result.breakdown
+  const rebuilt = (b.types.reduce((total, row) => total + row.modded * row.type, 0) + b.extraHit) * b.faction * (1 + b.vulnerability) * b.headshot * (b.critAverage + b.attrition)
+  expectClose('breakdown rebuilds the average hit', rebuilt, result.hit.average)
+  expectClose('breakdown shares x modded base', b.types.reduce((total, row) => total + row.share, 0) * b.baseDamage * b.damageScale * b.heavyCombo, b.types.reduce((total, row) => total + row.modded, 0))
+  for (const dot of result.dots) {
+    const f = dot.factors
+    expectClose(`${dot.damageType} tick from its factors`, f.fraction * f.statusBase * f.element * f.faction * (1 + f.statusDamage) * (1 + f.vulnerability) * f.headshot * f.merged * f.type * b.critAverage, dot.tick.average)
+  }
+}
+
+// Secondary Enervate: +10% flat per hit, reset after 6 big (orange+) crits. above 200% every hit is big, so the cycle is
+// exactly 6 hits at +0, +10 ... +50 -> +25% on average
+expectClose('Enervate above 200%: +25% average', enervateAverageCrit(2.5, 0.1, 6), 2.75)
+expectClose('Enervate lifts a 5% pistol past 100%', enervateAverageCrit(0.05, 0.1, 6) > 1 ? 1 : 0, 1)
+{
+  const enervate = arcanes.find((arcane) => arcane.name === 'Secondary Enervate')!
+  const pistol = testAttack({ impact: 100 }, { critChance: 0.1, critMultiplier: 2 })
+  const withEnervate = run(pistol, { weapon: { ...testWeapon(pistol), category: 'Secondary', type: 'Pistol' }, arcane: { arcane: enervate, rank: 5, conditionalStacks: 1 } })
+  expectClose('Enervate parsed and applied', withEnervate.critChance, enervateAverageCrit(0.1, 0.1, 6))
+  expectClose('Enervate fully parsed', withEnervate.unparsed.length, 0)
+}
+
+// Hotfix 44.1.3: one riven disposition for everything, Ammo Efficiency capped at 75% total
+expectClose('riven disposition is x1.2 for all', RIVEN_DISPOSITION, 1.2)
+{
+  const mag = testAttack({ impact: 100 }, { fireRate: 10 })
+  const magWeapon = { ...testWeapon(mag), magazineSize: 20, reloadTime: 2 }
+  const efficient = (lines: string[]) => run(mag, { weapon: magWeapon, mods: [equipFake('Ammo', lines)] }).uptime
+  expectClose('90% Ammo Efficiency acts as 75%', efficient(['+90% Ammo Efficiency']), efficient(['+75% Ammo Efficiency']))
+  expectClose('two sources adding past 100% still cap at 75%', efficient(['+60% Ammo Efficiency', '+65% Ammo Efficiency']), efficient(['+75% Ammo Efficiency']))
+  expectClose('a single 100% source is Infinite Ammo', efficient(['+100% Ammo Efficiency']) > efficient(['+75% Ammo Efficiency']) ? 1 : 0, 1)
+  expectClose('under the cap it still counts', efficient(['+50% Ammo Efficiency']) < efficient(['+75% Ammo Efficiency']) ? 1 : 0, 1)
+}
 
 // sanity: standard Braton Prime build, element combining in slot order
 const braton = weapons.find((weapon) => weapon.name === 'Braton Prime')!

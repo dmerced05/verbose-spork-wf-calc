@@ -1,7 +1,7 @@
 import { FACTIONS, factionLabel, hasHeadcrits, headMultiplierFor } from '../calc/constants'
 import { STEEL_PATH_LEVEL_BONUS, scaleArmor, scaleHealth, scaleShield } from '../calc/target'
 import { enemies, enemiesById } from '../data'
-import type { Enemy, TargetLayer, TargetSettings } from '../types'
+import type { Enemy, StatusMode, TargetLayer, TargetSettings } from '../types'
 import { SearchSelect } from './SearchSelect'
 
 // the export calls them "Infestation", the U36 table calls them "Infested"
@@ -80,6 +80,14 @@ export function TargetPanel({ target, onChange }: Props) {
             <option value="health">Health</option>
             <option value="shield">Shields</option>
             <option value="overguard">Overguard</option>
+          </select>
+        </label>
+        <label title="Some enemies take no status at all, others hold at most 4 stacks of each status (DoTs and Viral etc. stop there)">
+          Status effects
+          <select value={target.statusMode ?? 'normal'} onChange={(event) => update({ statusMode: event.target.value as StatusMode })}>
+            <option value="normal">Normal</option>
+            <option value="capped">Capped at 4 stacks</option>
+            <option value="immune">Immune</option>
           </select>
         </label>
         {scaled ? (

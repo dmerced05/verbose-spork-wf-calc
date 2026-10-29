@@ -121,7 +121,10 @@ export interface TargetSettings {
   headshot: boolean // main results assume headshots
   headshotMultiplier?: number | null // the head's weak point multiplier, null = auto from faction (3x on most)
   headcrit?: boolean | null // crit headshots double the weapon's base crit multiplier, null = auto from faction
+  // how the enemy takes status: normally, capped at 4 stacks of each status, or not at all. undefined = normal
+  statusMode?: StatusMode
 }
+export type StatusMode = 'normal' | 'capped' | 'immune'
 
 export interface Debuffs {
   stacks: Record<string, number> // status type -> stacks (on/off statuses use 0/1)

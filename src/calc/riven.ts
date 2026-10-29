@@ -31,6 +31,9 @@ export interface RivenConfig {
 }
 
 export const RIVEN_MOD_ID = 'riven'
+// Hotfix 44.1.3 (2026-10-22, wiki Riven_Mods/Patch_History): "Removed Riven Dispositions. All Rivens now use the same
+// multiplier for their possible value ranges, the equivalent of 1.2 Disposition in the old system."
+export const RIVEN_DISPOSITION = 1.2
 export const RIVEN_MAX_RANK = 8
 export const emptyRiven = (): RivenConfig => ({ stats: [], polarity: 'madurai', drain: 18 })
 

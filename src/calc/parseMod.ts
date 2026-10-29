@@ -40,6 +40,7 @@ export type ModEffect =
   | { kind: 'duplicateOnCrit'; value: number } // Melee Duplicate: crits strike a second time
   | { kind: 'frameStat'; stat: FrameStat; value: number } // Warframe stats (mods and Warframe arcanes), see warframeStats.ts
   | { kind: 'flatStat'; stat: 'critChance' | 'statusChance'; value: number } // "+20 Final Status Chance", added after mods
+  | { kind: 'critPerHit'; value: number; resetsAfter: number } // Secondary Enervate: flat crit per hit, gone after N big crits
   | { kind: 'forcedProcChance'; damageType: string; value: number } // extra proc chance on every hit, outside the damage split
 
 // armor/health are flat ("+900 Armor"), the *Percent ones % of base, damageResistance is one multiplicative DR source

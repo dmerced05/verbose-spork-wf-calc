@@ -7,14 +7,13 @@ import {
 interface Props {
   type: RivenType
   disposition: number
-  dots: number | null
   config: RivenConfig
   onChange: (config: RivenConfig) => void
 }
 
 const POLARITIES = ['madurai', 'naramon', 'vazarin'] as const
 
-export function RivenEditor({ type, disposition, dots, config, onChange }: Props) {
+export function RivenEditor({ type, disposition, config, onChange }: Props) {
   const pool = rivenPool(type)
   const nameOf = (tag: string) => statName(pool.find((def) => def.tag === tag)!)
   const unitOf = (tag: string) => {
@@ -50,7 +49,7 @@ export function RivenEditor({ type, disposition, dots, config, onChange }: Props
       <div className="row spread">
         <b className="riven-title">Riven Mod</b>
         <span className="muted-inline">
-          {type} riven · disposition x{disposition}{dots ? ` (${'●'.repeat(dots)}${'○'.repeat(Math.max(0, 5 - dots))})` : ''} · values at rank 8
+          {type} riven · disposition x{disposition} (the same for every weapon since Hotfix 44.1.3) · values at rank 8
         </span>
       </div>
 

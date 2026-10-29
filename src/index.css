@@ -459,3 +459,12 @@ code { font-size: 0.8rem; background: var(--bg); padding: 1px 5px; border-radius
 .situational-chip { border-color: rgba(255, 179, 107, 0.6); color: #ffcf9e; }
 .over-cap-text { color: #8fd18f; font-size: 0.8rem; }
 .cap-situational { margin: 0 0 10px; }
+
+/* ---- damage formulas (bottom of the calculator) ---- */
+.formula-panel { margin-top: 16px; }
+.formula-block { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 12px; }
+.formula-block h3 { margin: 0; }
+.formula-tex { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.formula-tex .katex-display { margin: 0.4em 0; }
+.formula-tex .katex { font-size: 1.05em; }
+.formula-tex .accent, .formula-tex .accent * { color: inherit; }

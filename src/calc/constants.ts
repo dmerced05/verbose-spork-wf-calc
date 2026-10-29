@@ -77,6 +77,10 @@ export const STATUS_EFFECTS: Record<string, StatusInfo> = {
   tau: { name: 'Status Vulnerability', maxStacks: 10, effect: '+10% status chance per stack (flat)' },
 }
 export const STATUS_TYPES = Object.keys(STATUS_EFFECTS)
+// status-capped enemies (Target panel's "capped" mode) hold at most this many stacks of each status
+export const CAPPED_STATUS_STACKS = 4
+// total Ammo Efficiency from all sources, Hotfix 44.1.3
+export const AMMO_EFFICIENCY_CAP = 0.75
 
 export const viralMultiplier = (stacks: number) => (stacks > 0 ? 2 + 0.25 * (Math.min(stacks, 10) - 1) : 1)
 export const magneticMultiplier = viralMultiplier // same curve, just for shields/overguard

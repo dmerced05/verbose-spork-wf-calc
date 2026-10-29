@@ -1,4 +1,5 @@
 // the selected attack's unmodded numbers, straight from the data (before mods, perks, passives or the target)
+import { RIVEN_DISPOSITION } from '../calc/riven'
 import { SHELL_BY_SHELL_RELOAD } from '../data/reloads'
 import { exaltedRuleFor } from '../data/exalted'
 import { biggestHit, comboTotal, heavyBreakdownText, multiHitHeavyFor } from '../data/heavyAttacks'
@@ -41,9 +42,8 @@ export function BaseStats({ weapon, attack }: { weapon: Weapon; attack: Attack }
     stats.push(['Reload', `${fixed(weapon.reloadTime!)}s${shellReload ? ` (${fixed(shellReload.perShell)}s / shell)` : ''}`])
   }
   if (weapon.trigger) stats.push(['Trigger', weapon.trigger])
-  stats.push(['Riven disposition', weapon.rivenDisposition
-    ? `${weapon.disposition ? `${'●'.repeat(weapon.disposition)} ` : ''}x${weapon.rivenDisposition}`
-    : weapon.exalted ? 'no riven slot' : '?'])
+  // dispositions are gone since Hotfix 44.1.3, every riven rolls at the old x1.2
+  stats.push(['Riven disposition', weapon.rivenDisposition ? `x${RIVEN_DISPOSITION} (fixed for all)` : weapon.exalted ? 'no riven slot' : '?'])
 
   // multi-hit heavies (Heavy Scythes, Dual Swords...) get a flag with the per-hit breakdown on hover
   const multiHit = combo

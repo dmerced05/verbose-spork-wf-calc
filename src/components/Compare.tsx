@@ -5,12 +5,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { arcanesById, getCompatibleArcanes, getCompatibleMods, modsById, weapons, weaponsById } from '../data'
 import { getIncarnonTiers } from '../calc/incarnon'
-import { RIVEN_MOD_ID, emptyRiven, rivenTypeFor, type RivenConfig } from '../calc/riven'
+import { RIVEN_MOD_ID, emptyRiven, rivenTypeFor, type RivenConfig, RIVEN_DISPOSITION } from '../calc/riven'
 import { BOARDS } from '../optimizer/objectives'
 import { boardsFor, emptyPath, type CompareResult, type ComparePath, type CompareRequest, type CompareScenario } from '../optimizer/compare'
 import type { CompareMessage } from '../optimizer/compareWorker'
 import type { SeedBuild } from '../optimizer/optimize'
 import type { LeaderboardFile, LeaderboardEntry } from '../optimizer/leaderboardTypes'
+import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from '../optimizer/scenario'
+import type { StatusMode } from '../types'
 import { RivenEditor } from './RivenEditor'
 import { SearchSelect } from './SearchSelect'
 
@@ -69,6 +71,7 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
   const [scenarioMode, setScenarioMode] = useState<'leaderboard' | 'calculator'>('leaderboard')
   const [boards, setBoards] = useState<string[]>(['sustained', 'single'])
   const [thorough, setThorough] = useState(false)
+  const [statusMode, setStatusMode] = useState<StatusMode>('normal')
   const [paths, setPaths] = useState<ComparePath[]>([emptyPath('Path A'), emptyPath('Path B')])
   const [results, setResults] = useState<CompareResult[]>([])
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
@@ -101,7 +104,15 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
 
   // quick setups for the usual forks
   const nonCritPerk = tiers.flatMap(({ tier, perks }) => perks.filter((perk) => perk.statements.some((statement) => statement.effect?.kind === 'nonCritBonus')).map((perk) => ({ tier, perk })))[0]
+  // the generic fork: a crit build vs a status build vs whatever's best. against an immune target the status path is
+  // pointless (no procs, no CO count), so it's left out
+  const critVsStatus: ComparePath[] = [
+    { ...emptyPath('Crit (100%+)'), minCritChance: 1 },
+    ...(statusMode === 'immune' ? [] : [{ ...emptyPath('Status (no crit mods)'), maxCritChance: attack.critChance }]),
+    emptyPath('Best overall'),
+  ]
   const presets: { label: string; paths: ComparePath[] }[] = [
+    { label: statusMode === 'immune' ? 'Crit vs best (target immune to status)' : 'Crit vs status', paths: critVsStatus },
     ...(nonCritPerk ? [{
       label: `${nonCritPerk.perk.name}: anti-crit vs crit`,
       paths: [
@@ -111,25 +122,30 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
         emptyPath('No rules'),
       ],
     }] : []),
-    { label: 'Crit vs no crit', paths: [{ ...emptyPath('Crit (100%+)'), minCritChance: 1 }, { ...emptyPath('No crit mods (≤ base)'), maxCritChance: attack.critChance }, emptyPath('No rules')] },
     { label: 'Your riven vs none', paths: [{ ...emptyPath('With riven'), riven: calculatorRiven?.weaponId === weaponId ? calculatorRiven.config : emptyRiven() }, emptyPath('No riven')] },
   ]
 
-  const run = () => {
+  // the scenario a run uses: the leaderboard's neutral one or the calculator's, with the target's status behaviour on top.
+  // only the plain leaderboard scenario (normal status) can be compared against the leaderboard
+  const scenarioFor = (): CompareScenario | null => {
+    const base = scenarioMode === 'calculator' ? calculatorScenario : null
+    if (statusMode === 'normal' && !base) return null
+    const scenario = base ?? { target: SCENARIO_TARGET, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS }
+    return { ...scenario, target: { ...scenario.target, statusMode } }
+  }
+
+  const run = (runPaths: ComparePath[] = paths) => {
     workerRef.current?.terminate()
     const worker = new Worker(new URL('../optimizer/compareWorker.ts', import.meta.url), { type: 'module' })
     workerRef.current = worker
     const id = ++jobId.current
-    const request: CompareRequest = {
-      weaponId, attackIndex, boards: selectedBoards, paths, thorough,
-      scenario: scenarioMode === 'calculator' ? calculatorScenario : null,
-    }
+    const request: CompareRequest = { weaponId, attackIndex, boards: selectedBoards, paths: runPaths, thorough, scenario: scenarioFor() }
     const collected: CompareResult[] = []
     setResults([])
     setError(null)
     setRanWith(request)
     setDetailBoard(selectedBoards[0] ?? null)
-    setProgress({ done: 0, total: selectedBoards.length * paths.length })
+    setProgress({ done: 0, total: selectedBoards.length * runPaths.length })
     if (!request.scenario) void loadLeaderboard() // start the download while the search runs
     worker.onmessage = (event: MessageEvent<CompareMessage>) => {
       const message = event.data
@@ -227,6 +243,14 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
             <option value="leaderboard">Leaderboard scenario (neutral target)</option>
             <option value="calculator" disabled={!calculatorScenario}>Calculator's target, debuffs and Warframe</option>
           </select>
+          <label className="inline-number" title="How the enemy takes status. Immune: no procs or debuffs at all, so CO / Galvanized / DoTs do nothing. Capped: at most 4 stacks of each status, so DoT builds stall early">
+            Status
+            <select value={statusMode} onChange={(event) => setStatusMode(event.target.value as StatusMode)}>
+              <option value="normal">normal</option>
+              <option value="capped">capped at 4 stacks</option>
+              <option value="immune">immune</option>
+            </select>
+          </label>
           <label className="inline-check" title="Twice the search width. Slower, but finds a bit more when the rules are tight">
             <input type="checkbox" checked={thorough} onChange={(event) => setThorough(event.target.checked)} /> Thorough search
           </label>
@@ -241,9 +265,22 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
           ))}
         </div>
         <div className="row">
-          <span className="muted-inline">Presets:</span>
-          {presets.map((preset) => <button key={preset.label} onClick={() => setPaths(preset.paths)}>{preset.label}</button>)}
+          <span className="muted-inline">One click (sets the paths and runs):</span>
+          {presets.map((preset, index) => (
+            <button key={preset.label} className={index === 0 ? 'primary' : ''} disabled={!selectedBoards.length || Boolean(progress)}
+              onClick={() => { setPaths(preset.paths); run(preset.paths) }}>
+              {preset.label}
+            </button>
+          ))}
         </div>
+        {statusMode !== 'normal' && (
+          <p className="muted">
+            {statusMode === 'immune'
+              ? 'Immune target: no procs and no debuffs, so Condition Overload, Galvanized mods, Viral/Heat and DoTs are worth nothing and the search drops them.'
+              : 'Capped target: 4 stacks per status at most, so DoTs stop growing early and Viral tops out at ×2.75. Builds lean toward direct hits.'}
+            {scenarioMode === 'leaderboard' && ' Not comparable with the leaderboard, which assumes normal status.'}
+          </p>
+        )}
       </section>
 
       <div className="path-grid">
@@ -270,7 +307,7 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
           <h2>Results</h2>
           <div className="row">
             {progress && <span className="muted-inline">Optimizing {progress.done}/{progress.total}…</span>}
-            <button className="primary" disabled={!selectedBoards.length || Boolean(progress)} onClick={run}>
+            <button className="primary" disabled={!selectedBoards.length || Boolean(progress)} onClick={() => run()}>
               {progress ? 'Running…' : `Run ${selectedBoards.length * paths.length} searches`}
             </button>
           </div>
@@ -541,7 +578,7 @@ function PathEditor({ letter, path, weaponId, tiers, rivenType, calculatorRiven,
             {path.riven && <button onClick={() => onChange({ ...path, riven: null })}>Remove riven</button>}
           </div>
           {path.riven && (
-            <RivenEditor type={rivenType} disposition={weapon.rivenDisposition!} dots={weapon.disposition}
+            <RivenEditor type={rivenType} disposition={RIVEN_DISPOSITION}
               config={path.riven} onChange={(riven) => onChange({ ...path, riven })} />
           )}
         </div>

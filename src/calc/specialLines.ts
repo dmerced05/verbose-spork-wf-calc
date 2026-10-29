@@ -10,6 +10,11 @@ const stat = (key: Extract<ModEffect, { kind: 'stat' }>['stat'], value: number):
 const element = (name: string, value: number): ModEffect => ({ kind: 'damageType', damageType: name.toLowerCase() === 'electric' ? 'electricity' : name.toLowerCase(), value })
 
 const RULES: [RegExp, (match: RegExpMatchArray) => SpecialLine][] = [
+  // Secondary Enervate: "On Hit: Increase Critical Chance by 10%. Resets after 6 Big Critical Hit". the calc averages it
+  // over a whole build-up-and-reset cycle (damage.ts enervateAverageCrit)
+  [/^Increase Critical Chance by ([\d.]+)%\.? Resets after (\d+) Big Critical Hits?/i, (m) => ({
+    trigger: 'On Hit (stacks until big crits reset it):', effects: [{ kind: 'critPerHit', value: pct(m[1]), resetsAfter: Number(m[2]) }],
+  })],
   // Biotic Rounds: "+150% Viral and Magnetic Damage and Status Chance", Leaded Gas: "+300% Gas Damage and Status Chance"
   [/^\+?([\d.]+)% (\w+)(?: and (\w+))? Damage and Status Chance$/i, (m) => ({
     effects: [element(m[2], pct(m[1])), ...(m[3] ? [element(m[3], pct(m[1]))] : []), stat('statusChance', pct(m[1]))],

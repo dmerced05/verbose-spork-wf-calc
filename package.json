@@ -17,10 +17,12 @@
   },
   "dependencies": {
     "@wfcd/items": "^1.1276.24",
+    "katex": "^0.16.11",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@types/katex": "^0.16.7",
     "@types/node": "^22.15.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

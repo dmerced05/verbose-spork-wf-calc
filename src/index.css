@@ -468,3 +468,5 @@ code { font-size: 0.8rem; background: var(--bg); padding: 1px 5px; border-radius
 .formula-tex .katex-display { margin: 0.4em 0; }
 .formula-tex .katex { font-size: 1.05em; }
 .formula-tex .accent, .formula-tex .accent * { color: inherit; }
+.target-presets { flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.target-presets button { font-size: 0.78rem; padding: 3px 8px; }

@@ -2,7 +2,7 @@ import { SUSTAINED_FIGHT_SECONDS, type CalcResult } from '../calc/damage'
 import { INT_LIMIT, onScreen } from '../calc/damageCap'
 
 // windows for the damage-over-time table. the Monte Carlo runs all of them in one pass
-const RANGE_WINDOWS = [3, 10, 30, SUSTAINED_FIGHT_SECONDS]
+const RANGE_WINDOWS = [...new Set([3, 10, 30, SUSTAINED_FIGHT_SECONDS])]
 
 const formatNumber = (value: number, digits = 1) => value.toLocaleString(undefined, { maximumFractionDigits: digits })
 // big numbers don't need decimals, keeps the proc tables readable

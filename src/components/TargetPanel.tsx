@@ -37,6 +37,20 @@ const AUTO_HEAD = { headshotMultiplier: null, headcrit: null }
 
 export const resolveArmor = (target: TargetSettings): number => resolveEnemy(target)?.armor ?? target.manualArmor
 
+// one-click endgame targets. Steel Path adds 100 levels, so the level field is 100 under what they spawn at.
+// Heavy Gunner: armor (500 base, past the 2,700 clamp at the cap). Techrot Babau: health (10,000 at level 1, wiki). Juggernaut:
+// armor + status immune on its armored body (wiki: "immune to all status effects that hit its heavily armored outer body")
+interface TargetPreset { label: string; title: string; target: Partial<TargetSettings> }
+const presetsAt = (spawnLevel: number): TargetPreset[] => ([
+  { label: `Heavy Gunner ${spawnLevel}`, title: 'Steel Path Heavy Gunner: armor check',
+    target: { enemyId: '/Lotus/Types/Enemies/Grineer/AIWeek/Avatars/HeavyFemaleGrineerAvatar', faction: 'Grineer', baseLevel: 8, statusMode: 'normal' as StatusMode } },
+  { label: `Babau ${spawnLevel}`, title: 'Steel Path Techrot Babau: health check (immune to Viral, not modeled)',
+    target: { enemyId: 'wiki:TechrotBabau', faction: 'Techrot', baseLevel: 1, statusMode: 'normal' as StatusMode } },
+  { label: `Juggernaut ${spawnLevel}`, title: 'Steel Path Juggernaut: armor, and status immune',
+    target: { enemyId: '/Lotus/Types/Enemies/Infested/AiWeek/Quadrupeds/JuggernautAvatar', faction: 'Infested', baseLevel: 1, statusMode: 'immune' as StatusMode } },
+] as TargetPreset[]).map((preset) => ({ ...preset, target: { ...preset.target, level: spawnLevel - STEEL_PATH_LEVEL_BONUS, steelPath: true, layer: 'health' as const, ...AUTO_HEAD } }))
+const TARGET_PRESETS = [...presetsAt(9999), ...presetsAt(250)]
+
 interface Props {
   target: TargetSettings
   onChange: (target: TargetSettings) => void
@@ -60,6 +74,12 @@ export function TargetPanel({ target, onChange }: Props) {
           <input type="checkbox" checked={target.steelPath} onChange={(event) => update({ steelPath: event.target.checked })} />
           Steel Path
         </label>
+      </div>
+      <div className="row target-presets">
+        <span className="muted-inline">Steel Path presets:</span>
+        {TARGET_PRESETS.map((preset) => (
+          <button key={preset.label} title={preset.title} onClick={() => update(preset.target)}>{preset.label}</button>
+        ))}
       </div>
       <div className="form-grid">
         <label>

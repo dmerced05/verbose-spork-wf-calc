@@ -11,6 +11,8 @@ export type PerkEffect =
   | { kind: 'mod'; effect: ModEffect } // works like a mod line (+% Damage, +% Multishot, ...)
   | { kind: 'nonCritBonus'; chance: number; value: number } // Devouring/Devastating Attrition
   | { kind: 'armorStripPerPuncture'; value: number } // Latron's Flensing Spikes
+  // Wiseman's Regard / Decisive Stature: base chance goes up by a share of the other modded chance, capped
+  | { kind: 'convert'; stat: 'critChance' | 'statusChance'; from: 'critChance' | 'statusChance'; ratio: number; max: number }
 
 export interface PerkStatement {
   text: string
@@ -41,6 +43,15 @@ function parsePerkBody(body: string, native: boolean): PerkEffect | null {
 
   const armorStrip = body.match(/^Remove ([\d.]+)% Armor per Puncture stack$/)
   if (armorStrip) return { kind: 'armorStripPerPuncture', value: percent(armorStrip[1]) }
+
+  const convert = body.match(/^\+([\d.]+)% of current (Critical|Status) Chance as Base (Critical|Status) Chance, up to ([\d.]+)%$/)
+  if (convert) {
+    const statOf = (word: string) => (word === 'Critical' ? 'critChance' : 'statusChance')
+    return { kind: 'convert', stat: statOf(convert[3]), from: statOf(convert[2]), ratio: percent(convert[1]), max: percent(convert[4]) }
+  }
+  // timed genesis buffs whose wiki text has no "Base" (Prolific Perforation, Piercing Stature): I read them as flat after mods
+  const flatChance = body.match(/^([+-][\d.]+)% Flat (Critical|Status) Chance$/)
+  if (flatChance) return { kind: 'flat', stat: flatChance[2] === 'Critical' ? 'critChance' : 'statusChance', value: percent(flatChance[1]) }
 
   const baseDamage = body.match(/^\+?(-?[\d.]+) Base Damage$/)
   if (baseDamage) return { kind: 'base', stat: 'damage', value: Number(baseDamage[1]) }

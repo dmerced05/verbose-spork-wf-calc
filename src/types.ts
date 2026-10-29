@@ -19,6 +19,7 @@ export interface Attack {
   continuous?: boolean // beam: multishot beams merge into one tick per target (wiki Multishot)
   noMultishotMods?: boolean // hitscan explosions, beam blasts, speargun throws: multishot mods do nothing
   hitscanAoE?: boolean // the explosion of a hitscan/beam shot. only the directly hit enemy gets CO
+  baseDamagePool?: number // the whole shot's base damage when this is one part of it (Stug blob + explosion)
 }
 
 export interface Weapon {

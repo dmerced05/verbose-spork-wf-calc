@@ -107,7 +107,7 @@ export interface DamageRange {
   high: number // 90th percentile
 }
 
-// one pass covers several windows (3 / 10 / 30 / 60 s), each run's shots and procs are scored against every window
+// one pass covers several windows (3 / 10 / 30 s), each run's shots and procs are scored against every window
 export function simulateDamage(model: ShotModel, windows: number[], requestedRuns?: number, seed = 12345): DamageRange[] {
   const random = rng(seed)
   const longest = Math.max(...windows)

@@ -241,6 +241,22 @@ expectClose('Critical Parallel crit mult', parallel.critMultiplier, 2.2)
 // Daring Reverie (Braton Prime): +4 base damage -> modded base 35 -> 39, +38 more while channeling -> 77
 expectClose('Daring Reverie base', bratonCalc([{ perk: perkFor('Braton Prime', 'II', 'Daring Reverie'), stacks: 0 }]).moddedBaseDamage, 39)
 expectClose('Daring Reverie channeled', bratonCalc([{ perk: perkFor('Braton Prime', 'II', 'Daring Reverie'), stacks: 1 }]).moddedBaseDamage, 77)
+// week 9 conversion perks. Wiseman's Regard (Vectis): +30% of modded crit as base status, max 40%
+{
+  const perkCalc = (weaponName: string, tier: string, perkName: string, mods: string[] = [], stacks = 0) => {
+    const weapon = weapons.find((candidate) => candidate.name === weaponName)!
+    return calculate({ weapon, attack: weapon.attacks[0], mods: mods.map(maxed), incarnonPerks: [{ perk: perkFor(weaponName, tier, perkName), stacks }],
+      armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' } })
+  }
+  const vectis = weapons.find((weapon) => weapon.name === 'Vectis')!.attacks[0]
+  expectClose("Wiseman's Regard adds 30% of crit as base status", perkCalc('Vectis', 'IV', "Wiseman's Regard").statusChance, vectis.statusChance + 0.3 * vectis.critChance)
+  // with Point Strike (+150%) crit is 62.5%, 30% of it is 18.75%, still under the 40% cap
+  expectClose("Wiseman's Regard uses modded crit", perkCalc('Vectis', 'IV', "Wiseman's Regard", ['Point Strike']).statusChance, vectis.statusChance + 0.3 * vectis.critChance * 2.5)
+  // Decisive Stature (Destreza): +25% of modded status as base crit, max 35%. Piercing Stature 5 stacks = +100% flat status -> capped
+  const destreza = weapons.find((weapon) => weapon.name === 'Destreza')!.attacks[0]
+  expectClose('Decisive Stature adds 25% of status as base crit', perkCalc('Destreza', 'IV', 'Decisive Stature').critChance, destreza.critChance + 0.25 * destreza.statusChance)
+  expectClose('Piercing Stature is flat status', perkCalc('Destreza', 'II', 'Piercing Stature', [], 5).statusChance, destreza.statusChance + 1)
+}
 // mode tags: Strun's Elemental Balance is +11% base status on normal fire, +132% on the Incarnon form
 const strun = weapons.find((weapon) => weapon.name === 'Strun')!
 const strunStatus = (attackName: string) => {
@@ -813,7 +829,8 @@ expectClose('CO skips Incarnon base damage', coIncarnon(0) / calculate({ weapon:
 
 // ---- rivens ----
 const somaPrime = named('Soma Prime')
-expectClose('Soma Prime riven disposition', somaPrime.rivenDisposition!, 1.1)
+// the export dropped per-weapon dispositions after hotfix 44.1.3, every weapon lists 1.2 now
+expectClose('Soma Prime riven disposition (export)', somaPrime.rivenDisposition!, 1.2)
 const rifleCritBase = rivenPool('Rifle').find((def) => def.tag === 'WeaponCritChanceMod')!.base * 100 // 149.994 in the export
 expectClose('Rifle riven crit base ~150%', Math.round(rifleCritBase), 150)
 // 2 positives + 1 negative: 150% x 1.1 x 1.2375 = 204.2%, roll 90-110%

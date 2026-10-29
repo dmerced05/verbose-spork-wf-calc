@@ -21,7 +21,7 @@ export const OBJECTIVES: Objective[] = [
     id: 'sustained',
     label: 'Sustained DPS',
     unit: 'DPS',
-    description: 'Average DPS over a 60 s fight: reloads, status ticks as they land (Heat stacking included), DoT ticks after the fight ends not counted',
+    description: 'Average DPS over a 10 s fight on one enemy: reloads, status ticks as they land (Heat stacking included), DoT ticks after the fight ends not counted',
     usesFireRate: true,
     score: (result) => result.sustainedDps,
   },

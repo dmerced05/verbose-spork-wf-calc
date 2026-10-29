@@ -770,4 +770,88 @@ IV | Mounting Avalanche | ALL | On killing an enemy with 3+ Cold stacks: +15 Ini
 IV | Absolute Valor | ALL | +25% Base Critical Chance
 IV | Red Right Hand | ALL | On first attack with Primary equipped: +2 Base Critical Multiplier`,
   },
+  // ---- Circuit week 9 (Update 43, summer 2026). numbers from the wikiwiki.jp Incarnon pages since the English wiki tables
+  // don't come through as text. Ballistica's columns there are Normal / Rakta / Prime
+  {
+    variants: ['Vectis', 'Vectis Prime'],
+    lines: `
+II | Inciting Incident | Vectis | +100 Base Damage; When Channeled Ability active: +2 Punch Through
+II | Inciting Incident | Vectis Prime | +200 Base Damage; When Channeled Ability active: +2 Punch Through
+II | Lone Enforcer | Vectis | +75 Base Damage; When no enemies within 5 m: +25% Multishot
+II | Lone Enforcer | Vectis Prime | +150 Base Damage; When no enemies within 5 m: +25% Multishot
+III | Rapid Reinforcement | ALL | +60% Reload Speed
+III | Marksman's Hand | ALL | -60% Weapon Recoil
+III | Silent Running | ALL | -100% Weapon Noise
+IV | Deadhead | ALL | +25% Headshot Damage
+IV | Critical Parallel | Vectis | +10% Base Critical Chance; +0.5 Base Critical Multiplier
+IV | Critical Parallel | Vectis Prime | +8% Base Critical Chance; +0.5 Base Critical Multiplier
+IV | Wiseman's Regard | ALL | +30% of current Critical Chance as Base Status Chance, up to 40%`,
+  },
+  {
+    variants: ['Ballistica', 'Rakta Ballistica', 'Ballistica Prime'],
+    lines: `
+II | Headcracker | Ballistica | +30 Base Damage; On Headshot: +7.5% Fire Rate; Stacks up to 10x.
+II | Headcracker | Rakta Ballistica | +10 Base Damage; On Headshot: +7.5% Fire Rate; Stacks up to 10x.
+II | Headcracker | Ballistica Prime | +3 Base Damage; On Headshot: +7.5% Fire Rate; Stacks up to 10x.
+II | Prolific Perforation | Ballistica | +30 Base Damage; On Punch Through hit: +10% Flat Critical Chance; Stacks up to 8x.
+II | Prolific Perforation | Rakta Ballistica | +10 Base Damage; On Punch Through hit: +10% Flat Critical Chance; Stacks up to 8x.
+II | Prolific Perforation | Ballistica Prime | +3 Base Damage; On Punch Through hit: +10% Flat Critical Chance; Stacks up to 8x.
+III | Rapid Reinforcement | ALL | +50% Reload Speed
+III | Swift Deliverance | ALL | +50% Projectile Speed
+III | Void's Guidance | ALL | +40% Accuracy; -40% Recoil
+IV | Elemental Balance | Ballistica | +20% Base Status Chance [Normal only]; +20% Base Status Chance [Incarnon Form only]
+IV | Elemental Balance | Rakta Ballistica | +20% Base Status Chance [Normal only]; +20% Base Status Chance [Incarnon Form only]
+IV | Elemental Balance | Ballistica Prime | +18% Base Status Chance [Normal only]; +72% Base Status Chance [Incarnon Form only]
+IV | Survivor's Edge | Ballistica | +10% Base Critical Chance; +10% Base Status Chance [Normal only]; +10% Base Status Chance [Incarnon Form only]
+IV | Survivor's Edge | Rakta Ballistica | +8% Base Critical Chance; +8% Base Status Chance [Normal only]; +8% Base Status Chance [Incarnon Form only]
+IV | Survivor's Edge | Ballistica Prime | +7% Base Critical Chance; +7% Base Status Chance [Normal only]; +28% Base Status Chance [Incarnon Form only]
+IV | Critical Parallel | Ballistica | +15% Base Critical Chance; +1 Base Critical Multiplier
+IV | Critical Parallel | Rakta Ballistica | +14% Base Critical Chance; +1 Base Critical Multiplier
+IV | Critical Parallel | Ballistica Prime | +12% Base Critical Chance; +1 Base Critical Multiplier`,
+  },
+  {
+    variants: ['Stug'],
+    lines: `
+II | Blazing Barrel | ALL | +175 Base Damage; On Shot (resets on reload): +5% Multishot; Stacks up to 10x.
+II | Overcharge Blast | ALL | +300 Base Damage; When Max Energy 700 or more: +50% Blast Radius
+III | Rapid Reinforcement | ALL | +50% Reload Speed
+III | Swift Deliverance | ALL | +50% Projectile Speed
+III | Resonant Restore | ALL | On Reload from Empty: +10 Base Magazine Capacity; Stacks up to 3x.
+IV | Survivor's Edge | ALL | +15% Base Critical Chance; +15% Base Status Chance
+IV | Deathtrap Trigger | ALL | +25% Base Critical Chance; +1.5 Base Critical Multiplier
+IV | Elemental Balance | ALL | +20% Base Status Chance [Normal only]; +40% Base Status Chance [Incarnon Form only]`,
+  },
+  // melee Incarnon form is assumed up (perkAppliesTo), so "doubled in Incarnon Form" perks get the doubled number
+  {
+    variants: ['Destreza', 'Destreza Prime'],
+    lines: `
+II | Weighted Impetus | Destreza | +50 Base Damage; On Heavy Attack Kill: +100% Heavy Attack Wind Up Speed
+II | Weighted Impetus | Destreza Prime | +40 Base Damage; On Heavy Attack Kill: +100% Heavy Attack Wind Up Speed
+II | Piercing Stature | Destreza | +50 Base Damage; On Puncture Status Effect: +20% Flat Status Chance; Stacks up to 5x.
+II | Piercing Stature | Destreza Prime | +40 Base Damage; On Puncture Status Effect: +20% Flat Status Chance; Stacks up to 5x.
+III | Orokin Reach | ALL | +1 Range
+III | Overhand | ALL | Heavy Attack Efficiency fixed at 30%
+III | Adept Reflexes | ALL | +20 Initial Combo
+IV | Absolute Dominion | Destreza | +20% Base Status Chance
+IV | Absolute Dominion | Destreza Prime | +16% Base Status Chance
+IV | Critical Forte | Destreza | +1.2 Base Critical Multiplier
+IV | Critical Forte | Destreza Prime | +0.6 Base Critical Multiplier
+IV | Decisive Stature | ALL | +25% of current Status Chance as Base Critical Chance, up to 35%`,
+  },
+  {
+    variants: ['Obex', 'Prisma Obex'],
+    lines: `
+II | Balanced Stagger | Obex | +50 Base Damage; On Neutral Combo hit: 20% chance to stagger for a Finisher
+II | Balanced Stagger | Prisma Obex | +10 Base Damage; On Neutral Combo hit: 20% chance to stagger for a Finisher
+II | Armored Finisher | Obex | +50 Base Damage; When target Armor 450 or more: +80% Finisher Damage
+II | Armored Finisher | Prisma Obex | +10 Base Damage; When target Armor 450 or more: +80% Finisher Damage
+III | Rapid Conclusion | ALL | On Finisher Kill: +2.5% Parkour Velocity; Stacks up to 16x.
+III | Orokin Reach | ALL | +1.2 Range
+III | Standoff | ALL | Combo timer pauses while holstered
+IV | Subtle Force | Obex | +10% Base Critical Chance; +18% Base Status Chance
+IV | Subtle Force | Prisma Obex | +10% Base Critical Chance; +12% Base Status Chance
+IV | Absolute Dominion | Obex | +28% Base Status Chance
+IV | Absolute Dominion | Prisma Obex | +20% Base Status Chance
+IV | Critical Coefficient | ALL | +1.2 Base Critical Multiplier`,
+  },
 ]

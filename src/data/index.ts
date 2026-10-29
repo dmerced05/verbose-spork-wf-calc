@@ -13,7 +13,7 @@ export const mods = modsJson as Mod[]
 export const arcanes = arcanesJson as Arcane[]
 export const arcanesById = new Map(arcanes.map((arcane) => [arcane.uniqueName, arcane]))
 // only the main factions, the export also has wildlife, Stalker, specters etc.
-export const enemies = (enemiesJson as Enemy[]).filter((enemy) => ['Grineer', 'Corpus', 'Infestation', 'Orokin', 'Sentient'].includes(enemy.faction))
+export const enemies = (enemiesJson as Enemy[]).filter((enemy) => ['Grineer', 'Corpus', 'Infestation', 'Orokin', 'Sentient', 'Techrot'].includes(enemy.faction))
 
 export const weaponsById = new Map(weapons.map((weapon) => [weapon.uniqueName, weapon]))
 export const warframes = warframesJson as Warframe[]

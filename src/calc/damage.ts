@@ -14,7 +14,7 @@ import { arcanesById } from '../data'
 import { exaltedRuleFor } from '../data/exalted'
 import { NIRA_SLAM_PER_PIECE, VIGILANTE_ENHANCE_PER_PIECE, addPieces, countSets, setEnhancement, setSummary } from './modSets'
 import { resolveCoBehavior, type CoBehavior } from './conditionOverload'
-import { perkAppliesTo, type SelectedPerk } from './incarnon'
+import { perkAppliesTo, type PerkEffect, type SelectedPerk } from './incarnon'
 import { armorDamageMultiplier, effectiveArmor } from './target'
 import { hasBonusElement, type BonusElement, type WeaponPassive } from '../data/passives'
 import { SHELL_BY_SHELL_RELOAD } from '../data/reloads'
@@ -24,7 +24,7 @@ import { expectedDamage, simulateDamage, type DamageRange, type ShotModel } from
 
 // "sustained" = average DPS over a fight this long: reloads, DoT ramp-up and Heat stacking count, and DoT ticks
 // after the fight ends don't (so long Status Duration tails stop inflating it)
-export const SUSTAINED_FIGHT_SECONDS = 60
+export const SUSTAINED_FIGHT_SECONDS = 10 // about how long one tough enemy lives; Heat stacks die with it
 // the DoTs a beam's merged tick feeds twice (wiki Multishot)
 const BEAM_MERGED_DOTS = ['slash', 'heat', 'toxin', 'electricity', 'blast', 'gas'] // wiki Multishot's list, Blast included
 import type { Attack, Buffs, Debuffs, EquippedArcane, EquippedMod, TargetSettings, Weapon } from '../types'
@@ -620,6 +620,7 @@ export function calculate({
   let nonCritChanceBonus = 0 // expected extra damage on non-crits (chance x bonus)
   let nonCritPeakBonus = 0 // the bonus itself, for the biggest possible hit
   let armorStripPerPuncture = 0
+  const conversions: Extract<PerkEffect, { kind: 'convert' }>[] = []
   for (const { perk, stacks: perkStacks } of incarnonPerks) {
     for (const statement of perk.statements) {
       if (!statement.effect || !perkAppliesTo(statement.mode, isIncarnonAttack, weapon.category === 'Melee')) continue
@@ -637,6 +638,7 @@ export function calculate({
         nonCritChanceBonus += effect.chance * effect.value
         nonCritPeakBonus += effect.value
       }
+      else if (effect.kind === 'convert') conversions.push(effect)
       else armorStripPerPuncture += effect.value
     }
     for (const statement of perk.statements) {
@@ -645,8 +647,8 @@ export function calculate({
       }
     }
   }
-  // "+N Base Damage" grows every damage type by the same proportion
-  const unmoddedBase = sum(Object.values(attack.damage))
+  // "+N Base Damage" grows every damage type by the same proportion, and every part of a multi-part shot together
+  const unmoddedBase = attack.baseDamagePool ?? sum(Object.values(attack.damage))
   const baseDamageScale = unmoddedBase > 0 ? (unmoddedBase + perkBase.damage) / unmoddedBase : 1
   attack = {
     ...attack,
@@ -743,6 +745,14 @@ export function calculate({
   const headMultiplier = target.headshotMultiplier ?? headMultiplierFor(target.faction)
   const headcrit = target.headcrit ?? hasHeadcrits(target.faction)
   const weakpointCritBonus = isHeadshot ? bonus.weakpointCritChance : 0
+  // status chance after mods, as a function of base status (Wiseman's Regard changes the base after crit is known)
+  const moddedStatus = (baseStatus: number) =>
+    baseStatus * (1 + bonus.statusChance + statusFromCombo) + perkFlat.statusChance + passiveFlat.statusChance + modFlat.statusChance +
+    tauStatusChanceBonus(stacks('tau'))
+  // Decisive Stature: +25% of current status chance as base crit chance, capped
+  for (const conversion of conversions.filter((candidate) => candidate.stat === 'critChance')) {
+    attack = { ...attack, critChance: attack.critChance + Math.min(conversion.max, conversion.ratio * moddedStatus(attack.statusChance)) }
+  }
   const critBeforeEnervate =
     attack.critChance * (1 + bonus.critChance + weakpointCritBonus + critFromCombo + (isHeavy ? bonus.heavyCritChance : 0)) +
     perkFlat.critChance + passiveFlat.critChance + modFlat.critChance + frameArcaneFlatCrit + critPerStatusType * activeStatusTypes + abilityFlatCritChance +
@@ -764,9 +774,11 @@ export function calculate({
   const normalCritMultiplier = 1 + Math.floor(critChance) * (critMultiplier - 1)
   const critHitMultiplier = 1 + Math.ceil(critChance) * (critMultiplier - 1)
   // status chance before Sagek's override, Gotva needs it here
-  const rawStatusChance =
-    attack.statusChance * (1 + bonus.statusChance + statusFromCombo) + perkFlat.statusChance + passiveFlat.statusChance + modFlat.statusChance +
-    tauStatusChanceBonus(stacks('tau'))
+  // Wiseman's Regard: +30% of current crit chance as base status chance, capped
+  const convertedBaseStatus = conversions
+    .filter((conversion) => conversion.stat === 'statusChance')
+    .reduce((total, conversion) => total + Math.min(conversion.max, conversion.ratio * Math.max(0, critChance)), 0)
+  const rawStatusChance = moddedStatus(attack.statusChance + convertedBaseStatus)
   // Gotva Prime: a hit after a status proc has a chance to roll at a fixed crit chance instead
   const superCritShare = critOverride ? Math.min(1, rawStatusChance) * critOverride.chance : 0
   const superCritMultiplier = critOverride ? 1 + critOverride.critChance * (critMultiplier - 1) : 1

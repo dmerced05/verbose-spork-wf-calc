@@ -126,12 +126,23 @@ function multishotRule(weapon, attack) {
 
 // attacks the export ships with no damage numbers, from their wiki pages (Haalvu: "33 per shot, 100% Tau",
 // alt-fire "34 per projectile, 100% Tau"). only used while the export's own damage is empty
+// Vectis Prime's Incarnon Form is listed at 5 Cold per part, wikiwiki.jp has 150 direct + 150 blast (300 base)
 const ATTACK_DAMAGE_FIXES = {
   Haalvu: { 'Normal Attack': { tau: 33 }, 'Alt-Fire': { tau: 34 } },
+  'Vectis Prime': { 'Incarnon Form': { cold: 150 }, 'Incarnon Form Headshot AoE': { cold: 150 }, 'Incarnon Form Embed AoE': { cold: 150 } },
 }
 const attackDamage = (weapon, attack) => {
-  const listed = Object.entries(attack.damage ?? {}).map(([damageType, amount]) => [damageType, Number(amount)]).filter(([, amount]) => amount > 0)
-  return listed.length ? listed : Object.entries(ATTACK_DAMAGE_FIXES[weapon.name]?.[attack.name] ?? {})
+  const fix = ATTACK_DAMAGE_FIXES[weapon.name]?.[attack.name]
+  if (fix) return Object.entries(fix)
+  return Object.entries(attack.damage ?? {}).map(([damageType, amount]) => [damageType, Number(amount)]).filter(([, amount]) => amount > 0)
+}
+
+// attacks that are parts of one shot share its base damage, so an Incarnon "+N Base Damage" grows all of them by
+// (total + N) / total instead of adding N to each part. Stug: the blob + its explosion are the 250 (wikiwiki.jp, 50 + 200),
+// the Incarnon bounces are more of the same explosion
+const BASE_DAMAGE_POOLS = {
+  Stug: { 'Blob Embed': 79, 'Blob Explosion': 79, 'Incarnon Form Blob Embed': 250, 'Incarnon Form Blob Explosion': 250, 'Incarnon Form Bounce Explosion': 250 },
+  'Vectis Prime': { 'Incarnon Form': 300, 'Incarnon Form Headshot AoE': 300, 'Incarnon Form Embed AoE': 300 },
 }
 
 // one weapon in the shape the calc wants. also used for the exalted weapons below
@@ -168,6 +179,7 @@ function toWeapon(weapon) {
       critMultiplier: attack.crit_mult ?? 1,
       statusChance: (attack.status_chance ?? 0) / 100,
       damage: Object.fromEntries(attackDamage(weapon, attack)),
+      ...(BASE_DAMAGE_POOLS[weapon.name]?.[attack.name] ? { baseDamagePool: BASE_DAMAGE_POOLS[weapon.name][attack.name] } : {}),
       // heavy slams use up the combo and get its multiplier too (wiki Heavy_Attack)
       ...(weapon.category === 'Melee' && /heavy slam/i.test(attack.name) ? { heavy: true } : {}),
       ...glaiveDetonation(weapon, attack),
@@ -288,6 +300,9 @@ const enemies = readJson('Enemy')
     shield: enemy.shield ?? 0,
     armor: enemy.armor ?? 0,
   }))
+  // enemies the export doesn't have, from their wiki pages. Techrot Babau: "Increased the Techrot Babau's Base Health* from
+  // 1,500 to 10,000" (Hotfix 40.0.3, *health at level 1). the page lists no shields or armor, so those are 0
+  .concat([{ uniqueName: 'wiki:TechrotBabau', name: 'Techrot Babau', faction: 'Techrot', health: 10000, shield: 0, armor: 0 }])
   .sort((a, b) => a.name.localeCompare(b.name))
 
 // weapon arcanes (the arcane slot on primaries/secondaries/melee) and Warframe arcanes (the frame's two slots; the plain

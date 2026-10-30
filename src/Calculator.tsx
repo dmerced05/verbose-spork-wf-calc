@@ -15,6 +15,8 @@ import { hasBonusElement, passivesFor, type BonusElement } from './data/passives
 import { heavyComboFor, type HeavyMode } from './data/heavyAttacks'
 import type { WarframeState } from './data/warframeAbilities'
 import { ModSlots, TOTAL_SLOTS, EXILUS_SLOT, type ArcaneSlot, type ModSlot } from './components/ModSlots'
+import { BuildAdvisor } from './components/BuildAdvisor'
+import { equipMod } from './optimizer/optimize'
 import type { SlotPolarity } from './calc/capacity'
 import { SearchSelect } from './components/SearchSelect'
 import { RivenEditor } from './components/RivenEditor'
@@ -347,6 +349,25 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
                   config={rivenConfig} onChange={setRivenConfig} />
               ),
             } : null}
+          />
+
+          <BuildAdvisor
+            input={{ ...calcInput, target }}
+            compatibleMods={compatibleMods}
+            keep={equippedMods.filter((slot) => slot.mod.uniqueName === RIVEN_MOD_ID)}
+            onLoadPath={(pathMods) => {
+              // the riven keeps its slot, the path fills the rest in order
+              const next = emptySlots()
+              const rivenSlot = slots.find((slot) => slot?.modId === RIVEN_MOD_ID)
+              let index = 0
+              if (rivenSlot) next[index++] = rivenSlot
+              for (const mod of pathMods) {
+                if (index >= EXILUS_SLOT) break
+                const equipped = equipMod(mod, isMelee)
+                next[index++] = { modId: mod.uniqueName, rank: equipped.rank, conditionalStacks: equipped.conditionalStacks }
+              }
+              setSlots(next)
+            }}
           />
 
           <WarframePanel

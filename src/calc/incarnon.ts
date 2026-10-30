@@ -158,3 +158,31 @@ export interface SelectedPerk {
 // melee Incarnon form is a state, not a separate attack in the data, so mode tags don't filter melee
 export const perkAppliesTo = (mode: PerkMode, isIncarnonAttack: boolean, isMelee: boolean) =>
   mode === 'both' || isMelee || (mode === 'incarnon') === isIncarnonAttack
+
+// how a perk line stacks with mods, for the hover text (the game never says)
+export function stackingNote(effect: PerkEffect | null): string | null {
+  if (!effect) return null
+  switch (effect.kind) {
+    case 'base':
+      return {
+        damage: 'Added to the weapon\'s base damage before mods, so Serration-type mods, elements and CO all multiply it.',
+        critChance: 'Added to the base crit chance, so Point Strike-type mods multiply it (+20% base with +200% mods = +60%).',
+        critMultiplier: 'Added to the base crit multiplier, so Vital Sense-type mods multiply it.',
+        statusChance: 'Added to the base status chance, so status chance mods multiply it.',
+        multishot: 'Added to the base multishot, so multishot mods multiply it.',
+      }[effect.stat]
+    case 'flat':
+      return `Flat ${effect.stat === 'critChance' ? 'crit' : 'status'} chance added after mods: mods don't multiply it, it just adds on at the end.`
+    case 'mod':
+      return 'Works like one more mod line: it adds in with mods of the same stat (a +% Damage line adds to Serration, +% Multishot to Split Chamber).'
+    case 'nonCritBonus':
+      return `Multiplicative: a non-crit hit that rolls it does x${1 + effect.value} (+${Math.round(effect.value * 100)}%) on top of everything else, ` +
+        'base damage mods like Serration, elements, faction and CO included, it doesn\'t add to Serration. ' +
+        `${Math.round(effect.chance * 100)}% of non-crits roll it, and crits never do, so it fades out as crit chance goes up and does nothing at 100%+.`
+    case 'armorStripPerPuncture':
+      return 'Multiplies the armor that\'s left after Corrosive / Heat / other strips (it doesn\'t add to them). 5 Puncture stacks max.'
+    case 'convert':
+      return `Takes ${Math.round(effect.ratio * 100)}% of your ${effect.from === 'critChance' ? 'crit' : 'status'} chance after mods and adds it to the base ` +
+        `${effect.stat === 'critChance' ? 'crit' : 'status'} chance (max ${Math.round(effect.max * 100)}%), so ${effect.stat === 'critChance' ? 'crit' : 'status'} mods then multiply it.`
+  }
+}

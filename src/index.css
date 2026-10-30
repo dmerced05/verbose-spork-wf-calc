@@ -293,8 +293,18 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 @media (max-width: 640px) { .base-stats-grid { grid-template-columns: 1fr; } }
 
 /* multi-hit heavy attack flag, breakdown in the hover tooltip */
+.mech-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 0.68rem; letter-spacing: 0.02em; text-transform: none;
+  color: #bcd7ff; border: 1px solid rgba(140, 180, 255, 0.5); cursor: default; }
+.mech-tag.good { color: #a8f0c0; border-color: rgba(110, 220, 150, 0.55); }
+.mech-tag.bad { color: #ffc2a8; border-color: rgba(255, 150, 110, 0.5); }
+.stack-note { margin-left: 6px; opacity: 0.7; font-size: 0.8em; }
+.tip-anchor { position: relative; cursor: default; outline: none; }
+.tip-anchor:focus-visible { box-shadow: 0 0 0 2px rgba(140, 180, 255, 0.6); border-radius: 4px; }
+.tip-bubble { position: fixed; z-index: 1000; padding: 8px 10px; border-radius: 6px; background: #1b1f2a; color: #e6e9f0;
+  border: 1px solid rgba(140, 180, 255, 0.35); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); font-size: 0.78rem; line-height: 1.4;
+  letter-spacing: normal; text-transform: none; font-weight: 400; white-space: pre-line; text-align: left; pointer-events: none; }
 .multi-hit-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 0.68rem; letter-spacing: 0.02em; text-transform: none;
-  color: #d9c7ff; border: 1px solid rgba(200, 170, 255, 0.5); cursor: help; }
+  color: #d9c7ff; border: 1px solid rgba(200, 170, 255, 0.5); cursor: default; }
 
 /* leaderboard: multi-hit heavy breakdown */
 .heavy-details { margin-top: 4px; font-size: 0.78rem; }
@@ -470,3 +480,31 @@ code { font-size: 0.8rem; background: var(--bg); padding: 1px 5px; border-radius
 .formula-tex .accent, .formula-tex .accent * { color: inherit; }
 .target-presets { flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .target-presets button { font-size: 0.78rem; padding: 3px 8px; }
+
+/* build advisor */
+.advisor-panel .inline { display: flex; gap: 6px; align-items: center; font-size: 0.85rem; }
+.advisor-table-wrap { overflow-x: auto; margin-top: 8px; }
+.advisor-table td, .advisor-table th { white-space: nowrap; }
+.advisor-table td:nth-child(4), .advisor-table td:nth-child(5), .advisor-table th:nth-child(4), .advisor-table th:nth-child(5) { text-align: left; font-size: 0.82rem; white-space: normal; min-width: 130px; }
+.advisor-table tr.dim td { color: var(--muted); }
+.advisor-weight { position: relative; min-width: 110px; }
+.advisor-weight span:last-child { position: relative; }
+.advisor-bar { display: inline-block; height: 8px; border-radius: 4px; background: rgba(212, 180, 106, 0.55); vertical-align: middle; }
+.advisor-weight .advisor-bar { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); max-width: calc(100% - 60px); opacity: 0.55; }
+.advisor-flags { margin: 10px 0 0; padding-left: 18px; font-size: 0.85rem; color: #ffc2a8; }
+.advisor-flags li { margin: 4px 0; }
+.advisor-slots ul { list-style: none; margin: 6px 0; padding: 0; font-size: 0.85rem; }
+.advisor-slots li { display: grid; grid-template-columns: 120px 1fr auto; gap: 8px; align-items: center; padding: 2px 0; }
+.advisor-slots p { font-size: 0.85rem; margin: 6px 0 0; }
+.advisor-path-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+.advisor-path { border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-size: 0.85rem; display: grid; gap: 6px; align-content: start; }
+.advisor-path ol { margin: 0; padding-left: 20px; }
+.advisor-path li { padding: 1px 0; }
+
+/* grid children default to min-width: auto, so one long select/option stretched the whole column past a phone screen */
+.layout > *, .build > * { min-width: 0; }
+select { max-width: 100%; }
+.combine-note { color: #ffc2a8; font-size: 0.78rem; }
+/* phone width: the results tables and the long LaTeX lines scroll inside their box instead of widening the page */
+.results-column .panel { overflow-x: auto; }
+.katex-display { overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }

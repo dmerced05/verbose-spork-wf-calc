@@ -26,6 +26,7 @@ export type StatKey =
   | 'statusDuration' // longer DoTs = more ticks
   | 'slamDamage' // Seismic Wave, its own multiplier on slams ("multiplicative to base damage")
   | 'throwDamage' // Power Throw, its own multiplier on glaive throws ("multiplicative to ... Pressure Point")
+  | 'finisherDamage' // Finishing Touch, Covert Lethality: their own multiplier on finisher attacks (Blade Storm)
 
 export type ModEffect =
   | { kind: 'stat'; stat: StatKey; value: number }
@@ -116,6 +117,7 @@ const STAT_PATTERNS: [RegExp, StatKey][] = [
   [/^([+-][\d.]+)% Status Duration$/, 'statusDuration'],
   [/^([+-][\d.]+)% Slam Attack Damage$/, 'slamDamage'],
   [/^([+-][\d.]+)% Throw Damage$/, 'throwDamage'],
+  [/^([+-][\d.]+)% Finisher Damage$/, 'finisherDamage'],
   [/^([+-][\d.]+)% Critical Damage$/, 'critDamage'],
   [/^([+-][\d.]+)% Multishot$/, 'multishot'],
   [/^([+-][\d.]+)% (?:Fire Rate|Attack Speed)(?: \(x[\d.]+ for Bows\))?$/, 'fireRate'],

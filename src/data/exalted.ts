@@ -19,6 +19,7 @@ export interface ExaltedRule {
   noAttackSpeed?: boolean
   finalMultiplier?: { value: number; requirement: string } // Peacemaker's ramp-up
   multishot?: Record<string, number> // per attack name (Artemis Bow fires 7 arrows)
+  allowed?: string[] // mods the pseudo-exalted ban list (or the weapon class) would block but the wiki says work
   note?: string
 }
 
@@ -45,12 +46,19 @@ export const EXALTED: Record<string, ExaltedRule> = {
   'Shattered Lash': { warframe: 'Gara', ability: 'Shattered Lash', pseudo: true, strength: 'base', abilityCombo: true, noAttackSpeed: true },
   'Landslide Fists': { warframe: 'Atlas', ability: 'Landslide', pseudo: true, strength: 'base', abilityCombo: true, noAttackSpeed: true },
   Whipclaw: { warframe: 'Khora', ability: 'Whipclaw', pseudo: true, strength: 'base', abilityCombo: true, noAttackSpeed: true, note: '200% damage on Ensnared enemies (Ensnare on the ability list).' },
-  'Shadow Clones': { warframe: 'Ash', ability: 'Blade Storm', pseudo: true, strength: 'base', abilityCombo: true, note: 'Pure Finisher damage (ignores armor) with a guaranteed Bleed on every hit. The export has no damage numbers, 1,500 is from the wiki.' },
+  // Shadow Clones wiki: "does benefit from attack speed mods like Fury and can use the dagger-exclusive Covert Lethality", Melee
+  // Crescendo raises its initial combo, and Blade Storm is a finisher, so Finishing Touch works on it
+  'Shadow Clones': { warframe: 'Ash', ability: 'Blade Storm', pseudo: true, strength: 'base', abilityCombo: true, allowed: ['Fury', 'Primed Fury', 'Finishing Touch', 'Melee Crescendo', 'Covert Lethality'], note: 'Pure Finisher damage (ignores armor) with a guaranteed Bleed on every hit. The export has no damage numbers, 1,500 is from the wiki.' },
   'Garuda Talons': { warframe: 'Garuda', ability: 'innate claws', strength: 'none', note: 'Garuda\'s default claws, a normal weapon that doesn\'t scale with Ability Strength.' },
 }
 
 // "Exalted Prime Blade", "Valkyr Prime Talons", "Iron Staff Prime"... -> the rule's name
 export const exaltedBaseName = (name: string) => name.replace(/ Prime( |$)/, '$1').replace(/^Exalted Umbra Blade$/, 'Exalted Blade').trim()
 export const exaltedRuleFor = (weapon: { name: string; exalted?: boolean }) => (weapon.exalted ? EXALTED[exaltedBaseName(weapon.name)] ?? null : null)
-export const bannedOnExalted = (weapon: { name: string; exalted?: boolean }, modName: string) =>
-  Boolean(exaltedRuleFor(weapon)?.pseudo && PSEUDO_BANNED.includes(modName))
+export const bannedOnExalted = (weapon: { name: string; exalted?: boolean }, modName: string) => {
+  const rule = exaltedRuleFor(weapon)
+  return Boolean(rule?.pseudo && PSEUDO_BANNED.includes(modName) && !rule.allowed?.includes(modName))
+}
+// mods a pseudo-exalted can take that its class normally wouldn't (Covert Lethality is daggers only)
+export const allowedOnExalted = (weapon: { name: string; exalted?: boolean }, modName: string) =>
+  Boolean(exaltedRuleFor(weapon)?.allowed?.includes(modName))

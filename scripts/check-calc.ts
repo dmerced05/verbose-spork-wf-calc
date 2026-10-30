@@ -9,6 +9,9 @@ import { resolveCoBehavior } from '../src/calc/conditionOverload'
 import { getIncarnonTiers } from '../src/calc/incarnon'
 import { INCARNON_FAMILIES } from '../src/data/incarnon'
 import { passivesFor } from '../src/data/passives'
+import { advise, greedyPath } from '../src/calc/advisor'
+import { damageModPool } from '../src/optimizer/modPool'
+import { equipMod } from '../src/optimizer/optimize'
 import { modsConflict } from '../src/calc/modConflicts'
 import { defaultConditionalStacks, parseUpgrade } from '../src/calc/parseMod'
 import { optimizeAttack } from '../src/optimizer/optimize'
@@ -541,6 +544,17 @@ expectClose('Roar x strength (faction)', run(plainShotAttack, { buffs: withAbili
 expectClose('Eclipse x3 damage', run(plainShotAttack, { buffs: withAbilities(['eclipse']) }).hit.average, plainHit * 3)
 expectClose('Vex Armor +275% like Serration', run(plainShotAttack, { buffs: withAbilities(['vexArmor']) }).hit.average, plainHit * 3.75)
 expectClose("Xata's Whisper: +26% as a separate hit", run(plainShotAttack, { buffs: withAbilities(['xatasWhisper']) }).hit.average, plainHit * 1.26)
+// Xata's Whisper wiki: "double dips on faction damage, and body part weaknesses". headshot x3 on a neutral target:
+// 100 x 3 for the hit, 0.26 x 300 x 3 for the Void hit = 534
+const xataHeadTarget = { faction: 'None', layer: 'health' as const, enemyId: null, baseLevel: 1, level: 1, steelPath: false, manualArmor: 0, headshot: true, headshotMultiplier: 3, headcrit: false }
+expectClose("Xata's Whisper headshot counts twice", run(plainShotAttack, { buffs: withAbilities(['xatasWhisper']), target: xataHeadTarget }).hit.average, 300 + 0.26 * 300 * 3)
+// it also goes off on Blast detonations: 26% x detonation x faction x (1 + elemental mods). +90% Electricity on a Blast gun
+// doesn't touch the detonation but does the Xata part: tick x (1 + 0.26 x 1.9)
+{
+  const blastGun = testAttack({ blast: 100 }, { statusChance: 1 })
+  const blastTick = (ids: string[]) => run(blastGun, { mods: [equipFake('Volts', ['+90% Electricity'])], buffs: withAbilities(ids) }).dots.find((dot) => dot.damageType === 'blast')!.tick.average
+  expectClose("Xata's Whisper on Blast detonations", blastTick(['xatasWhisper']) / blastTick([]), 1 + 0.26 * 1.9)
+}
 const freezeForce = run(testAttack({ impact: 50, heat: 50 }), { buffs: withAbilities(['freezeForce']) })
 expectClose('Freeze Force cold stays uncombined', freezeForce.damageTypes.some((row) => row.damageType === 'blast') ? 0 : (freezeForce.damageTypes.find((row) => row.damageType === 'cold')?.procShare ?? 0) > 0 ? 1 : 0, 1)
 expectClose('Electric Shield doubles crit damage', run(testAttack({ impact: 100 }, { critMultiplier: 2 }), { buffs: withAbilities(['electricShield']) }).critMultiplier, 4)
@@ -1049,6 +1063,49 @@ expectClose('riven disposition is x1.2 for all', RIVEN_DISPOSITION, 1.2)
   expectClose('two sources adding past 100% still cap at 75%', efficient(['+60% Ammo Efficiency', '+65% Ammo Efficiency']), efficient(['+75% Ammo Efficiency']))
   expectClose('a single 100% source is Infinite Ammo', efficient(['+100% Ammo Efficiency']) > efficient(['+75% Ammo Efficiency']) ? 1 : 0, 1)
   expectClose('under the cap it still counts', efficient(['+50% Ammo Efficiency']) < efficient(['+75% Ammo Efficiency']) ? 1 : 0, 1)
+}
+
+// ---- finishers: Blade Storm (Shadow Clones) ----
+{
+  const clones = weapons.find((weapon) => weapon.name === 'Shadow Clones Prime')!
+  const meleeMod = (name: string) => { const mod = mods.find((candidate) => candidate.name === name && candidate.type === 'Melee Mod')!; return { mod, rank: mod.fusionLimit, conditionalStacks: 0 } }
+  const clonesHit = (overrides: Partial<CalcInput> = {}) =>
+    calculate({ weapon: clones, attack: clones.attacks[0], mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' }, ...overrides }).hit.average
+  const plain = clonesHit()
+  expectClose('Finishing Touch +60% on Blade Storm', clonesHit({ mods: [meleeMod('Finishing Touch')] }) / plain, 1.6)
+  // Armored Finisher adds to Finishing Touch (Obex wiki): 1 + 0.6 + 0.8
+  expectClose('Obex Armored Finisher adds to Finishing Touch', clonesHit({ mods: [meleeMod('Finishing Touch')], passives: passivesOn('Shadow Clones Prime') }) / plain, 2.4)
+  // Savage Silence multiplies on top ("Multiplicative to Finishing Touch"), x Strength: 300% x 1.5 = +450%. the 1.5 Strength
+  // also scales Blade Storm's own base damage, hence the last x1.5
+  expectClose('Savage Silence x Finishing Touch', clonesHit({ mods: [meleeMod('Finishing Touch')], buffs: withAbilities(['savageSilence'], 1.5) }) / plain, 1.6 * 5.5 * 1.5)
+  // finisher bonuses do nothing on a normal swing
+  const skana = weapons.find((weapon) => weapon.name === 'Skana')!
+  const skanaHit = (extra: ReturnType<typeof meleeMod>[]) => calculate({ weapon: skana, attack: skana.attacks[0], mods: extra, armor: 0, debuffs: noDebuffs(), buffs: withAbilities(['savageSilence']), target: { ...grineerTarget, faction: 'None' } }).hit.average
+  expectClose('Finisher bonuses skip normal attacks', skanaHit([meleeMod('Finishing Touch')]) / skanaHit([]), 1)
+  // the clones can take Fury, Finishing Touch and the dagger-only Covert Lethality, Landslide still can't take Fury
+  const cloneMods = new Set(getCompatibleMods(clones).map((mod) => mod.name))
+  expectClose('Shadow Clones take Fury / Finishing Touch / Covert Lethality', ['Fury', 'Finishing Touch', 'Covert Lethality'].every((name) => cloneMods.has(name)) ? 1 : 0, 1)
+  expectClose('Landslide still bans Fury', getCompatibleMods(weapons.find((weapon) => weapon.name === 'Landslide Fists')!).some((mod) => mod.name === 'Fury') ? 1 : 0, 0)
+}
+
+// ---- build advisor (src/calc/advisor.ts) ----
+{
+  const braton = weapons.find((weapon) => weapon.name === 'Braton Prime')!
+  const pool = damageModPool(getCompatibleMods(braton), true).map((mod) => equipMod(mod, false))
+  const advisorInput = (names: string[]) => ({
+    weapon: braton, attack: braton.attacks[0], mods: names.map(maxed), armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 },
+    target: { ...grineerTarget, faction: 'None' },
+  })
+  const weightOf = (names: string[], lever: string) => advise(advisorInput(names), (result) => result.sustainedDps, pool).levers.find((row) => row.id === lever)!.weight
+  // the same +10% damage is worth less once Serration is in (1.0 -> 2.65 base damage bucket): 10% / 265% ~ 3.8%
+  expectClose('advisor: +10% damage on an empty build', weightOf([], 'damage'), 0.1)
+  expectClose('advisor: +10% damage after Serration', weightOf(['Serration'], 'damage'), 0.1 / 2.65)
+  // Hellfire in, +10% Electricity turns the Heat into Radiation
+  expectClose('advisor: element combining is labelled', advise(advisorInput(['Hellfire']), (result) => result.sustainedDps, pool).levers.find((row) => row.id === 'element:electricity')!.combines.includes('radiation') ? 1 : 0, 1)
+  // a greedy path never goes down and fills 8 slots
+  const path = greedyPath(advisorInput([]), (result) => result.sustainedDps, pool, 'test', '', () => true)
+  expectClose('advisor: greedy path fills 8 slots', path.steps.length, 8)
+  expectClose('advisor: every greedy step adds damage', path.steps.every((step) => step.gain > 0) ? 1 : 0, 1)
 }
 
 // sanity: standard Braton Prime build, element combining in slot order

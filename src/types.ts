@@ -20,6 +20,7 @@ export interface Attack {
   noMultishotMods?: boolean // hitscan explosions, beam blasts, speargun throws: multishot mods do nothing
   hitscanAoE?: boolean // the explosion of a hitscan/beam shot. only the directly hit enemy gets CO
   baseDamagePool?: number // the whole shot's base damage when this is one part of it (Stug blob + explosion)
+  finisher?: boolean // finisher damage (Blade Storm's clones): Finisher Damage mods and finisher vulnerability apply
 }
 
 export interface Weapon {

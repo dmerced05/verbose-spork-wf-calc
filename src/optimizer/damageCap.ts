@@ -2,10 +2,10 @@
 // adds a layer and is optimized for the biggest single instance:
 //   1. mods, weapon arcane and Incarnon   2. + headshot
 //   3. + solo priming: the statuses the build applies itself plus what a Diriga primes, kept on through steps 4-6
-//   4. + your Warframe: its own abilities/augments, one Helminth subsume (in a slot it can actually go in), and a real
-//      frame mod build (8 slots + aura + exilus, frameBuild.ts) instead of a typed-in Strength
-//   5. + Archon Shards (best 5 Tauforged, the frame mods re-picked with them: Violet wants a Flow mod)
-//   6. + Warframe arcanes (best pair, Molt Augmented's Strength counts)
+//   4. + Warframe arcanes and 5. + Archon Shards: what any Warframe gets without casting anything (Arcane Avenger,
+//      Violet crit damage with the frame mods picked for Energy)
+//   6. + your Warframe: its own abilities/augments, one Helminth subsume (in a slot it can actually go in), a real
+//      frame mod build (8 slots + aura + exilus, frameBuild.ts), and the shards/arcanes re-picked now Strength matters
 //   7. + enemy debuffs maxed (every status for CO, Viral 10...)   8. + allies' abilities
 // steps 1-6 are doable solo, 7-8 need a team (or a lot of setup)
 // the Warframe steps search every Warframe (or use the Calculator's Warframe panel). setups are scored on the previous step's
@@ -40,9 +40,9 @@ export const CAP_STEPS: CapStep[] = [
   { id: 'mods', label: 'Mods, arcane & Incarnon', description: 'Best 8 mods (conditionals at max), weapon arcane, Incarnon perks' },
   { id: 'head', label: '+ Headshot', description: 'Weak point multiplier, and headcrits where the faction has them' },
   { id: 'priming', label: '+ Solo priming', description: 'Only the statuses your build applies (at max stacks), plus a Diriga primer (Impact, Puncture, Slash, Electricity + 3 modded elements). Its damage isn\'t counted. Kept on through the Warframe steps after it' },
-  { id: 'frame', label: '+ Your Warframe', description: 'Its own abilities and augments, one Helminth subsume in a slot it can replace, and the best frame mods (8 slots, aura, exilus)' },
-  { id: 'shards', label: '+ Archon Shards', description: 'The best 5 Tauforged shards, with the frame mods re-picked for them (Violet crit damage doubles past 500 Energy, so a Flow mod / Azure shard can earn a slot)' },
-  { id: 'frameArcanes', label: '+ Warframe arcanes', description: 'The best two Warframe arcanes (Arcane Avenger, Molt Augmented\'s Strength...)' },
+  { id: 'frameArcanes', label: '+ Warframe arcanes', description: 'The best two Warframe arcanes that work on any Warframe without casting anything (Arcane Avenger...)' },
+  { id: 'shards', label: '+ Archon Shards', description: 'The best 5 Tauforged shards on any Warframe, with frame mods picked for them (Violet crit damage doubles past 500 Energy, so a Flow mod / Azure shard can earn a slot)' },
+  { id: 'frame', label: '+ Your Warframe', description: 'Its own abilities and augments, one Helminth subsume in a slot it can replace, the best frame mods (8 slots, aura, exilus), and the shards and arcanes re-picked now that Strength matters (Molt Augmented, Crimson shards)' },
   { id: 'debuffs', label: '+ Enemy debuffs (maxed)', description: 'Every status type on the target (CO / Galvanized), 10 Viral, 10 Corrosive + full Heat strip, 10 Cold, 5 Puncture, 10 Tau, lifted' },
   { id: 'allies', label: '+ Allies', description: 'Teammates\' abilities (external Nourish, Roar...), at their strength' },
 ]
@@ -189,7 +189,11 @@ const rescore = (snapshot: Snapshot, warframe: WarframeState | undefined, corros
 
 const scoreEval = (snapshot: Snapshot, evaluated: FrameEval) => rescore(snapshot, evaluated.state, evaluated.corrosiveProjections).peakHit
 
-interface FrameCandidate { spec: FrameSpec; setup: CapSetup; score: number; situational: string[] }
+interface FrameCandidate { spec: FrameSpec; setup: CapSetup; score: number; situational: string[]; picked: number }
+// Empowered Quiver works on melee in-game, but standing in a Dashwire while meleeing isn't a real setup. exalted guns keep it
+const searchable = (ability: WarframeAbility, melee: boolean) => !(melee && ability.capGunsOnly)
+// same hit as a setup with fewer abilities (Warcry's attack speed does nothing for one hit): not a separate setup
+const sameHit = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * Math.max(Math.abs(a), Math.abs(b))
 
 const frameByName = (name: string): Warframe => warframes.find((frame) => frame.name === name)!
 // the frame's variants (Excalibur, Excalibur Prime, Excalibur Umbra): same kit, different Energy
@@ -212,6 +216,7 @@ const anyFrame = () => frameNames.find((frame) => ownGroups(frame, false).length
 
 function searchFrames(snapshot: Snapshot, allyStrength: number): FrameCandidate[] {
   const candidates: FrameCandidate[] = []
+  const melee = snapshot.build.weapon.category === 'Melee'
   // an exalted weapon only exists on its own Warframe (Exalted Blade -> Excalibur). otherwise every frame with something
   // modeled, and frames with nothing of their own are all the same here: "any Warframe" with a subsume
   const exaltedRule = exaltedRuleFor(snapshot.build.weapon)
@@ -220,7 +225,9 @@ function searchFrames(snapshot: Snapshot, allyStrength: number): FrameCandidate[
   for (const frame of framesToTry) {
     const loadFrame = frame === 'Any Warframe' ? anyFrame() : frame
     const frameObject = frameByName(loadFrame)
-    const groups = frame === 'Any Warframe' ? [] : ownGroups(frame, false)
+    const groups = (frame === 'Any Warframe' ? [] : ownGroups(frame, false))
+      .map((group) => ({ ...group, options: group.options.filter((ability) => searchable(ability, melee)) }))
+      .filter((group) => group.options.length > 0)
     // the ability that summons an exalted weapon (Exalted Blade, Landslide) can't be swapped out for a subsume
     const slots = frameSlots(loadFrame).filter((slot) => !exaltedRule || slot.toLowerCase() !== exaltedRule.ability.toLowerCase())
     // per frame: the best setup, and the best one without situational abilities (Empowered Quiver), as separate paths
@@ -232,7 +239,7 @@ function searchFrames(snapshot: Snapshot, allyStrength: number): FrameCandidate[
       const usedSlots = new Set(own.flatMap((ability) => (ability.ability ? [ability.ability] : [])))
       const ownCasts: AbilityCast[] = own.map((ability) => ({ id: ability.id, by: 'self', ...(ability.stacks ? { stacks: ability.stacks.default } : {}) }))
       for (const subsume of [null, ...subsumeOptions]) {
-        if (subsume && subsume.frame === frame) continue
+        if (subsume && (subsume.frame === frame || !searchable(subsume.ability, melee))) continue
         // it has to replace one of this frame's abilities that isn't in use (Roar/Eclipse/Xata only in a damage-buff slot)
         const slot = subsume
           ? slots.find((candidate) => !usedSlots.has(candidate) && canSubsumeInto(loadFrame, candidate, subsume.name))
@@ -246,10 +253,14 @@ function searchFrames(snapshot: Snapshot, allyStrength: number): FrameCandidate[
         const score = rescore(snapshot, { frameName: frame === 'Any Warframe' ? loadFrame : frame, abilityStrength: strength, teammateStrength: allyStrength, armor: 0, casts, arcanes: [] }).peakHit
         const situational = picked.flatMap((ability) => (ability.situational ? [`${ability.name}: ${ability.situational}`] : []))
         const better = (current: FrameCandidate | null | undefined) => !current || score > current.score
+        // a tie with a kept setup: keep whichever has fewer abilities
+        const twin = top.find((kept) => sameHit(kept.score, score))
+        if (twin && twin.picked <= picked.length) continue
+        if (twin) top.splice(top.indexOf(twin), 1)
         const makesTop = top.length < keep || better(top.at(-1))
         if (makesTop || (!situational.length && better(bestPlain))) {
           const candidate: FrameCandidate = {
-            score, situational,
+            score, situational, picked: picked.length,
             spec: { frame: frameObject, subsume: subsume ? { warframe: subsume.frame, ability: subsume.name } : null, casts, allyStrength, arcaneIds: [], shards: [] },
             setup: {
               frame: frame === 'Any Warframe' ? `Any Warframe (e.g. ${loadFrame})` : frame,
@@ -269,7 +280,7 @@ function searchFrames(snapshot: Snapshot, allyStrength: number): FrameCandidate[
             top.sort((a, b) => b.score - a.score)
             if (top.length > keep) top.pop()
           }
-          if (!situational.length && better(bestPlain)) bestPlain = candidate
+          if (!situational.length && (better(bestPlain) || (bestPlain && sameHit(bestPlain.score, score) && picked.length < bestPlain.picked))) bestPlain = candidate
         }
       }
     }
@@ -426,6 +437,7 @@ function searchArcanes(snapshot: Snapshot, spec: FrameSpec, loadout: FrameLoadou
 // one teammate at a time: the frame whose own ally-reaching abilities add the most on top of what's already there
 function searchAllies(snapshot: Snapshot, base: WarframeState, count: number, allowSituational: boolean, corrosiveProjections: number): { state: WarframeState; allies: CapSetup['allies']; situational: string[] } {
   let state = base
+  const melee = snapshot.build.weapon.category === 'Melee'
   const allies: CapSetup['allies'] = []
   const situational: string[] = []
   for (let round = 0; round < count; round++) {
@@ -434,7 +446,7 @@ function searchAllies(snapshot: Snapshot, base: WarframeState, count: number, al
     for (const frame of frameNames) {
       // a path without situational abilities stays that way through its allies
       const groups = ownGroups(frame, true)
-        .map((group) => ({ ...group, options: group.options.filter((ability) => allowSituational || !ability.situational) }))
+        .map((group) => ({ ...group, options: group.options.filter((ability) => (allowSituational || !ability.situational) && searchable(ability, melee)) }))
         .filter((group) => group.options.length > 0)
       if (!groups.length) continue
       for (const own of combos(groups, 200)) {
@@ -452,7 +464,7 @@ function searchAllies(snapshot: Snapshot, base: WarframeState, count: number, al
   return { state, allies, situational }
 }
 
-// the Warframe panel's setup split into the three Warframe steps
+// the Warframe panel's setup split into the Warframe steps: its arcanes, + its shards, + its abilities, + allies
 function panelStates(panel: WarframeState | undefined) {
   if (!panel) return null
   const own = panel.casts.filter((cast) => cast.by !== 'ally')
@@ -461,9 +473,9 @@ function panelStates(panel: WarframeState | undefined) {
   const noShards: WarframeState = { ...panel, abilityStrength: panel.abilityStrength - (panel.shardStrength ?? 0), shardStrength: 0, shards: undefined }
   const shardText = panel.shards && (panel.shardStrength || Object.values(panel.shards).some(Boolean)) ? ['from the panel'] : []
   return {
-    frame: { state: { ...noShards, casts: own, arcanes: [] }, setup: { frame: panel.frameName, casts: describe(own), arcanes: [], allies: [] } },
-    shards: { state: { ...panel, casts: own, arcanes: [] }, setup: { frame: panel.frameName, casts: describe(own), arcanes: [], shards: shardText, allies: [] } },
-    frameArcanes: { state: { ...panel, casts: own }, setup: { frame: panel.frameName, casts: describe(own), arcanes: arcaneNames, shards: shardText, allies: [] } },
+    frameArcanes: { state: { ...noShards, casts: [] }, setup: { frame: panel.frameName, casts: [], arcanes: arcaneNames, allies: [] } },
+    shards: { state: { ...panel, casts: [] }, setup: { frame: panel.frameName, casts: [], arcanes: arcaneNames, shards: shardText, allies: [] } },
+    frame: { state: { ...panel, casts: own }, setup: { frame: panel.frameName, casts: describe(own), arcanes: arcaneNames, shards: shardText, allies: [] } },
     allies: {
       state: panel,
       setup: {
@@ -553,22 +565,20 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
   if (request.frameMode === 'panel') {
     const panel = panelStates(scenario.buffs.warframe)
     if (!panel) {
-      emit(3, 0, primedHead.build, null, primedHead.debuffs)
-      emit(4, 0, primedHead.build, null, primedHead.debuffs)
-      emit(5, 0, primedHead.build, null, primedHead.debuffs)
+      for (const stepIndex of [3, 4, 5]) emit(stepIndex, 0, primedHead.build, null, primedHead.debuffs)
       const debuffBuild = optimize(headTarget, maxed, noFrameBuffs)
       emit(6, 0, debuffBuild, null, maxed)
       emit(7, 0, debuffBuild, null, maxed)
       onPaths([{ index: 0, label: 'No Warframe set in the panel', situational: [], finalPeak: debuffBuild.result.peakHit }], 0)
       return
     }
-    const panelFrame = solo({ ...panel.frame, build: primedHead.build })
-    emit(3, 0, panelFrame.build, panelFrame.setup, panelFrame.debuffs)
-    const panelShards = solo({ ...panel.shards, build: panelFrame.build })
+    const panelArcanes = solo({ ...panel.frameArcanes, build: primedHead.build })
+    emit(3, 0, panelArcanes.build, panelArcanes.setup, panelArcanes.debuffs)
+    const panelShards = solo({ ...panel.shards, build: panelArcanes.build })
     emit(4, 0, panelShards.build, panelShards.setup, panelShards.debuffs)
-    const panelArcanes = solo({ ...panel.frameArcanes, build: panelShards.build })
-    emit(5, 0, panelArcanes.build, panelArcanes.setup, panelArcanes.debuffs)
-    emit(6, 0, refine([panel.frameArcanes], maxed).build, panel.frameArcanes.setup, maxed)
+    const panelFrame = solo({ ...panel.frame, build: panelShards.build })
+    emit(5, 0, panelFrame.build, panelFrame.setup, panelFrame.debuffs)
+    emit(6, 0, refine([panel.frame], maxed).build, panel.frame.setup, maxed)
     const withAllies = refine([{ state: panel.allies.state, setup: panel.allies.setup }], maxed)
     emit(7, 0, withAllies.build, panel.allies.setup, maxed)
     const flags = panel.frame.state.casts.flatMap((cast) => {
@@ -579,18 +589,51 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
     return
   }
 
-  // 4-8 per Warframe path, screened on the primed step-3 build
-  const primedSnapshot = snapshot(primedHead.build, primedHead.debuffs)
-  const frames = searchFrames(primedSnapshot, request.allyStrength)
-  // the shortlist gets real frame mods, then the weapon mods re-optimized with priming re-picked
+  // 4-5, shared: arcanes then shards on any Warframe with nothing cast. the frame is only there to hold them
+  // (and its mods for Violet's Energy), so it's "any Warframe"
+  const arcaneNamesOf = (ids: string[]) => ids.map((id) => arcanes.find((arcane) => arcane.uniqueName === id)!.name)
+  // an exalted weapon only exists on its own frame, and its damage follows that frame's Strength (Molt Augmented counts)
+  const exaltedFrame = exaltedRuleFor(weapon)?.warframe
+  const holder = frameByName(exaltedFrame ?? anyFrame())
+  const holderSpec: FrameSpec = { frame: holder, subsume: null, casts: [], allyStrength: request.allyStrength, arcaneIds: [], shards: [] }
+  const emptyLoadout: FrameLoadout = { regular: [], aura: [], exilus: null }
+  const holderLoad = (spec: FrameSpec, loadout: FrameLoadout): FrameLoad => ({
+    frame: spec.frame.name, allyStrength: request.allyStrength, casts: [], subsume: null, arcaneIds: spec.arcaneIds,
+    shards: spec.shards.length ? spec.shards : undefined,
+    mods: { regular: loadout.regular.map((mod) => mod.name), aura: loadout.aura.map((mod) => mod.name), exilus: loadout.exilus?.name ?? null },
+  })
+  const holderSetup = (spec: FrameSpec, loadout: FrameLoadout, evaluated: FrameEval | null): CapSetup => ({
+    frame: exaltedFrame ?? 'Any Warframe', casts: [], arcanes: arcaneNamesOf(spec.arcaneIds), allies: [],
+    ...(spec.shards.length ? { shards: shardNames(spec.shards), mods: describeLoadout(loadout), energy: evaluated?.energy, strength: evaluated?.strength } : {}),
+    load: holderLoad(spec, loadout),
+  })
+  const arcaneOptions = searchArcanes(snapshot(primedHead.build, primedHead.debuffs), holderSpec, emptyLoadout).slice(0, request.thorough ? 4 : 2)
+  const sharedArcanes = soloBest(arcaneOptions.map((option) => {
+    const spec = { ...holderSpec, arcaneIds: option.ids }
+    const evaluated = evaluateFrame(spec, emptyLoadout)
+    return { spec, loadout: emptyLoadout, state: evaluated.state, cp: evaluated.corrosiveProjections, build: primedHead.build, setup: holderSetup(spec, emptyLoadout, null) }
+  }))
+  emit(3, null, sharedArcanes.build, sharedArcanes.setup, sharedArcanes.debuffs)
+  const holderShards = searchShards(snapshot(sharedArcanes.build, sharedArcanes.debuffs), sharedArcanes.spec, request.thorough ? 4 : 2)
+  const sharedShards = soloBest(holderShards.map((pick) => ({
+    spec: pick.spec, loadout: pick.loadout, state: pick.evaluated.state, cp: pick.evaluated.corrosiveProjections, build: sharedArcanes.build,
+    setup: holderSetup(pick.spec, pick.loadout, pick.evaluated),
+  })))
+  emit(4, null, sharedShards.build, sharedShards.setup, sharedShards.debuffs)
+
+  // 6-8 per Warframe path, screened on the shared step-5 build
+  const sharedSnapshot = snapshot(sharedShards.build, sharedShards.debuffs)
+  const frames = searchFrames(sharedSnapshot, request.allyStrength)
+  // the shortlist gets real frame mods (with the shared shards and arcanes on), then the weapon mods re-optimized
   const shortlist = frames.slice(0, request.thorough ? 12 : 8)
   const plainBest = frames.find((candidate) => !candidate.situational.length)
   if (plainBest && !shortlist.includes(plainBest)) shortlist.push(plainBest)
   const refined = shortlist.map((candidate) => {
-    const picked = optimizeFrameMods(candidate.spec, (evaluated) => scoreEval(primedSnapshot, evaluated))
+    const spec: FrameSpec = { ...candidate.spec, arcaneIds: sharedShards.spec.arcaneIds, shards: sharedShards.spec.shards }
+    const picked = optimizeFrameMods(spec, (evaluated) => scoreEval(sharedSnapshot, evaluated))
     return solo({
-      candidate, spec: candidate.spec, loadout: picked.loadout, state: picked.evaluated.state, cp: picked.evaluated.corrosiveProjections,
-      setup: withLoadout(candidate.setup, candidate.spec, picked.loadout, picked.evaluated), build: primedHead.build,
+      candidate, spec, loadout: picked.loadout, state: picked.evaluated.state, cp: picked.evaluated.corrosiveProjections,
+      setup: withLoadout(candidate.setup, spec, picked.loadout, picked.evaluated), build: sharedShards.build,
     })
   }).sort((a, b) => b.build.result.peakHit - a.build.result.peakHit)
   const singleFrame = new Set(refined.map((option) => option.setup.frame)).size === 1
@@ -601,6 +644,8 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
     // distinct frames, except when there's only one frame (exalted weapons): then distinct setups
     const key = singleFrame ? describe(option.setup) : `${option.setup.frame}|${option.candidate.situational.length > 0}`
     if (seenFrames.has(key)) continue
+    // one frame: a setup that hits the same as a kept one with fewer abilities is the same setup
+    if (singleFrame && chosen.some((kept) => sameHit(kept.build.result.peakHit, option.build.result.peakHit) && kept.candidate.picked <= option.candidate.picked)) continue
     seenFrames.add(key)
     chosen.push(option)
   }
@@ -613,26 +658,23 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
 
   const paths: CapPath[] = []
   chosen.forEach((option, pathIndex) => {
-    emit(3, pathIndex, option.build, option.setup, option.debuffs)
-    // shards, with the frame mods re-picked for each set (Violet crit damage wants 501+ Energy)
+    // shards and arcanes re-picked for this frame (Strength and Energy matter now), frame mods re-picked with each shard set
     const shardPicks = searchShards(snapshot(option.build, option.debuffs), option.spec, request.thorough ? 4 : 2)
-    const withShardPick = soloBest(shardPicks.map((pick) => ({
-      spec: pick.spec, loadout: pick.loadout, state: pick.evaluated.state, cp: pick.evaluated.corrosiveProjections, build: option.build,
-      setup: { ...withLoadout(option.setup, pick.spec, pick.loadout, pick.evaluated), shards: shardNames(pick.spec.shards) },
-    })))
-    emit(4, pathIndex, withShardPick.build, withShardPick.setup, withShardPick.debuffs)
-    // arcanes on the same frame build (Molt Augmented's Strength goes through it)
-    const arcaneOptions = searchArcanes(snapshot(withShardPick.build, withShardPick.debuffs), withShardPick.spec, withShardPick.loadout).slice(0, request.thorough ? 4 : 2)
-    const withArcanes = soloBest(arcaneOptions.map((arcaneOption) => {
+    const withShardPick = soloBest([option, ...shardPicks.map((pick) => ({
+      ...option, spec: pick.spec, loadout: pick.loadout, state: pick.evaluated.state, cp: pick.evaluated.corrosiveProjections,
+      setup: withLoadout(option.setup, pick.spec, pick.loadout, pick.evaluated),
+    }))])
+    const arcanePicks = searchArcanes(snapshot(withShardPick.build, withShardPick.debuffs), withShardPick.spec, withShardPick.loadout).slice(0, request.thorough ? 4 : 2)
+    const withFrame = soloBest(arcanePicks.map((arcaneOption) => {
       const spec = { ...withShardPick.spec, arcaneIds: arcaneOption.ids }
       const evaluated = evaluateFrame(spec, withShardPick.loadout)
       return {
-        spec, loadout: withShardPick.loadout, state: evaluated.state, cp: evaluated.corrosiveProjections, build: withShardPick.build,
-        setup: { ...withLoadout(withShardPick.setup, spec, withShardPick.loadout, evaluated), arcanes: arcaneOption.ids.map((id) => arcanes.find((arcane) => arcane.uniqueName === id)!.name) },
+        ...withShardPick, spec, state: evaluated.state, cp: evaluated.corrosiveProjections,
+        setup: { ...withLoadout(withShardPick.setup, spec, withShardPick.loadout, evaluated), shards: shardNames(spec.shards), arcanes: arcaneNamesOf(spec.arcaneIds) },
       }
     }))
-    emit(5, pathIndex, withArcanes.build, withArcanes.setup, withArcanes.debuffs)
-    const debuffed = refine([withArcanes], maxed)
+    emit(5, pathIndex, withFrame.build, withFrame.setup, withFrame.debuffs)
+    const debuffed = refine([withFrame], maxed)
     emit(6, pathIndex, debuffed.build, debuffed.setup, maxed)
     const allies = searchAllies(snapshot(debuffed.build, maxed), debuffed.state, request.allyCount, option.candidate.situational.length > 0, debuffed.cp ?? 0)
     const withAllies = refine([{ ...debuffed, state: allies.state, setup: { ...debuffed.setup, allies: allies.allies, load: debuffed.setup.load && { ...debuffed.setup.load, casts: allies.state.casts } } }], maxed)

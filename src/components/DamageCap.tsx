@@ -123,7 +123,7 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
   const firstCapping = shown.find((result) => result.peakHit > cap)
   const last = shown.length === CAP_STEPS.length ? shown.at(-1) : undefined
   // the last step you can reach without a team
-  const soloStep = shown.find((result) => CAP_STEPS[result.stepIndex].id === 'frameArcanes')
+  const soloStep = shown.find((result) => CAP_STEPS[result.stepIndex].id === 'frame')
   const currentPath = paths.find((path) => path.index === selectedPath)
   const ranMelee = ranWith ? weaponsById.get(ranWith.weaponId)!.category === 'Melee' : false
   const loadStep = (result: CapStepResult) => {
@@ -201,10 +201,10 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
             <li>
               <b>Warframe steps</b>{' '}
               {frameMode === 'search'
-                ? `every Warframe's own abilities and augments + one Helminth subsume (in a slot it can replace), the best 5 Tauforged Archon Shards (Primed Flow assumed for Violet's 500 Energy), the best pair of Warframe arcanes, then up to ${allyCount} allies' abilities. Exalted weapons stay on their own frame`
+                ? `first the best pair of Warframe arcanes and 5 Tauforged Archon Shards any Warframe gets without casting anything, then every Warframe's own abilities and augments + one Helminth subsume (in a slot it can replace) with real frame mods and the shards and arcanes re-picked for it, then up to ${allyCount} allies' abilities. Exalted weapons stay on their own frame. Melee skips Empowered Quiver (Dashwire), exalted guns keep it`
                 : summary.frame}
             </li>
-            <li><b>Solo priming</b> only the statuses the build applies, plus a Diriga primer: Impact, Puncture, Slash and Arc Coil Electricity, and with Manifold Bond 3 modded elements other than Electricity (7 statuses; Hounds and Nautilus prime as much or one less). Its damage isn't counted. It stays on (re-picked for each build) through the Warframe, shard and arcane steps, so everything up to Warframe arcanes is reachable alone</li>
+            <li><b>Solo priming</b> only the statuses the build applies, plus a Diriga primer: Impact, Puncture, Slash and Arc Coil Electricity, and with Manifold Bond 3 modded elements other than Electricity (7 statuses; Hounds and Nautilus prime as much or one less). Its damage isn't counted. It stays on (re-picked for each build) through the arcane, shard and Warframe steps, so everything up to Your Warframe is reachable alone</li>
             <li><b>Debuffs step</b> maxed: every status type on the target, 10 Viral / Corrosive / Cold, full Heat strip, 5 Puncture, 10 Tau</li>
             <li>Target is fixed: a Steel Path Heavy Gunner at level 9,999 (Grineer, armor at the 2,700 clamp). The Warframe panel still comes from the Calculator tab. Conditionals (kill stacks, Galvanized, Deadhead...) are taken at max, ability conditions as met.</li>
           </ul>
@@ -349,6 +349,9 @@ function SetupText({ setup, step }: { setup: CapSetup; step: string }) {
         ? setup.casts.map((cast) => (cast.by === 'helminth' ? `${cast.name} (Helminth${cast.replaces ? `, replaces ${cast.replaces}` : ''})` : cast.name)).join(', ')
         : 'nothing helped'}
       {setup.strength !== undefined && <span className="muted-inline"> · {Math.round(setup.strength * 100)}% Strength from mods</span>}
+      {(setup.shards?.length || setup.arcanes.length) ? (
+        <span className="muted-inline"> · {[...(setup.shards ?? []), ...setup.arcanes].join(', ')}</span>
+      ) : null}
     </span>
   )
 }

@@ -2,6 +2,8 @@
 import { RIVEN_DISPOSITION } from '../calc/riven'
 import { SHELL_BY_SHELL_RELOAD } from '../data/reloads'
 import { exaltedRuleFor } from '../data/exalted'
+import { mechanicTags } from '../calc/mechanicTags'
+import { Tip } from './Tip'
 import { biggestHit, comboTotal, heavyBreakdownText, multiHitHeavyFor } from '../data/heavyAttacks'
 import type { Attack, Weapon } from '../types'
 
@@ -21,6 +23,7 @@ export function BaseStats({ weapon, attack }: { weapon: Weapon; attack: Attack }
   const multishot = attack.multishot ?? weapon.multishot
   const shellReload = SHELL_BY_SHELL_RELOAD[weapon.name]
   const exalted = exaltedRuleFor(weapon)
+  const tags = mechanicTags(weapon, attack)
   const reloads = !isMelee && !/incarnon/i.test(attack.name) && weapon.magazineSize && weapon.reloadTime
 
   const stats: [string, string][] = [
@@ -54,19 +57,22 @@ export function BaseStats({ weapon, attack }: { weapon: Weapon; attack: Attack }
     <div className="base-stats">
       <div className="base-stats-head">
         <span>Base stats · {attack.name}</span>
-        {attack.isAoE && <span className="evo-tag">AoE</span>}
+        {attack.isAoE && <Tip className="evo-tag" text="Area damage: can't headshot, and no Puncture / Cold crit bonus">AoE ⓘ</Tip>}
+        {tags.map((tag) => (
+          <Tip key={tag.label} className={`mech-tag ${tag.tone ?? ''}`} text={tag.explanation}>{tag.label} ⓘ</Tip>
+        ))}
         {exalted && (
-          <span
+          <Tip
             className="evo-tag"
-            title={`${exalted.pseudo ? 'Pseudo-exalted' : 'Exalted'}: ${exalted.warframe}'s ${exalted.ability}. ${exalted.strength === 'base' ? 'Base damage x your Ability Strength (Warframe box).' : exalted.strength === 'bonus' ? `+${Math.round((exalted.strengthBonus ?? 0) * 100)}% damage x your Ability Strength, added in with the damage mods.` : 'Doesn\'t scale with Ability Strength.'}${exalted.abilityCombo ? ' +1x damage per combo multiplier on every hit.' : ''}${exalted.noAttackSpeed ? ' Attack speed mods do nothing.' : ''}${exalted.note ? ` ${exalted.note}` : ''}`}
+            text={`${exalted.pseudo ? 'Pseudo-exalted' : 'Exalted'}: ${exalted.warframe}'s ${exalted.ability}. ${exalted.strength === 'base' ? 'Base damage x your Ability Strength (Warframe box).' : exalted.strength === 'bonus' ? `+${Math.round((exalted.strengthBonus ?? 0) * 100)}% damage x your Ability Strength, added in with the damage mods.` : 'Doesn\'t scale with Ability Strength.'}${exalted.abilityCombo ? ' +1x damage per combo multiplier on every hit.' : ''}${exalted.noAttackSpeed ? ' Attack speed mods do nothing.' : ''}${exalted.note ? ` ${exalted.note}` : ''}`}
           >
             {exalted.pseudo ? 'Pseudo-exalted' : 'Exalted'} · {exalted.warframe} ⓘ
-          </span>
+          </Tip>
         )}
         {multiHit && (
-          <span className="multi-hit-tag" title={`${heavyBreakdownText(multiHit, normalTotal)}\n\nThe export lists ${fixed(attack.heavyMultiplier ?? 0, 1)}x for this heavy, the calculator uses the hit list instead.`}>
+          <Tip className="multi-hit-tag" text={`${heavyBreakdownText(multiHit, normalTotal)}\n\nThe export lists ${fixed(attack.heavyMultiplier ?? 0, 1)}x for this heavy, the calculator uses the hit list instead.`}>
             Multi-hit heavy ⓘ
-          </span>
+          </Tip>
         )}
       </div>
       <div className="base-stats-grid">

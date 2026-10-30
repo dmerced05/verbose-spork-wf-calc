@@ -20,13 +20,15 @@ export type AbilityEffect = (
   // procs, it forces one proc of its own on every hit instead (Shock Trooper)
   | { kind: 'element'; damageType: string; value: number; combines: boolean; boostsStatus?: boolean; forcedProc?: boolean }
   // extraHit: a separate hit worth value x the weapon's damage (Xata's Whisper, Resupply, Demonium). forcedProc: it also forces
-  // its element's proc on every hit, sniperValue: Resupply's doubled sniper bonus
-  | { kind: 'extraHit'; damageType: string; value: number; forcedProc?: boolean; sniperValue?: number }
+  // its element's proc on every hit, sniperValue: Resupply's doubled sniper bonus. xata: Xata's Whisper's own rules (headshot
+  // twice, and it also triggers off Blast detonations)
+  | { kind: 'extraHit'; damageType: string; value: number; forcedProc?: boolean; sniperValue?: number; xata?: boolean }
   | { kind: 'attackSpeed'; value: number }
   | { kind: 'flatCritChance'; value: number }
   | { kind: 'critDamageMultiplier'; value: number }
   | { kind: 'critChanceMod'; value: number }
   | { kind: 'critDamageMod'; value: number }
+  | { kind: 'finisherVulnerability'; value: number } // Savage Silence / Radiant Finish: the target takes more Finisher damage
   | { kind: 'statusTypeDamage' | 'statusTypeDuration'; damageType: string; value: number } // Ash's passive, per status type
   | { kind: 'statusChanceMod' | 'statusDurationMod' | 'weakpointDamage'; value: number } // Prismatic Gem, Seek: added in with mods
   | { kind: 'targetVulnerability'; value: number } // Petrify: the target takes more damage from everything
@@ -55,6 +57,7 @@ export interface WarframeAbility {
   condition?: string // what has to be true in the fight, for the results' requirement list (default: the buff is up)
   stacks?: { label: string; max: number; default: number } // per-stack effects (Thrall Pact: per Thrall)
   notExalted?: boolean // "does not apply to Exalted Weapons" (the hold-to-cast elemental augments, Thermal Transfer)
+  capGunsOnly?: boolean // the Damage Cap search skips it for melee: works in-game, but not something you'd run (Dashwire)
   onlyWeapons?: RegExp // only these weapons (Ensnare's x2 is for Whipclaw)
   boosts?: Record<string, number> // multiplies another active ability's defense numbers (Hysteria: Warcry armor x3)
   effects: AbilityEffect[]
@@ -87,9 +90,9 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
   },
   {
     id: 'xatasWhisper', casterOnly: true, ability: "Xata's Whisper", name: "Xata's Whisper", warframe: 'Xaku', appliesTo: 'all', scalesWithStrength: true,
-    effects: [{ kind: 'extraHit', damageType: 'void', value: 0.26 }],
-    quote: '26% of total weapon damage as Void damage. Damage bonus is a separate damage instance.',
-    note: 'Its own Void procs aren\'t modeled. The wiki lists no separate subsumed value.',
+    effects: [{ kind: 'extraHit', damageType: 'void', value: 0.26, xata: true }],
+    quote: '26% of total weapon damage as Void damage. Damage bonus is a separate damage instance. "The ability double dips on faction damage, and body part weaknesses." "When an enemy is afflicted with one or more Blast stacks, Xata\'s whisper will trigger off the detonation(s)."',
+    note: 'Faction and headshot count twice on the Void hit. Off a Blast detonation it hits for 26% x detonation x faction x (1 + elemental mods), the wiki\'s worked example. Its own Void procs aren\'t modeled. The wiki lists no separate subsumed value.',
   },
   {
     id: 'nourish', ability: 'Nourish', name: 'Nourish', warframe: 'Grendel', appliesTo: 'all', scalesWithStrength: true,
@@ -191,7 +194,7 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     note: 'The wiki table says +200% Critical Damage at max rank, the game export (the mod text above) says +100%. Using the export. No Ability Strength scaling on either.',
   },
   {
-    id: 'empoweredQuiver', ability: 'Quiver', augment: 'Empowered Quiver', name: 'Empowered Quiver (Quiver augment)', warframe: 'Ivara', appliesTo: 'all', scalesWithStrength: true,
+    id: 'empoweredQuiver', ability: 'Quiver', augment: 'Empowered Quiver', name: 'Empowered Quiver (Quiver augment)', warframe: 'Ivara', appliesTo: 'all', scalesWithStrength: true, capGunsOnly: true,
     condition: 'standing in a Dashwire',
     situational: 'only while standing in a Dashwire (Ivara\'s zipline). Hard to keep up while meleeing, especially pseudo-exalteds like Landslide',
     effects: [{ kind: 'critDamageMod', value: 1 }],
@@ -301,6 +304,20 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     quote: '"Each enemy hit will increase Excalibur\'s Melee Damage by 15% for 16s." Multiplicative: Base x (1 + Damage Mods) x (1 + 15% x Strength x Enemies Hit). Applies to Exalted Blade too.',
   },
   // ---- synergies and target debuffs ----
+  {
+    id: 'savageSilence', ability: 'Silence', augment: 'Savage Silence', name: 'Savage Silence (Silence augment)', warframe: 'Banshee', appliesTo: 'melee', scalesWithStrength: true,
+    condition: 'enemies inside Silence',
+    effects: [{ kind: 'finisherVulnerability', value: 3 }],
+    quote: '"Finisher Damage is increased by 300% while Silence is active." "Damage vulnerability is affected by Ability Strength." Multiplicative with Finishing Touch. Enemies take more Finisher damage from abilities too, "notably Blade Storm".',
+    note: 'Only does anything on finisher attacks (Blade Storm\'s clones here).',
+  },
+  {
+    id: 'radiantFinish', ability: 'Radial Blind', augment: 'Radiant Finish', name: 'Radiant Finish (Radial Blind augment)', warframe: 'Excalibur', appliesTo: 'melee', scalesWithStrength: true,
+    condition: 'blinded enemies',
+    effects: [{ kind: 'finisherVulnerability', value: 3 }],
+    quote: '"Blinded enemies take 300% more Finisher Damage." "Damage vulnerability is affected by Ability Strength." "Multiplicative to Finishing Touch." "Synergizes very well with Ash\'s Blade Storm."',
+    note: 'Only does anything on finisher attacks. Stacking with Savage Silence isn\'t on the wiki, I add the two vulnerabilities together.',
+  },
   {
     id: 'hysteria', ability: 'Hysteria', name: 'Hysteria (Valkyr Talons)', warframe: 'Valkyr', appliesTo: 'all', scalesWithStrength: true, selfOnly: true,
     condition: 'Hysteria active',

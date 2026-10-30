@@ -36,6 +36,15 @@ export interface WeaponPassive {
 const damagePerStack = (value: number): ModEffect => ({ kind: 'stat', stat: 'damage', value })
 
 export const PASSIVES: WeaponPassive[] = [
+  // not the weapon's own passive: Blade Storm is a finisher, so Obex's Armored Finisher (melee slot) carries over to it
+  {
+    name: 'Obex equipped: Armored Finisher',
+    weapons: ['Shadow Clones', 'Shadow Clones Prime'],
+    quote: 'Obex Incarnon Evolution II, Armored Finisher: +80% Finisher Damage while Ash has 450+ Armor. "Finisher Damage bonus is additive to other sources of Finisher Damage such as Finishing Touch." (Obex wiki)',
+    effects: [{ kind: 'mod', effect: { kind: 'stat', stat: 'finisherDamage', value: 0.8 } }],
+    condition: 'Obex / Prisma Obex in the melee slot with Armored Finisher, Ash at 450+ Armor',
+    note: 'Its +50 / +10 base damage is on Obex itself, not Blade Storm. Hotfix 43.0.4 fixed it giving 8000% instead of 80%, which is how this used to hit the damage cap.',
+  },
   {
     name: 'Harmony: Heavy Attack detonation',
     weapons: ['Harmony'],

@@ -127,7 +127,7 @@ export function optimizeAttack(
   // a real target (Damage Cap, Compare) also lets its bane and, on headshots, weak point mods into the pool
   const scenarioTarget = constraints?.neutralPool ? undefined : constraints?.scenario?.target
   const pool = damageModPool(
-    getCompatibleMods(weapon), objective.usesFireRate, { isHeavy: Boolean(attack.heavy), name: attack.name }, allowFireRateMods,
+    getCompatibleMods(weapon), objective.usesFireRate, { isHeavy: Boolean(attack.heavy), name: attack.name, finisher: attack.finisher }, allowFireRateMods,
     scenarioTarget ? { faction: scenarioTarget.faction, headshot: scenarioTarget.headshot } : undefined,
   )
     .filter((mod) => !constraints || (!excludedNames.has(mod.name) && !lockedNames.has(mod.name)))

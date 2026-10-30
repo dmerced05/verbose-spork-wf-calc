@@ -234,7 +234,7 @@ export function calculate({
     critDamage: 0, multishot: 0, fireRate: 0, statusChance: 0, statusDamage: 0, headshotMultiplier: 0, weakpointDamage: 0,
     magazineCapacity: 0, reloadSpeed: 0, ammoEfficiency: 0,
     critChancePerCombo: 0, statusChancePerCombo: 0, heavyCritChance: 0, heavyDamage: 0, heavyWindUpSpeed: 0, heavyEfficiency: 0,
-    statusDuration: 0, slamDamage: 0, throwDamage: 0,
+    statusDuration: 0, slamDamage: 0, throwDamage: 0, finisherDamage: 0,
   }
   const physicalBonus: Record<string, number> = {}
   const elementBonus: Record<string, number> = {} // literal mod bonus per element, also used for DoTs
@@ -442,7 +442,9 @@ export function calculate({
   let abilityFlatCritChance = 0 // Wrathful Advance, after mods
   let abilityCritDamageScale = 1 // Electric Shield, multiplies every other crit damage source
   const extraHits: Record<string, number> = {} // separate hits worth this share of the weapon's damage (Xata's Whisper Void, Resupply...)
+  let xataShare = 0 // the Xata's Whisper part of that: headshot counts twice on it, and it also goes off on Blast detonations
   let abilityVulnerability = 0 // Petrify: the target takes more from everything
+  let finisherVulnerability = 0 // Savage Silence / Radiant Finish, only on finisher attacks
   let oneShotFlat = 0 // Ballistic Battery: flat base damage on one shot, only for the biggest-hit numbers
   const uncombinedElements: Record<string, number> = {} // Freeze Force / Electric Shield: don't combine, do proc
   const statusElementBonus: Record<string, number> = {} // uncombined ability elements that still count for their DoT
@@ -525,6 +527,7 @@ export function calculate({
             // Resupply's sniper bonus is doubled (Neutralizer gets it too, it's a sniper)
             const amount = weapon.type === 'Sniper' && effect.sniperValue ? value * (effect.sniperValue / effect.value) : value
             extraHits[effect.damageType] = (extraHits[effect.damageType] ?? 0) + amount
+            if (effect.xata) xataShare += amount
             if (effect.forcedProc) forcedProcsPerPellet[effect.damageType] = (forcedProcsPerPellet[effect.damageType] ?? 0) + 1
             break
           }
@@ -542,6 +545,9 @@ export function calculate({
             break
           case 'critDamageMod':
             bonus.critDamage += value
+            break
+          case 'finisherVulnerability':
+            finisherVulnerability += value
             break
           case 'statusTypeDamage':
             statusDamageByType[effect.damageType] = (statusDamageByType[effect.damageType] ?? 0) + value
@@ -593,6 +599,10 @@ export function calculate({
   // Nira's set: +150% slam damage per piece, "additive to" Seismic Wave
   if (isMelee && /slam/i.test(attack.name)) separateDamageMultiplier *= 1 + bonus.slamDamage + NIRA_SLAM_PER_PIECE * Math.min(3, setPieces.Nira ?? 0)
   if (isMelee && /throw$/i.test(attack.name)) separateDamageMultiplier *= 1 + bonus.throwDamage
+  // finisher attacks (Blade Storm): Finisher Damage bonuses add together (Obex page: Armored Finisher "is additive to other
+  // sources of Finisher Damage such as Finishing Touch"), and Savage Silence / Radiant Finish multiply on top ("Multiplicative
+  // to Finishing Touch")
+  if (attack.finisher) separateDamageMultiplier *= (1 + bonus.finisherDamage) * (1 + finisherVulnerability)
   // pseudo-exalted (Landslide, Shattered Lash, Whipclaw, Blade Storm): "1x additional damage per combo multiplier" on every hit
   const heavyComboFactor = isHeavy || (isMelee && exalted?.abilityCombo) ? combo : 1
   if (exalted && exalted.strength !== 'none') {
@@ -835,8 +845,13 @@ export function calculate({
   const sharedMultiplier = (1 + vulnerability) * headshotFactor
 
   // Xata's Whisper: X% of the weapon's total damage as a separate Void hit, faction applies to it twice
-  // faction counts twice on these (Xata's Whisper wiki: "double-dips faction damage")
-  const extraHitNoCrit = sum(Object.entries(extraHits).map(([damageType, fraction]) => fraction * sum(Object.values(moddedByType)) * typeMultiplier(damageType))) * factionMultiplier
+  // faction counts twice on these (Xata's Whisper wiki: "double dips on faction damage, and body part weaknesses"), so
+  // Xata's own share gets the headshot part again too
+  const moddedTotal = sum(Object.values(moddedByType))
+  const extraHitNoCrit = sum(Object.entries(extraHits).map(([damageType, fraction]) => {
+    const xataPart = damageType === 'void' ? Math.min(fraction, xataShare) : 0
+    return (fraction + xataPart * (headshotFactor - 1)) * moddedTotal * typeMultiplier(damageType)
+  })) * factionMultiplier
   const vsTargetNoCrit = (sum(
     Object.entries(moddedByType).map(([damageType, amount]) => amount * typeMultiplier(damageType)),
   ) + extraHitNoCrit) * factionMultiplier * sharedMultiplier
@@ -908,7 +923,12 @@ export function calculate({
       const beforeCrit =
         info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage + (statusDamageByType[damageType] ?? 0)) *
         (1 + vulnerability) * headshotPart * merged
-      const tick = critSplit(beforeCrit * typeMultiplier(damageType, info.bypassesArmor))
+      // Xata's Whisper also goes off on each Blast detonation: 26% x detonation x faction again x (1 + elemental mods),
+      // "the Elemental Damage Bonus is applied even though Blast detonations don't scale off Elemental Damage Bonuses" (wiki)
+      const xataOnBlast = damageType === 'blast' && xataShare > 0
+        ? xataShare * beforeCrit * factionMultiplier * (1 + sum(Object.values(elementBonus))) * typeMultiplier('void')
+        : 0
+      const tick = critSplit(beforeCrit * typeMultiplier(damageType, info.bypassesArmor) + xataOnBlast)
       // Status Duration stretches the DoT, at one tick per second that's more ticks (wiki Status_Duration).
       // Blast is a single hit so it doesn't care
       const durationScale = 1 + bonus.statusDuration + (statusDurationByType['*'] ?? 0) + (statusDurationByType[damageType] ?? 0)

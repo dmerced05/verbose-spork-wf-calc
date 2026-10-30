@@ -17,8 +17,9 @@ const HEAVY_ONLY_STATS = ['heavyCritChance', 'heavyDamage', 'heavyWindUpSpeed']
 export interface PoolAttack {
   isHeavy: boolean
   name: string
+  finisher?: boolean
 }
-const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, name }: PoolAttack, target?: PoolTarget) => {
+const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, name, finisher }: PoolAttack, target?: PoolTarget) => {
   // magazine/reload mods only matter for sustained/time-window objectives
   switch (effect.kind) {
     case 'damageType':
@@ -39,6 +40,7 @@ const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, na
       if (HEAVY_ONLY_STATS.includes(effect.stat)) return isHeavy
       if (effect.stat === 'slamDamage') return /slam/i.test(name)
       if (effect.stat === 'throwDamage') return /throw$/i.test(name)
+      if (effect.stat === 'finisherDamage') return Boolean(finisher)
       if (HEADSHOT_STATS.includes(effect.stat)) return Boolean(target?.headshot)
       // heavy efficiency only changes what's left after the hit, not the hit itself
       return effect.stat !== 'heavyEfficiency'

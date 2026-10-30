@@ -1,4 +1,5 @@
-import { perkAppliesTo, type IncarnonTier } from '../calc/incarnon'
+import { perkAppliesTo, stackingNote, type IncarnonTier } from '../calc/incarnon'
+import { Tip } from './Tip'
 
 interface Props {
   tiers: IncarnonTier[]
@@ -36,7 +37,10 @@ export function IncarnonPanel({ tiers, selection, stacks, isIncarnonAttack, isMe
                     <button
                       key={perk.name}
                       className={`evo-option ${selection[tier] === perk.name ? 'selected' : ''} ${affectsDamage ? '' : 'utility'}`}
-                      title={perk.statements.map((statement) => statement.text).join('\n')}
+                      title={[...new Set(perk.statements.map((statement) => {
+                        const note = stackingNote(statement.effect)
+                        return note ? `${statement.text}\n  → ${note}` : statement.text
+                      }))].join('\n')}
                       onClick={() => pick(tier, perk.name)}
                     >
                       {perk.name}
@@ -52,9 +56,12 @@ export function IncarnonPanel({ tiers, selection, stacks, isIncarnonAttack, isMe
                   {[...new Set(picked.statements.map((statement) => statement.text))].map((text) => {
                     const statement = picked.statements.find((candidate) => candidate.text === text)!
                     const applies = perkAppliesTo(statement.mode, isIncarnonAttack, isMelee)
+                    // one line can hold two statements ("+10 Base Damage and +10% Fire Rate"), show each one's note
+                    const notes = [...new Set(picked.statements.filter((candidate) => candidate.text === text).map((candidate) => stackingNote(candidate.effect)).filter(Boolean))]
                     return (
                       <li key={text} className={`${statement.effect ? '' : 'not-modeled'} ${applies ? '' : 'inactive'}`}>
                         {text.replace(/\s*\[(Incarnon Form only|Normal only)\]$/, '')}
+                        {notes.length > 0 && <Tip className="stack-note" text={notes.join('\n')}>ⓘ</Tip>}
                         {statement.mode !== 'both' && <span className="evo-tag">{MODE_LABEL[statement.mode]}</span>}
                         {!statement.effect && <span className="evo-tag">not modeled</span>}
                       </li>

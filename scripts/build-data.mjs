@@ -76,8 +76,9 @@ const glaiveDetonation = (weapon, attack) =>
 // the data has no beam flag, so a beam is a hit-scan attack on a Held-trigger weapon, or one named Held/Beam
 // (Basmu's held beam sits on an Auto weapon). Held-trigger weapons' projectiles/explosions aren't beams
 // Incarnon forms that turn into beams on a non-Held weapon: Torid ("becomes a continuous beam ... 2.3 m damage radius at
-// the impact point") and Boar ("becomes a continuous beam weapon that can fire up to 3 beams")
-const BEAM_INCARNON = /^(Torid|Boar|Boar Prime)$/
+// the impact point"), Boar ("becomes a continuous beam weapon that can fire up to 3 beams") and Furis (wikiwiki.jp: "a hold-type
+// weapon firing a single-element Heat beam", ~2 m wide, 16 m)
+const BEAM_INCARNON = /^(Torid|Boar|Boar Prime|Furis|Mk1-Furis)$/
 const isContinuous = (weapon, attack) =>
   attack.shot_type === 'Hit-Scan' && (weapon.trigger === 'Held' || /^Held$|\bBeam\b/i.test(attack.name) ||
     (BEAM_INCARNON.test(weapon.name) && /^Incarnon Form$/.test(attack.name)))
@@ -229,7 +230,7 @@ const exaltedWeapons = readJson('Misc')
       weapon.exalted = true
       weapon.rivenDisposition = null // the export gives them 1, but exalted weapons have no riven slot
     }
-    if (/^Shadow Clones/.test(item.name)) weapon.attacks = weapon.attacks.map((attack) => ({ ...attack, forcedProcs: ['slash'] }))
+    if (/^Shadow Clones/.test(item.name)) weapon.attacks = weapon.attacks.map((attack) => ({ ...attack, forcedProcs: ['slash'], finisher: true }))
     // Noctua's Active Attack "needs a full meter, which takes 60 seconds to recharge. Primary hits reduce recharge by 1 second each".
     // firing the primary (1.5/s) the whole time, 60 - 1.5t = t gives one every 24 s
     if (item.name === 'Noctua') weapon.attacks = weapon.attacks.map((attack) => (attack.name === 'Active Attack' ? { ...attack, fireRate: 1 / 24 } : attack))

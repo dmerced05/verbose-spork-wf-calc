@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { STATUS_TYPES, hitsPerComboTier, maxComboFor } from './calc/constants'
+import { STATUS_TYPES, factionLabel, hitsPerComboTier, maxComboFor } from './calc/constants'
 import { calculate } from './calc/damage'
 import { arcanesById, enemies, getCompatibleArcanes, getCompatibleMods, modsById, weapons, weaponsById } from './data'
 import { estimateKill } from './calc/kill'
@@ -25,6 +25,7 @@ import type { CompareScenario } from './optimizer/compare'
 import type { FrameLoad } from './optimizer/damageCap'
 import { FormulaPanel } from './components/FormulaPanel'
 import { StatsPanel } from './components/StatsPanel'
+import { ResultsBar } from './components/ResultsBar'
 import { TargetPanel, resolveArmor, resolveEnemy } from './components/TargetPanel'
 import type { Buffs, Debuffs, EquippedMod, TargetSettings } from './types'
 import type { LeaderboardEntry } from './optimizer/leaderboardTypes'
@@ -198,6 +199,17 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
     const vsShield = calculate({ ...calcInput, target: { ...target, headshot, layer: 'shield' } })
     return { vsHealth, kill: estimateKill(scaledEnemy.health, scaledEnemy.shield, vsHealth, vsShield) }
   }
+  // what the closed Target / Debuffs drawers say about themselves
+  const targetSummary = [
+    scaledEnemy ? `${scaledEnemy.enemy.name} Lv ${scaledEnemy.effectiveLevel}` : `${factionLabel(target.faction)}, ${resolveArmor(target)} armor`,
+    target.steelPath ? 'Steel Path' : null,
+    target.headshot ? 'headshots' : null,
+    target.statusMode && target.statusMode !== 'normal' ? (target.statusMode === 'immune' ? 'status immune' : 'status capped') : null,
+  ].filter(Boolean).join(' · ')
+  const activeDebuffs = Object.values(debuffs.stacks).filter((stacks) => stacks > 0).length +
+    (debuffs.heatArmorStrip > 0 ? 1 : 0) + (debuffs.corrosiveProjections + warframeCorrosive > 0 ? 1 : 0) + (debuffs.otherArmorReduction > 0 ? 1 : 0) +
+    (debuffs.damageVulnerability > 0 ? 1 : 0) + (debuffs.liftedOrKnockedDown ? 1 : 0)
+  const debuffSummary = activeDebuffs ? `${activeDebuffs} active` : 'none'
   const bodyKill = killFor(false)
   const headKill = killFor(true)
 
@@ -241,12 +253,36 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
       {loadedFrom && (
         <div className="load-banner">
           Loaded the leaderboard build for <b>{loadedFrom}</b>. Target and debuffs were switched to the leaderboard scenario
-          (no faction, no armor, status types from the build) so the numbers match. Change them below to test it against something else.
+          (no faction, no armor, status types from the build) so the numbers match. Change them in the Target and Debuffs drawers at the top to test it against something else.
           <button className="link-button" onClick={() => setLoadedFrom(null)}>dismiss</button>
         </div>
       )}
       <div className="layout" onClick={togglePanel}>
+        <ResultsBar
+          result={result}
+          enemy={scaledEnemy}
+          bodyKill={bodyKill?.kill ?? null}
+          headKill={headKill?.kill ?? null}
+          canHeadshot={!attack.isAoE}
+          drawers={[
+            { id: 'target', label: 'Target', summary: targetSummary, group: 'setup' as const, content: <TargetPanel target={target} onChange={setTarget} /> },
+            { id: 'debuffs', label: 'Debuffs on target', summary: debuffSummary, group: 'setup' as const, content: <DebuffsPanel debuffs={debuffs} buffs={buffs} onDebuffsChange={setDebuffs} onBuffsChange={setBuffs} /> },
+            ...(scaledEnemy && bodyKill && headKill ? [{
+              id: 'enemy', label: 'Kill details', summary: 'shots, TTK, shields', group: 'output' as const,
+              content: (
+                <EnemyPanel
+                  scaled={scaledEnemy} faction={target.faction} steelPath={target.steelPath}
+                  vsHealth={bodyKill.vsHealth} kill={bodyKill.kill} headKill={headKill.kill}
+                  canHeadshot={!attack.isAoE}
+                />
+              ),
+            }] : []),
+            { id: 'results', label: 'Full results', summary: 'DoT, head vs body, procs', group: 'output' as const, content: <StatsPanel result={result} body={bodyResult} head={headResult} canHeadshot={!attack.isAoE} /> },
+          ]}
+        />
+        {/* weapon side and Warframe side, 50/50 on wide screens, stacked otherwise */}
         <div className="build">
+          <div className="build-col">
           <section className="panel">
             <h2>Weapon</h2>
             <div className="row">
@@ -303,8 +339,6 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
                 </p>
               </div>
             )}
-          </section>
-
           {(weaponPassives.length > 0 || showBonusElement) && (
             <PassivesPanel
               passives={weaponPassives}
@@ -328,6 +362,7 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
               onStacksChange={setIncarnonStacks}
             />
           )}
+          </section>
 
           <ModSlots
             weaponName={weapon.name}
@@ -354,8 +389,10 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
           <BuildAdvisor
             input={{ ...calcInput, target }}
             compatibleMods={compatibleMods}
+            compatibleArcanes={compatibleArcanes}
             keep={equippedMods.filter((slot) => slot.mod.uniqueName === RIVEN_MOD_ID)}
-            onLoadPath={(pathMods) => {
+            onEquipArcane={(arcane) => setArcaneSlot({ arcaneId: arcane.arcane.uniqueName, rank: arcane.rank, conditionalStacks: arcane.conditionalStacks })}
+            onLoadPath={(pathMods, pathArcane) => {
               // the riven keeps its slot, the path fills the rest in order
               const next = emptySlots()
               const rivenSlot = slots.find((slot) => slot?.modId === RIVEN_MOD_ID)
@@ -367,28 +404,20 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
                 next[index++] = { modId: mod.uniqueName, rank: equipped.rank, conditionalStacks: equipped.conditionalStacks }
               }
               setSlots(next)
+              setArcaneSlot(pathArcane ? { arcaneId: pathArcane.arcane.uniqueName, rank: pathArcane.rank, conditionalStacks: pathArcane.conditionalStacks } : null)
             }}
           />
+          </div>
 
+          <div className="build-col">
           <WarframePanel
             isMelee={isMelee} weapon={weapon}
             onWarframeChange={(state, corrosive) => { setWarframeState(state); setWarframeCorrosive(corrosive) }}
             loadRequest={frameLoad}
           />
-          <TargetPanel target={target} onChange={setTarget} />
-          <DebuffsPanel debuffs={debuffs} buffs={buffs} onDebuffsChange={setDebuffs} onBuffsChange={setBuffs} />
+          </div>
         </div>
 
-        <div className="results-column">
-          {scaledEnemy && bodyKill && headKill && (
-            <EnemyPanel
-              scaled={scaledEnemy} faction={target.faction} steelPath={target.steelPath}
-              vsHealth={bodyKill.vsHealth} kill={bodyKill.kill} headKill={headKill.kill}
-              canHeadshot={!attack.isAoE}
-            />
-          )}
-          <StatsPanel result={result} body={bodyResult} head={headResult} canHeadshot={!attack.isAoE} />
-        </div>
       </div>
       <FormulaPanel result={result} />
     </>

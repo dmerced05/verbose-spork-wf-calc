@@ -1,7 +1,7 @@
 // checks the calc against worked examples from the wiki. run with: npm run check
 import { calculate, enervateAverageCrit, type CalcInput } from '../src/calc/damage'
 import { STATUS_TYPES } from '../src/calc/constants'
-import { arcanes, getCompatibleMods, mods, warframes, weapons } from '../src/data'
+import { arcanes, getCompatibleArcanes, getCompatibleMods, mods, warframes, weapons } from '../src/data'
 import { warframeTotals } from '../src/calc/warframeStats'
 import { scaleArmor, scaleHealth } from '../src/calc/target'
 import { estimateKill } from '../src/calc/kill'
@@ -9,9 +9,9 @@ import { resolveCoBehavior } from '../src/calc/conditionOverload'
 import { getIncarnonTiers } from '../src/calc/incarnon'
 import { INCARNON_FAMILIES } from '../src/data/incarnon'
 import { passivesFor } from '../src/data/passives'
-import { advise, greedyPath } from '../src/calc/advisor'
+import { advise, arcaneOptions, buildPaths, greedyPath, pctText } from '../src/calc/advisor'
 import { damageModPool } from '../src/optimizer/modPool'
-import { equipMod } from '../src/optimizer/optimize'
+import { equipArcane, equipMod } from '../src/optimizer/optimize'
 import { modsConflict } from '../src/calc/modConflicts'
 import { defaultConditionalStacks, parseUpgrade } from '../src/calc/parseMod'
 import { optimizeAttack } from '../src/optimizer/optimize'
@@ -1106,6 +1106,13 @@ expectClose('riven disposition is x1.2 for all', RIVEN_DISPOSITION, 1.2)
   const path = greedyPath(advisorInput([]), (result) => result.sustainedDps, pool, 'test', '', () => true)
   expectClose('advisor: greedy path fills 8 slots', path.steps.length, 8)
   expectClose('advisor: every greedy step adds damage', path.steps.every((step) => step.gain > 0) ? 1 : 0, 1)
+  // arcanes: ranked against the build, and every path settles on one that adds damage
+  const arcanePool = getCompatibleArcanes(braton).map((arcane) => equipArcane(arcane, false))
+  const ranked = arcaneOptions(advisorInput(['Serration', 'Point Strike', 'Vital Sense']), (result) => result.sustainedDps, arcanePool)
+  expectClose('advisor: arcanes ranked best first', ranked.every((option, index) => index === 0 || option.gain <= ranked[index - 1].gain) && ranked[0].gain > 0 ? 1 : 0, 1)
+  const paths = buildPaths(advisorInput([]), (result) => result.sustainedDps, pool, arcanePool, [], false)
+  expectClose('advisor: paths pick an arcane', paths.every((candidate) => candidate.arcane && candidate.arcaneGain > 0) ? 1 : 0, 1)
+  console.log('  paths:', paths.map((candidate) => `${candidate.name}: ${candidate.arcane?.arcane.name} ${pctText(candidate.arcaneGain)}`).join(' | '))
 }
 
 // sanity: standard Braton Prime build, element combining in slot order

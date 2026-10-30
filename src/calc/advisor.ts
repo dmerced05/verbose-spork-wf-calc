@@ -7,7 +7,7 @@ import { calculate, type CalcInput, type CalcResult } from './damage'
 import { parseUpgrade, type ModEffect } from './parseMod'
 import { modsConflict } from './modConflicts'
 import { BANE_TARGET } from './constants'
-import type { EquippedMod, Mod } from '../types'
+import type { Arcane, EquippedArcane, EquippedMod, Mod } from '../types'
 
 export type LeverId = string // 'damage', 'critChance', 'element:heat', 'physical:slash', 'faction', 'perStatus'...
 
@@ -57,7 +57,24 @@ export interface BuildPath {
   name: string
   note: string
   steps: PathStep[]
+  arcane: EquippedArcane | null // the arcane the path settled on (picked for its mods, then the mods re-picked with it)
+  arcaneGain: number // what the arcane adds on top of the mods
   score: number
+}
+
+export interface ArcaneOption {
+  arcane: EquippedArcane
+  gain: number // vs the build as it is (with your current arcane, if any)
+  current: boolean
+}
+
+// plain-words version of a weight, relative to the best stat right now
+export type Rating = 'Top pick' | 'Strong' | 'Some' | 'Little' | 'No effect' | 'Hurts'
+export function rating(weight: number, top: number): Rating {
+  if (weight < -0.0005) return 'Hurts'
+  if (weight < 0.0005) return 'No effect'
+  const share = top > 0 ? weight / top : 0
+  return share >= 0.75 ? 'Top pick' : share >= 0.4 ? 'Strong' : share >= 0.15 ? 'Some' : 'Little'
 }
 
 const ELEMENTS = ['heat', 'cold', 'electricity', 'toxin']
@@ -84,9 +101,24 @@ function leversOfEffect(effect: ModEffect): LeverId[] {
       return []
   }
 }
-export function leversOf(mod: Mod): LeverId[] {
-  const parsed = parseUpgrade(mod.levelStats, mod.fusionLimit)
+const leversOfStats = (levelStats: string[][], rank: number): LeverId[] => {
+  const parsed = parseUpgrade(levelStats, rank)
   return [...new Set([...parsed.effects, ...parsed.conditionals.map((conditional) => conditional.effect)].flatMap(leversOfEffect))]
+}
+export const leversOf = (mod: Mod): LeverId[] => leversOfStats(mod.levelStats, mod.fusionLimit)
+export const leversOfArcane = (arcane: Arcane): LeverId[] => leversOfStats(arcane.levelStats, arcane.levelStats.length - 1)
+
+// every arcane that fits, in place of the current one, best first
+export function arcaneOptions(input: CalcInput, score: Scorer, arcanes: EquippedArcane[]): ArcaneOption[] {
+  const base = score(calculate(input))
+  const currentName = input.arcane?.arcane.name
+  return arcanes
+    .map((arcane) => {
+      const current = arcane.arcane.name === currentName
+      const value = current ? base : score(calculate({ ...input, arcane }))
+      return { arcane, gain: base > 0 ? value / base - 1 : 0, current }
+    })
+    .sort((a, b) => b.gain - a.gain)
 }
 
 // the stats worth testing on this weapon: no multishot on melee, physical types only if the attack has them
@@ -227,15 +259,37 @@ export function greedyPath(input: CalcInput, score: Scorer, pool: EquippedMod[],
     steps.push({ mod: best.option.mod, gain: current > 0 ? best.score / current - 1 : 0, score: best.score, levers: leversOf(best.option.mod) })
     current = best.score
   }
-  return { name, note, steps, score: current }
+  return { name, note, steps, arcane: input.arcane ?? null, arcaneGain: 0, score: current }
 }
 
-// the usual forks: pure greedy, crit (no status chance mods), status (no crit mods). an immune target skips status
-export function buildPaths(input: CalcInput, score: Scorer, pool: EquippedMod[], keep: EquippedMod[], statusImmune: boolean): BuildPath[] {
-  const touches = (mod: Mod, ids: LeverId[]) => leversOf(mod).some((id) => ids.includes(id))
+// a path with its arcane: mods first, then the best arcane for them, then the mods again with that arcane in (an arcane
+// can change what the mods should be, Arcane Rage wants crit), and the arcane once more. stops when it settles
+function pathWithArcane(
+  input: CalcInput, score: Scorer, pool: EquippedMod[], arcanes: EquippedArcane[], name: string, note: string,
+  allow: (levers: LeverId[]) => boolean, keep: EquippedMod[],
+): BuildPath {
+  const allowedArcanes = arcanes.filter((arcane) => allow(leversOfArcane(arcane.arcane)))
+  const modsAllowed = (mod: Mod) => allow(leversOf(mod))
+  let arcane: EquippedArcane | null = null
+  let path = greedyPath({ ...input, arcane: null }, score, pool, name, note, modsAllowed, keep)
+  for (let round = 0; round < 2; round++) {
+    const mods = [...keep, ...path.steps.map((step) => pool.find((option) => option.mod === step.mod)!)]
+    const best = arcaneOptions({ ...input, mods, arcane: null }, score, allowedArcanes)[0]
+    if (!best || best.gain <= 1e-6 || best.arcane.arcane.name === arcane?.arcane.name) break
+    arcane = best.arcane
+    path = greedyPath({ ...input, arcane }, score, pool, name, note, modsAllowed, keep)
+  }
+  const mods = [...keep, ...path.steps.map((step) => pool.find((option) => option.mod === step.mod)!)]
+  const without = score(calculate({ ...input, mods, arcane: null }))
+  return { ...path, arcane, arcaneGain: arcane && without > 0 ? path.score / without - 1 : 0 }
+}
+
+// the usual forks: pure greedy, crit (no status chance mods or arcanes), status (no crit ones). an immune target skips status
+export function buildPaths(input: CalcInput, score: Scorer, pool: EquippedMod[], arcanes: EquippedArcane[], keep: EquippedMod[], statusImmune: boolean): BuildPath[] {
+  const without = (ids: LeverId[]) => (levers: LeverId[]) => !levers.some((id) => ids.includes(id))
   return [
-    greedyPath(input, score, pool, 'Best each slot', 'Always the mod that adds the most right now.', () => true, keep),
-    greedyPath(input, score, pool, 'Crit', 'No status chance mods.', (mod) => !touches(mod, ['statusChance']), keep),
-    ...(statusImmune ? [] : [greedyPath(input, score, pool, 'Status', 'No crit chance / crit damage mods.', (mod) => !touches(mod, ['critChance', 'critDamage']), keep)]),
+    pathWithArcane(input, score, pool, arcanes, 'Best each slot', 'Always the mod that adds the most right now.', () => true, keep),
+    pathWithArcane(input, score, pool, arcanes, 'Crit', 'No status chance mods or arcanes.', without(['statusChance']), keep),
+    ...(statusImmune ? [] : [pathWithArcane(input, score, pool, arcanes, 'Status', 'No crit chance / crit damage mods or arcanes.', without(['critChance', 'critDamage']), keep)]),
   ]
 }

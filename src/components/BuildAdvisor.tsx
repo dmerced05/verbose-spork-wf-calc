@@ -1,31 +1,35 @@
 // what each stat is worth to the build on screen right now, which mod gets it best / cheapest, which slots pull the
 // least, and greedy build paths you can load. all measured with the calc, so it follows the target, buffs and perks
 import { useMemo, useState } from 'react'
-import { advise, buildPaths, pctText, type BuildPath, type LeverRow } from '../calc/advisor'
+import { advise, arcaneOptions, buildPaths, pctText, rating, type BuildPath, type LeverRow } from '../calc/advisor'
 import type { CalcInput } from '../calc/damage'
 import { OBJECTIVES, type ObjectiveId } from '../optimizer/objectives'
 import { damageModPool } from '../optimizer/modPool'
-import { equipMod } from '../optimizer/optimize'
-import type { EquippedMod, Mod } from '../types'
+import { equipArcane, equipMod } from '../optimizer/optimize'
+import type { Arcane, EquippedArcane, EquippedMod, Mod } from '../types'
 import { Tip } from './Tip'
 
 interface Props {
   input: CalcInput // the calculator's current setup, mods included
   compatibleMods: Mod[]
+  compatibleArcanes: Arcane[]
   keep: EquippedMod[] // stays in every suggested path (the riven)
-  onLoadPath: (mods: Mod[]) => void
+  onLoadPath: (mods: Mod[], arcane: EquippedArcane | null) => void
+  onEquipArcane: (arcane: EquippedArcane) => void
 }
 
 const ADVISOR_OBJECTIVES: ObjectiveId[] = ['sustained', 'single', 'attack']
 const HOW_IT_WORKS =
-  'Every number here is the calculator re-run with one change to your current build, so it follows your target, Warframe buffs, arcane and perks.\n\n' +
-  '"+10% adds" = how much the total goes up if that stat got +10% more (like a tenth of a mod). Warframe multiplies its stat buckets together ' +
-  '(base damage × multishot × crit × elements × fire rate...), and stats inside one bucket add up. So the more a bucket already has, the less ' +
-  'the next +10% in it is worth: 2 Serrations = 4.3x base damage, a 3rd only takes it to 5.95x. That is why the weights shift as you mod.\n\n' +
-  '"Best mod" = the real mod that adds the most (when all 8 slots are full: in place of your weakest slot). "Best per capacity" = most gain per ' +
-  'point of mod capacity at max rank.'
+  'Every number here comes from re-running the calculator with one change to your current build, so it follows your target, Warframe buffs, arcane and perks.\n\n' +
+  '"Worth adding?" compares stats against each other: it gives every stat the same small boost and sees which one raises your damage the most. ' +
+  'It changes as you mod. Stats of the same kind add up, but different kinds multiply each other (damage × multishot × crit × elements × fire rate), ' +
+  'so a stat you already have a lot of gives less for the next bit. 1 Serration takes base damage from 1x to 2.65x (+165%), a 2nd only to 4.3x (+62%).\n\n' +
+  '"Best mod" = the real mod that raises your damage the most (when all 8 slots are full: put in place of your weakest one). "Cheapest" = most damage ' +
+  'per point of mod capacity.'
 
-export function BuildAdvisor({ input, compatibleMods, keep, onLoadPath }: Props) {
+const RATING_CLASS: Record<string, string> = { 'Top pick': 'top', Strong: 'strong', Some: 'some', Little: 'little', 'No effect': 'none', Hurts: 'hurts' }
+
+export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, onLoadPath, onEquipArcane }: Props) {
   const [objectiveId, setObjectiveId] = useState<ObjectiveId>(input.weapon.category === 'Melee' || input.attack.heavy ? 'attack' : 'sustained')
   const [paths, setPaths] = useState<{ key: string; paths: BuildPath[] } | null>(null)
   const objective = OBJECTIVES.find((candidate) => candidate.id === objectiveId)!
@@ -38,7 +42,12 @@ export function BuildAdvisor({ input, compatibleMods, keep, onLoadPath }: Props)
     ).map((mod) => equipMod(mod, isMelee)),
     [compatibleMods, objective.usesFireRate, input.attack, input.target.faction, input.target.headshot, isMelee],
   )
+  const arcanePool = useMemo(() => compatibleArcanes.map((arcane) => equipArcane(arcane, isMelee)), [compatibleArcanes, isMelee])
   const advice = advise(input, objective.score, pool)
+  const arcaneRanking = arcaneOptions(input, objective.score, arcanePool)
+  const currentArcane = arcaneRanking.find((option) => option.current)
+  const showCheap = advice.levers.some((lever) => ((lever.cheapestMod ?? lever.bestMod)?.gain ?? 0) > 0)
+  const shownArcanes = arcaneRanking.filter((option) => !option.current && option.gain > 0.001).slice(0, 5)
   const top = Math.max(1e-9, ...advice.levers.map((lever) => lever.weight))
   // paths belong to one weapon/attack/goal, a stale set gets hidden
   const pathKey = `${input.weapon.uniqueName}|${input.attack.name}|${objectiveId}`
@@ -46,7 +55,7 @@ export function BuildAdvisor({ input, compatibleMods, keep, onLoadPath }: Props)
 
   const runPaths = () => setPaths({
     key: pathKey,
-    paths: buildPaths({ ...input, mods: [] }, objective.score, pool, keep, input.target.statusMode === 'immune'),
+    paths: buildPaths({ ...input, mods: [] }, objective.score, pool, arcanePool, keep, input.target.statusMode === 'immune'),
   })
   const fmt = (value: number) => (value >= 100 ? Math.round(value).toLocaleString() : value.toFixed(1))
 
@@ -65,16 +74,28 @@ export function BuildAdvisor({ input, compatibleMods, keep, onLoadPath }: Props)
       </div>
       <p className="muted">
         Now: <b>{fmt(advice.score)}</b> {objective.unit} with {input.mods.length ? `${input.mods.length} mod${input.mods.length > 1 ? 's' : ''}` : 'no mods'}.
-        {' '}What each stat is worth to this build right now:
+        {' '}Which stats would raise that most, for this build as it is now:
       </p>
 
+      {input.mods.length >= 8 && (
+        <p className="muted">
+          All 8 slots are full, so "Best mod" is what swapping it in for your weakest mod ({[...advice.slots].sort((a, b) => a.contribution - b.contribution)[0]?.mod.name}) would
+          do. A minus means your current mods are already the better use of that slot.
+        </p>
+      )}
       <div className="advisor-table-wrap">
       <table className="advisor-table">
         <thead>
-          <tr><th>Stat</th><th>+10% adds</th><th>In build</th><th>Best mod</th><th>Best per capacity</th></tr>
+          <tr>
+            <th>Stat</th>
+            <th>Worth adding?</th>
+            <th>Mods on it</th>
+            <th>Best mod <span className="muted-inline">(damage gain)</span></th>
+            {showCheap && <th>Cheapest <span className="muted-inline">(gain per capacity)</span></th>}
+          </tr>
         </thead>
         <tbody>
-          {advice.levers.map((lever) => <LeverLine key={lever.id} lever={lever} top={top} />)}
+          {advice.levers.map((lever) => <LeverLine key={lever.id} lever={lever} top={top} goal={objective.label} showCheap={showCheap} />)}
         </tbody>
       </table>
       </div>
@@ -84,6 +105,26 @@ export function BuildAdvisor({ input, compatibleMods, keep, onLoadPath }: Props)
           {advice.flags.map((flag) => <li key={flag}>{flag}</li>)}
         </ul>
       )}
+
+      <div className="advisor-arcanes">
+        <h3>Arcane</h3>
+        <p className="muted">
+          {currentArcane
+            ? <>Yours: <b>{currentArcane.arcane.arcane.name}</b>.{shownArcanes.length ? ' Swapping it for:' : ' Nothing beats it for this goal.'}</>
+            : shownArcanes.length ? <>No arcane equipped. Adding one:</> : <>No arcane equipped, and none of them help this goal.</>}
+        </p>
+        {shownArcanes.length > 0 && (
+          <ul>
+            {shownArcanes.map((option) => (
+              <li key={option.arcane.arcane.uniqueName}>
+                <span>{option.arcane.arcane.name}</span>
+                <b>{pctText(option.gain)}</b>
+                <button onClick={() => onEquipArcane(option.arcane)}>Equip</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {advice.slots.length > 0 && (
         <div className="advisor-slots">
@@ -112,8 +153,9 @@ export function BuildAdvisor({ input, compatibleMods, keep, onLoadPath }: Props)
           <button onClick={runPaths}>{shownPaths ? 'Rerun' : 'Suggest build paths'}</button>
         </div>
         <p className="muted">
-          8 slots filled one at a time with whichever mod adds the most at that point{keep.length ? ' (your riven stays in)' : ''}, using your current
-          arcane, perks, target and buffs. It shows the order stats pay off in. The Compare tab's optimizer looks further ahead for the true best build.
+          8 slots filled one at a time with whichever mod adds the most at that point{keep.length ? ' (your riven stays in)' : ''}, plus the arcane that
+          suits those mods best, with your perks, target and buffs. It shows the order stats pay off in. The Compare tab's optimizer looks further ahead for
+          the true best build.
         </p>
         {shownPaths && (
           <div className="advisor-path-grid">
@@ -129,7 +171,8 @@ export function BuildAdvisor({ input, compatibleMods, keep, onLoadPath }: Props)
                     <li key={step.mod.name}>{step.mod.name} <span className="muted-inline">{pctText(step.gain)}</span></li>
                   ))}
                 </ol>
-                <button onClick={() => onLoadPath(path.steps.map((step) => step.mod))}>Load into slots</button>
+                <div>Arcane: {path.arcane ? <>{path.arcane.arcane.name} <span className="muted-inline">{pctText(path.arcaneGain)}</span></> : <span className="muted-inline">none helps</span>}</div>
+                <button onClick={() => onLoadPath(path.steps.map((step) => step.mod), path.arcane)}>Load into slots</button>
               </div>
             ))}
           </div>
@@ -139,9 +182,16 @@ export function BuildAdvisor({ input, compatibleMods, keep, onLoadPath }: Props)
   )
 }
 
-function LeverLine({ lever, top }: { lever: LeverRow; top: number }) {
+function LeverLine({ lever, top, goal, showCheap }: { lever: LeverRow; top: number; goal: string; showCheap: boolean }) {
   const best = lever.bestMod
-  const cheap = lever.cheapestMod ?? best
+  // only a mod that actually gains is "cheap"
+  const cheap = lever.cheapestMod ?? (best && best.gain > 0 ? best : null)
+  const label = rating(lever.weight, top)
+  const explain = lever.weight < -0.0005
+    ? `Adding a bit of ${lever.label} would lower your ${goal} (${pctText(lever.weight)} for a small +10% of it).`
+    : `A small boost to ${lever.label} (+10%, about a tenth of a mod) would raise your ${goal} by ${pctText(lever.weight)}. ` +
+      'Ratings compare this against the other stats: "Top pick" is the best stat to add right now. ' +
+      'With all 8 slots full, adding means giving up a mod, see Best mod for what a swap does.'
   return (
     <tr className={lever.weight <= 1e-4 ? 'dim' : ''}>
       <td>
@@ -153,12 +203,16 @@ function LeverLine({ lever, top }: { lever: LeverRow; top: number }) {
         )}
       </td>
       <td className="advisor-weight">
-        <span className="advisor-bar" style={{ width: `${Math.max(0, (lever.weight / top) * 100)}%` }} />
-        <span>{pctText(lever.weight)}</span>
+        <span className="advisor-meter"><span className="advisor-bar" style={{ width: `${Math.max(0, Math.min(1, lever.weight / top)) * 100}%` }} /></span>
+        <Tip className={`rating rating-${RATING_CLASS[label]}`} text={explain}>{label}</Tip>
       </td>
       <td>{lever.equippedCount || ''}</td>
-      <td>{best ? <>{best.mod.name} <b>{pctText(best.gain)}</b>{best.swapsOut && <span className="muted-inline"> for {best.swapsOut}</span>}</> : <span className="muted-inline">—</span>}</td>
-      <td>{cheap ? <>{cheap.mod.name} <span className="muted-inline">{pctText(cheap.gain / cheap.drain)} / pt ({cheap.drain})</span></> : ''}</td>
+      <td>
+        {!best ? <span className="muted-inline">—</span>
+          : best.gain > 0 ? <>{best.mod.name} <b>{pctText(best.gain)}</b></>
+            : <span className="muted-inline">{best.mod.name} {pctText(best.gain)}</span>}
+      </td>
+      {showCheap && <td>{cheap ? <>{cheap.mod.name} <span className="muted-inline">{pctText(cheap.gain / cheap.drain)} / pt ({cheap.drain})</span></> : ''}</td>}
     </tr>
   )
 }

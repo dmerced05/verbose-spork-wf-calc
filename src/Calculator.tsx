@@ -26,6 +26,7 @@ import type { FrameLoad } from './optimizer/damageCap'
 import { FormulaPanel } from './components/FormulaPanel'
 import { StatsPanel } from './components/StatsPanel'
 import { ResultsBar } from './components/ResultsBar'
+import { Thumb } from './components/Thumb'
 import { TargetPanel, resolveArmor, resolveEnemy } from './components/TargetPanel'
 import type { Buffs, Debuffs, EquippedMod, TargetSettings } from './types'
 import type { LeaderboardEntry } from './optimizer/leaderboardTypes'
@@ -286,6 +287,7 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
           <section className="panel">
             <h2>Weapon</h2>
             <div className="row">
+              <Thumb imageName={weapon.imageName} alt={weapon.name} wide />
               <SearchSelect options={weaponOptions} selectedId={weaponId} onSelect={pickWeapon} placeholder="Search weapons" />
               {weapon.attacks.length > 1 && (
                 <select value={attackIndex} onChange={(event) => { setAttackIndex(Number(event.target.value)); setCoOverride('auto') }}>

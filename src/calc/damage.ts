@@ -82,6 +82,12 @@ export interface DotRow {
 
 // the factors behind one hit (the formula panel). hit.average = (sum of modded x type + extraHit) x faction x
 // (1 + vulnerability) x headshot x (critAverage + attrition)
+// one piece of a damage type's share of base damage
+export type TypePart =
+  | { kind: 'physical'; base: number; mod: number } // base share x (1 + IPS mods)
+  | { kind: 'element'; element: string; mod: number; innate: number } // element mods (% of all base) + innate share
+  | { kind: 'separate'; source: 'passive' | 'ability'; value: number } // doesn't combine (Tonkkatt, Freeze Force)
+
 export interface HitBreakdown {
   baseDamage: number
   damageBonus: number // damage mods (Serration...), as a fraction
@@ -90,7 +96,9 @@ export interface HitBreakdown {
   coBonus: number
   heavyCombo: number // heavy attack / exalted combo multiplier, 1 otherwise
   damageScale: number
-  types: { damageType: string; share: number; modded: number; type: number }[] // share = quantized fraction of base
+  types: { damageType: string; share: number; modded: number; type: number; weakness: number; armor: number; debuff: number; debuffName: string }[] // share = quantized fraction of base
+  // where each type's share comes from, for the formula panel: raw = before quantizing, parts add up to raw
+  typeParts: { damageType: string; raw: number; parts: TypePart[] }[]
   extraHit: number // Xata's Whisper style separate hits (faction already in)
   faction: number
   vulnerability: number
@@ -672,13 +680,16 @@ export function calculate({
   // ---- 2. damage type proportions + quantization ----
   const baseDamage = sum(Object.values(attack.damage))
   const proportions: Record<string, number> = {}
-  const addProportion = (damageType: string, amount: number) => {
+  const typeParts: Record<string, TypePart[]> = {}
+  const addProportion = (damageType: string, amount: number, ...parts: TypePart[]) => {
     proportions[damageType] = (proportions[damageType] ?? 0) + amount
+    typeParts[damageType] = [...(typeParts[damageType] ?? []), ...parts]
   }
 
   for (const damageType of PHYSICAL_TYPES) {
     const base = attack.damage[damageType] ?? 0
-    if (base > 0) addProportion(damageType, (base / baseDamage) * (1 + (physicalBonus[damageType] ?? 0)))
+    const mod = physicalBonus[damageType] ?? 0
+    if (base > 0) addProportion(damageType, (base / baseDamage) * (1 + mod), { kind: 'physical', base: base / baseDamage, mod })
   }
 
   // element mods are a % of the full base damage. innate primary elements go to the
@@ -692,19 +703,23 @@ export function calculate({
     elementAmounts[damageType] = (elementAmounts[damageType] ?? 0) + base / baseDamage
   }
   const primaryQueue = combineQueue.filter((damageType) => PRIMARY_ELEMENTS.includes(damageType))
+  const elementPart = (element: string): TypePart => {
+    const innate = (attack.damage[element] ?? 0) / baseDamage
+    return { kind: 'element', element, mod: elementAmounts[element] - innate, innate }
+  }
   for (const damageType of combineQueue) {
-    if (!PRIMARY_ELEMENTS.includes(damageType)) addProportion(damageType, elementAmounts[damageType])
+    if (!PRIMARY_ELEMENTS.includes(damageType)) addProportion(damageType, elementAmounts[damageType], elementPart(damageType))
   }
   for (let i = 0; i < primaryQueue.length; i += 2) {
     const first = primaryQueue[i]
     const second = primaryQueue[i + 1]
-    if (!second) addProportion(first, elementAmounts[first])
-    else addProportion(COMBINED_ELEMENTS[[first, second].sort().join('+')], elementAmounts[first] + elementAmounts[second])
+    if (!second) addProportion(first, elementAmounts[first], elementPart(first))
+    else addProportion(COMBINED_ELEMENTS[[first, second].sort().join('+')], elementAmounts[first] + elementAmounts[second], elementPart(first), elementPart(second))
   }
   // passive elements that skip combining (Tonkkatt's heat stays heat)
-  for (const [damageType, amount] of Object.entries(separateElements)) addProportion(damageType, amount)
+  for (const [damageType, amount] of Object.entries(separateElements)) addProportion(damageType, amount, { kind: 'separate', source: 'passive', value: amount })
   // ability elements (Freeze Force, Electric Shield) also skip combining, but they do take their share of procs
-  for (const [damageType, amount] of Object.entries(uncombinedElements)) addProportion(damageType, amount)
+  for (const [damageType, amount] of Object.entries(uncombinedElements)) addProportion(damageType, amount, { kind: 'separate', source: 'ability', value: amount })
 
   // which status types the target has, for CO / Galvanized. by default it's the build's own damage types
   // (base physical + modded elements), so a gun can't count statuses it never applies
@@ -828,13 +843,17 @@ export function calculate({
 
   // per damage type multiplier vs the chosen layer. toxin skips shields and hits health.
   // slash DoT bypasses armor, true damage always does.
-  const typeMultiplier = (damageType: string, bypassArmor = false): number => {
+  // the three pieces of T: faction weakness, armor, and the Viral (health) / Magnetic (shields, overguard) debuff
+  const typeFactors = (damageType: string, bypassArmor = false) => {
     const weakness = factionWeakness[damageType] ?? 1
     const layer = target.layer === 'shield' && damageType === 'toxin' ? 'health' : target.layer
-    if (layer === 'overguard') return magneticMultiplier(stacks('magnetic')) * overguardMultiplier
-    if (layer === 'shield') return weakness * magneticMultiplier(stacks('magnetic'))
-    const armorPart = bypassArmor || damageType === 'true' ? 1 : armorMultiplier
-    return weakness * armorPart * viralMultiplier(stacks('viral'))
+    if (layer === 'overguard') return { weakness: overguardMultiplier, armor: 1, debuff: magneticMultiplier(stacks('magnetic')), debuffName: 'magnetic' }
+    if (layer === 'shield') return { weakness, armor: 1, debuff: magneticMultiplier(stacks('magnetic')), debuffName: 'magnetic' }
+    return { weakness, armor: bypassArmor || damageType === 'true' ? 1 : armorMultiplier, debuff: viralMultiplier(stacks('viral')), debuffName: 'viral' }
+  }
+  const typeMultiplier = (damageType: string, bypassArmor = false): number => {
+    const factors = typeFactors(damageType, bypassArmor)
+    return factors.weakness * factors.armor * factors.debuff
   }
 
   // Weak_Point: (head multiplier + 1.5 x weak point damage bonuses) x (1 + headshot multiplier bonuses)
@@ -1124,8 +1143,10 @@ export function calculate({
       baseDamage, damageBonus: bonus.damage, separateMultiplier: separateDamageMultiplier, coMode: co.mode, coBonus,
       heavyCombo: heavyComboFactor, damageScale,
       types: Object.entries(moddedByType).map(([damageType, modded]) => ({
-        damageType, share: moddedBaseDamage > 0 ? modded / moddedBaseDamage : 0, modded, type: typeMultiplier(damageType),
+        damageType, share: moddedBaseDamage > 0 ? modded / moddedBaseDamage : 0, modded, type: typeMultiplier(damageType), ...typeFactors(damageType),
       })).sort((a, b) => b.modded - a.modded),
+      typeParts: Object.entries(proportions).filter(([, raw]) => raw > 0)
+        .map(([damageType, raw]) => ({ damageType, raw, parts: typeParts[damageType] ?? [] })).sort((a, b) => b.raw - a.raw),
       extraHit: extraHitNoCrit, faction: factionMultiplier, vulnerability, headshot: headshotFactor,
       critChance, critMultiplier, critAverage: averageCritMultiplier, critNormal: normalCritMultiplier, critHit: critHitMultiplier,
       attrition: attritionBonus,

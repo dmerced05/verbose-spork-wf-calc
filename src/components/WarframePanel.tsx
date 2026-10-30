@@ -13,6 +13,7 @@ import {
 import type { Warframe, WarframeAbilityInfo, Weapon } from '../types'
 import { AURA_SLOT_START, EXILUS_SLOT, ModSlots, TOTAL_SLOTS, type ArcaneSlot, type ModSlot } from './ModSlots'
 import { SearchSelect } from './SearchSelect'
+import { Thumb } from './Thumb'
 import type { FrameLoad } from '../optimizer/damageCap'
 import { defaultConditionalStacks, maxConditionalStacks } from '../calc/parseMod'
 import { SHARD_BUFFS, SHARD_COLORS, SHARD_SLOTS, VIOLET_ENERGY_THRESHOLD, shardBuffsById, type ShardSlot } from '../data/archonShards'
@@ -310,6 +311,7 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest }
       <div className="row spread">
         <h2>Warframe</h2>
         <div className="row">
+          <Thumb imageName={frame.imageName} alt={frame.name} />
           <SearchSelect options={frameOptions} selectedId={frameId} onSelect={pickFrame} placeholder="Search Warframes" />
         </div>
       </div>

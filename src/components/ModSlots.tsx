@@ -5,6 +5,7 @@ import { blockingMod } from '../calc/modConflicts'
 import { arcanesById, modsById } from '../data'
 import type { Arcane, Mod } from '../types'
 import { PolarityIcon } from './PolarityIcon'
+import { IMAGE_BASE } from './Thumb' // WFCD's image CDN, keyed by the imageName in warframe-items
 
 export interface ModSlot {
   modId: string
@@ -27,8 +28,6 @@ const ARCANE_SLOT = 100
 // Warframes: aura slots come after the exilus (index 9, Jade's second aura 10)
 export const AURA_SLOT_START = TOTAL_SLOTS
 
-// WFCD's image CDN, keyed by the imageName in warframe-items
-const IMAGE_BASE = 'https://cdn.warframestat.us/img/'
 
 interface Props {
   weaponName: string // shown in the header ("Upgrades: Braton Prime")

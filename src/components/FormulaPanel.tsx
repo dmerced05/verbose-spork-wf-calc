@@ -3,7 +3,7 @@
 // from the calc's own factors (result.breakdown / dot.factors), so they multiply out to what the stats panel shows
 import { useMemo, useState } from 'react'
 import katex from 'katex'
-import type { CalcResult } from '../calc/damage'
+import type { CalcResult, TypePart } from '../calc/damage'
 import { expectedDamage, shotTimes } from '../calc/simulate'
 
 interface Props {
@@ -27,6 +27,32 @@ function Tex({ tex }: { tex: string }) {
   const source = tex.includes('\\\\') ? `\\begin{gathered}${tex}\\end{gathered}` : tex
   const html = useMemo(() => katex.renderToString(source, { displayMode: true, throwOnError: false }), [source])
   return <div className="formula-tex" dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+// inline symbol for the legend
+function Sym({ tex }: { tex: string }) {
+  const html = useMemo(() => katex.renderToString(tex, { displayMode: false, throwOnError: false }), [tex])
+  return <span dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+const quantized = (raw: number) => Math.floor(raw * 32 + 0.5) / 32
+const cap = (word: string) => word[0].toUpperCase() + word.slice(1)
+
+// one type's share written out: physical = base share x (1 + IPS mods), elements = mods + innate share (combined
+// elements list both halves)
+function partSymbols(parts: TypePart[], damageType: string): string {
+  return parts.map((part) => {
+    if (part.kind === 'physical') return `\\tfrac{B_{${label(damageType)}}}{B}(1+P_{${label(damageType)}})`
+    if (part.kind === 'element') return `(E_{${label(part.element)}}${part.innate > 0 ? ` + \\tfrac{B_{${label(part.element)}}}{B}` : ''})`
+    return part.source === 'ability' ? `G_{${label(damageType)}}` : `Z_{${label(damageType)}}`
+  }).join(' + ')
+}
+function partNumbers(parts: TypePart[]): string {
+  return parts.map((part) => {
+    if (part.kind === 'physical') return `${num(part.base)}\\cdot(1+${num(part.mod)})`
+    if (part.kind === 'element') return part.innate > 0 ? `(${num(part.mod)}+${num(part.innate)})` : num(part.mod)
+    return num(part.value)
+  }).join(' + ')
 }
 
 function FormulaBlock({ title, note, symbols, numbers, show }: { title: string; note?: string; symbols: string; numbers: string; show: Show }) {
@@ -101,6 +127,30 @@ export function FormulaPanel({ result }: Props) {
     + `Crit: ${crit.name}, c = ${(b.critChance * 100).toFixed(1)}%, k = ${b.critMultiplier.toFixed(2)}×.`
     + (b.coMode === 'add' ? ' This weapon adds CO outside the damage mods.' : b.coMode === 'multiply' ? ' This weapon multiplies CO with the damage mods.' : '')
 
+  // ---- where each type's share and target multiplier come from ----
+  const typeRows = b.typeParts.map((row) => ({ row, target: b.types.find((typeRow) => typeRow.damageType === row.damageType) }))
+  const combined = b.typeParts.filter((row) => row.parts.filter((part) => part.kind === 'element').length === 2)
+  const typesSymbols = [
+    `q_t = \\frac{\\lfloor 32\\,\\hat q_t + \\tfrac12\\rfloor}{32},\\qquad`,
+    `\\hat q_{${label('IPS')}} = \\tfrac{B_t}{B}\\,(1+P_t),\\qquad`,
+    `\\hat q_{${label('element')}} = E_t + \\tfrac{B_t}{B},\\qquad`,
+    `\\hat q_{${label('combined')}} = \\hat q_{e_1} + \\hat q_{e_2},\\qquad`,
+    `T_t = \\underbrace{w_t}_{${label('weakness')}}\\cdot\\underbrace{\\alpha_t}_{${label('armor')}}\\cdot\\underbrace{D}_{${label(b.types[0]?.debuffName === 'magnetic' ? 'magnetic' : 'viral')}}`,
+  ].join(' ')
+  const typesNumbers = typeRows.map(({ row, target }) => {
+    const name = label(row.damageType)
+    const q = quantized(row.raw)
+    const share = `\\hat q_{${name}} = ${partSymbols(row.parts, row.damageType)} = ${partNumbers(row.parts)} = ${num(row.raw)}\\ \\to\\ q = ${num(q)}`
+    const t = target ? `,\\qquad T_{${name}} = ${num(target.weakness)}\\cdot ${num(target.armor)}\\cdot ${num(target.debuff)} = ${num(target.type)}` : ''
+    return share + t
+  }).join(' \\\\ ')
+  const typesNote = 'B_t = the attack\'s own base damage of that type, P = physical (IPS) mods for that type, E = elemental mods for that element '
+    + '(a % of all base damage, not just one type). '
+    + (combined.length ? `Combined: ${combined.map((row) => `${cap(row.damageType)} = ${row.parts.map((part) => (part.kind === 'element' ? part.element : '')).join(' + ')}`).join(', ')} (elements pair up in mod order, innate ones go last). ` : '')
+    + 'Each type is rounded to the nearest 1/32 of base on its own (quantization). w = the faction\'s weakness or resistance, '
+    + `α = 1 − armor reduction (${typeRows.some(({ target }) => target && target.armor < 1) ? `${num(1 - (typeRows.find(({ target }) => target && target.armor < 1)?.target?.armor ?? 1))} of the damage blocked here` : 'no armor here'}, Slash procs and True damage skip it), `
+    + 'D = Viral on health (Magnetic on shields / overguard).'
+
   // ---- one status proc ----
   let procSymbols = ''
   let procNumbers = ''
@@ -156,6 +206,42 @@ export function FormulaPanel({ result }: Props) {
     + `. H̄ is the average hit per pellet (crits averaged, whatever the crit view above). p = procs per pellet, k̄ = ticks of that`
     + ` status each proc gets in before the window closes, on average (late procs get cut off, Heat's refreshes keep old stacks going past 6).`
 
+  // every symbol, what it is, and what it is right now
+  const physicalMods = b.typeParts.flatMap((row) => row.parts.flatMap((part) => (part.kind === 'physical' && part.mod ? [`${row.damageType} ${num(part.mod * 100)}%`] : [])))
+  const elementMods = b.typeParts.flatMap((row) => row.parts.flatMap((part) => (part.kind === 'element' && part.mod ? [`${part.element} ${num(part.mod * 100)}%`] : [])))
+  const legend: { sym: string; meaning: string; value: string }[] = [
+    { sym: 'B', meaning: 'base damage of the attack (all types)', value: num(b.baseDamage) },
+    { sym: 'B_t', meaning: 'base damage of one type', value: Object.keys(result.damageTypes).length ? 'per type, see Damage types' : '' },
+    { sym: 'M', meaning: 'base damage mods (Serration, Pressure Point...)', value: `+${num(b.damageBonus * 100)}%` },
+    { sym: 'S', meaning: 'separate multipliers (Sharpshot, slam / throw / finisher bonuses...)', value: `×${num(b.separateMultiplier)}` },
+    ...(b.coMode !== 'none' ? [{ sym: 'CO', meaning: `Condition Overload / Galvanized per status (${b.coMode === 'multiply' ? 'multiplies' : 'adds'} on this weapon)`, value: `+${num(b.coBonus * 100)}%` }] : []),
+    ...(b.heavyCombo !== 1 ? [{ sym: 'C', meaning: 'heavy attack / ability combo multiplier', value: `×${num(b.heavyCombo)}` }] : []),
+    { sym: 'P_t', meaning: 'physical (IPS) mods for that type', value: physicalMods.join(', ') || 'none' },
+    { sym: 'E_t', meaning: 'elemental mods for that element (% of all base damage)', value: elementMods.join(', ') || 'none' },
+    { sym: 'q_t', meaning: 'share of base damage for type t, rounded to 1/32', value: b.types.map((row) => `${row.damageType} ${num(row.share)}`).join(', ') },
+    { sym: 'T_t', meaning: 'how much of type t reaches health: w · α · D', value: b.types.map((row) => `${row.damageType} ${num(row.type)}`).join(', ') },
+    { sym: 'w_t', meaning: 'faction weakness / resistance', value: b.types.map((row) => `${row.damageType} ${num(row.weakness)}`).join(', ') },
+    { sym: '\\alpha_t', meaning: 'armor: 1 − damage reduction', value: num(Math.min(...b.types.map((row) => row.armor), 1)) },
+    { sym: 'D', meaning: 'Viral (health) / Magnetic (shields) debuff', value: `×${num(b.types[0]?.debuff ?? 1)}` },
+    ...(b.extraHit > 0 ? [{ sym: 'X', meaning: 'separate extra hits (Xata\'s Whisper...)', value: num(b.extraHit) }] : []),
+    { sym: 'F', meaning: 'faction damage (Bane, Roar)', value: `×${num(b.faction)}` },
+    { sym: 'V', meaning: 'damage vulnerability on the target', value: `+${num(b.vulnerability * 100)}%` },
+    { sym: 'W', meaning: 'headshot multiplier', value: `×${num(b.headshot)}` },
+    { sym: 'c', meaning: 'crit chance', value: `${num(b.critChance * 100)}%` },
+    { sym: 'k', meaning: 'crit multiplier', value: `${num(b.critMultiplier)}×` },
+    { sym: 'K', meaning: `crit factor (${crit.name})`, value: `×${num(crit.value)}` },
+    ...(b.attrition > 0 ? [{ sym: 'A', meaning: 'Devouring Attrition style non-crit bonus', value: num(b.attrition) }] : []),
+    ...(beams ? [{ sym: 'b', meaning: 'beams merged into one tick (multishot on a beam)', value: num(result.beamMerge) }] : []),
+    ...(dot ? [
+      { sym: 'f', meaning: `status damage fraction (${dot.damageType})`, value: num(dot.factors.fraction) },
+      { sym: 'SD', meaning: 'status damage mods', value: `+${num(dot.factors.statusDamage * 100)}%` },
+      { sym: 'N', meaning: 'ticks per proc', value: String(dot.ticks) },
+      { sym: 'r', meaning: 'procs per second', value: num(dot.procsPerSecond) },
+    ] : []),
+    { sym: 'n(\\tau)', meaning: 'shots fired in the window', value: String(shots) },
+    { sym: 'm', meaning: 'multishot', value: num(model.multishot) },
+  ]
+
   return (
     <section className="panel formula-panel">
       <div className="row spread">
@@ -192,7 +278,20 @@ export function FormulaPanel({ result }: Props) {
           )}
         </div>
       </div>
+      <details className="formula-legend" open>
+        <summary>Legend</summary>
+        <div className="legend-grid">
+          {legend.map((entry) => (
+            <div key={entry.sym} className="legend-row">
+              <span className="legend-sym"><Sym tex={entry.sym} /></span>
+              <span className="legend-meaning">{entry.meaning}</span>
+              <span className="legend-value">{entry.value}</span>
+            </div>
+          ))}
+        </div>
+      </details>
       <FormulaBlock title="Single damage instance" symbols={hitSymbols} numbers={hitNumbers} note={hitNote} show={show} />
+      <FormulaBlock title="Damage types (IPS and elements)" symbols={typesSymbols} numbers={typesNumbers} note={typesNote} show={show} />
       {dot
         ? <FormulaBlock title={`Status proc damage (${dot.damageType})`} symbols={procSymbols} numbers={procNumbers} note={procNote} show={show} />
         : <p className="muted">No status procs on this attack (no status chance, or the target is immune).</p>}

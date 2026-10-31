@@ -9,6 +9,7 @@ import { resolveCoBehavior } from '../src/calc/conditionOverload'
 import { getIncarnonTiers } from '../src/calc/incarnon'
 import { INCARNON_FAMILIES } from '../src/data/incarnon'
 import { passivesFor } from '../src/data/passives'
+import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from '../src/optimizer/scenario'
 import { advise, arcaneOptions, buildPaths, greedyPath, pctText } from '../src/calc/advisor'
 import { damageModPool } from '../src/optimizer/modPool'
 import { equipArcane, equipMod } from '../src/optimizer/optimize'
@@ -1135,6 +1136,20 @@ const bratonResult = calculate({
 })
 console.log('Braton Prime types:', bratonResult.damageTypes.map((row) => `${row.damageType} ${row.modded}`).join(', '))
 expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonResult, 'blast'), (Math.floor(1.8 * 32 + 0.5) / 32) * 35 * 2.65)
+
+// Nightwatch Napalm: 30% of the modified base damage as Heat over 6 s, base damage mods only, no crit. Ogris explosion
+// 600 Blast + Serration (+165%) -> 1,590 x 5% = 79.5 per tick, 6 ticks per rocket
+{
+  const ogris = weapons.find((weapon) => weapon.name === 'Ogris')!
+  const napalmMod = mods.find((mod) => mod.name === 'Nightwatch Napalm')!
+  const withNapalm = calculate({
+    weapon: ogris, attack: ogris.attacks.find((option) => option.isAoE)!, mods: [maxed('Serration'), { mod: napalmMod, rank: napalmMod.fusionLimit, conditionalStacks: 0 }],
+    target: SCENARIO_TARGET, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS,
+  })
+  const fire = withNapalm.dots.find((dot) => dot.damageType === 'napalm')
+  expectClose('Nightwatch Napalm fire tick', fire?.tick.average ?? 0, 600 * 2.65 * 0.05)
+  expectClose('Nightwatch Napalm ticks', fire?.ticks ?? 0, 6)
+}
 
 if (failures) throw new Error(`${failures} check(s) failed`)
 console.log('\nall checks passed')

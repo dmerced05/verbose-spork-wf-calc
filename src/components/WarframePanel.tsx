@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { SlotPolarity } from '../calc/capacity'
 import { setSummary } from '../calc/modSets'
-import { warframeStateFor, warframeTotals, type WarframeBuild } from '../calc/warframeStats'
+import { EFFICIENCY_CAP, armorDr, warframeStateFor, warframeTotals, type WarframeBuild, type WarframeTotals } from '../calc/warframeStats'
 import { arcanes, arcanesById, getWarframeMods, helminthAbilities, isAuraMod, modsById, warframeBaseName, warframes, warframesById } from '../data'
 import {
   SUBSUMABLE, WARFRAME_ABILITIES, abilitiesById, abilityApplies, canSubsumeInto, effectsFor, modeledAbility, modeledVariants, scaledValue,
@@ -27,6 +27,31 @@ interface Props {
 }
 
 const percent = (fraction: number) => `${Math.round(fraction * 1000) / 10}%`
+const bonus = (fraction: number) => `${fraction >= 0 ? '+' : ''}${Math.round(fraction * 1000) / 10}%`
+
+interface StatCell { label: string; value: string; sub?: string; title: string; changed: boolean }
+function frameStatCells(frame: Warframe, totals: WarframeTotals): StatCell[] {
+  const sprintBase = frame.sprintSpeed ?? 1
+  const capped = totals.abilityEfficiency > EFFICIENCY_CAP
+  return [
+    { label: 'Strength', value: percent(totals.abilityStrength), title: 'Ability Strength: damage, buffs, debuffs. Base 100%', changed: totals.abilityStrength !== 1 },
+    { label: 'Duration', value: percent(totals.abilityDuration), title: 'Ability Duration: how long abilities last, and channeled drain. Base 100%', changed: totals.abilityDuration !== 1 },
+    { label: 'Range', value: percent(totals.abilityRange), title: 'Ability Range: radius / reach of abilities. Base 100%', changed: totals.abilityRange !== 1 },
+    {
+      label: 'Efficiency', value: percent(totals.abilityEfficiency), sub: `costs ${percent(totals.energyCost)}${capped ? ' (capped)' : ''}`,
+      title: `Ability Efficiency: energy cost = base x (2 - efficiency). It stops counting at ${percent(EFFICIENCY_CAP)} (25% cost). Base 100%`,
+      changed: totals.abilityEfficiency !== 1,
+    },
+    { label: 'Health', value: totals.health.toLocaleString(), title: `Base ${frame.health.toLocaleString()} (the export's number) x (1 + health mods) + flat bonuses`, changed: totals.health !== frame.health },
+    { label: 'Shields', value: totals.shields.toLocaleString(), title: `Base ${frame.shield.toLocaleString()} x (1 + shield mods) + Azure shards`, changed: totals.shields !== frame.shield },
+    { label: 'Armor', value: totals.armor.toLocaleString(), sub: `${percent(armorDr(totals.armor))} DR`, title: `Base ${frame.armor.toLocaleString()} x (1 + armor mods) + flat. DR on health = armor / (armor + 300)`, changed: totals.armor !== frame.armor },
+    { label: 'Energy', value: totals.energy.toLocaleString(), title: 'Rank 30 energy x (1 + Flow mods) + Azure shards. Violet shards double their crit damage above 500', changed: false },
+    { label: 'Sprint', value: `${Math.round(totals.sprintSpeed * 100) / 100}x`, title: `Sprint speed: base ${sprintBase} x (1 + Rush etc.)`, changed: Math.abs(totals.sprintSpeed - sprintBase) > 1e-9 },
+    { label: 'Casting', value: bonus(totals.castingSpeed), title: 'Casting speed bonus (Natural Talent, Amber shard). 0 = normal cast animations', changed: totals.castingSpeed !== 0 },
+    { label: 'Parkour', value: bonus(totals.parkourVelocity), title: 'Parkour velocity bonus (mods, Amber shard)', changed: totals.parkourVelocity !== 0 },
+    { label: 'Shield recharge', value: bonus(totals.shieldRecharge), title: 'Shield recharge rate bonus (Fast Deflection)', changed: totals.shieldRecharge !== 0 },
+  ]
+}
 const frameOptions = warframes.map((frame) => ({ id: frame.uniqueName, label: frame.name }))
 const defaultFrameId = warframes.find((frame) => frame.name === 'Excalibur')?.uniqueName ?? warframes[0].uniqueName
 
@@ -316,15 +341,15 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest }
         </div>
       </div>
 
+      {/* everything the frame's build adds up to, so you can read a frame without opening the game. hover for the base */}
       <div className="warframe-stats">
-        <div><span className="label">Ability Strength</span><span className="value">{percent(totals.abilityStrength)}</span></div>
-        <div><span className="label">Ability Duration</span><span className="value">{percent(totals.abilityDuration)}</span></div>
-        <div><span className="label">Health</span><span className="value">{totals.health.toLocaleString()}</span></div>
-        <div><span className="label">Shields</span><span className="value">{totals.shields.toLocaleString()}</span></div>
-        <div><span className="label">Armor</span><span className="value">{totals.armor.toLocaleString()}</span></div>
-        <div title="Rank 30 energy x (1 + Flow mods) + Azure shards. Violet shards double their crit damage above 500">
-          <span className="label">Max Energy</span><span className="value">{totals.energy.toLocaleString()}</span>
-        </div>
+        {frameStatCells(frame, totals).map((cell) => (
+          <div key={cell.label} title={cell.title} className={cell.changed ? 'changed' : ''}>
+            <span className="label">{cell.label}</span>
+            <span className="value">{cell.value}</span>
+            {cell.sub && <span className="sub">{cell.sub}</span>}
+          </div>
+        ))}
       </div>
 
       <ModSlots

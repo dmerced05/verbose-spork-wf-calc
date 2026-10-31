@@ -68,6 +68,7 @@ export interface Warframe {
   shield: number
   armor: number
   energy: number
+  sprintSpeed?: number // base sprint speed (1 = normal, Ash 1.15)
   auraPolarities: (string | null)[] // one per aura slot (Jade has two)
   polarities: string[]
   exilusPolarity: string | null

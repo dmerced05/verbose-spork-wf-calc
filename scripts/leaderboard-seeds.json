@@ -1,1 +1,100 @@
-[]
+[
+  {
+    "weaponId": "/Lotus/Weapons/Syndicates/SteelMeridian/Pistols/SMMarelok",
+    "attack": "Normal Attack",
+    "board": "sustained",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Pistol/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/WeaponFireDamageModExpert",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/GrinderMod",
+      "/Lotus/Upgrades/Mods/Pistol/PistolStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/FireEventPistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/Event/CritChanceWhileAimingPistolSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/SecondaryDamageOnHeatProc",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Syndicates/SteelMeridian/Pistols/SMMarelok",
+    "attack": "Normal Attack",
+    "board": "window10",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Pistol/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/WeaponFireDamageModExpert",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/GrinderMod",
+      "/Lotus/Upgrades/Mods/Pistol/PistolStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/FireEventPistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/Event/CritChanceWhileAimingPistolSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/SecondaryDamageOnHeatProc",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Syndicates/SteelMeridian/Pistols/SMMarelok",
+    "attack": "Normal Attack",
+    "board": "window30",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Pistol/Expert/WeaponFireDamageModExpert",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/PistolStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/GrinderMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/FireEventPistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/Event/CritChanceWhileAimingPistolSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/SecondaryDamageOnHeatProc",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Syndicates/SteelMeridian/Pistols/SMMarelok",
+    "attack": "Normal Attack",
+    "board": "attack",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Pistol/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponElectricityDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/PistolStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/ElectEventPistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/PistolSemiAutoFantasyMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponProcTimeMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/SecondaryCritOnHit",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/MK1Series/MK1Kunai",
+    "attack": "Normal Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Pistol/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponDamageAmountMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponElectricityDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/GrinderMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/RadiationFireratePistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/MagneticCritDamagePistolMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/SecondaryCritOnHit",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Swift Conclusion"
+      },
+      {
+        "tier": "III",
+        "name": "Rapid Reinforcement"
+      },
+      {
+        "tier": "IV",
+        "name": "Survivor's Edge"
+      }
+    ]
+  }
+]

@@ -209,7 +209,7 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 /* ---- top tabs ---- */
 .app-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .app-header h1 { margin: 0; }
-.tabs, .board-tabs { display: flex; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.tabs, .board-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .tabs button, .board-tabs button { border: 0; background: transparent; padding: 6px 14px; border-radius: 6px; color: var(--muted); }
 .tabs button.active, .board-tabs button.active { background: rgba(212, 180, 106, 0.15); color: var(--accent); }
 .tabs button:hover, .board-tabs button:hover { color: var(--text); }
@@ -362,7 +362,9 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .warframe-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
 .warframe-stats div { display: flex; flex-direction: column; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
 .warframe-stats .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-.warframe-stats .value { font-size: 1.1rem; color: var(--accent); }
+.warframe-stats .value { font-size: 1.1rem; color: var(--text); }
+.warframe-stats .changed .value { color: var(--accent); }
+.warframe-stats .sub { font-size: 0.7rem; color: var(--muted); }
 .warframe-panel .upgrades { margin: 10px 0; padding: 0; border: none; background: none; }
 .side-column.double-aura { grid-template-rows: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 640px) { .warframe-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -589,3 +591,58 @@ select { max-width: 100%; }
 .legend-sym { color: var(--accent); }
 .legend-meaning { color: var(--muted); }
 .legend-value { text-align: right; font-variant-numeric: tabular-nums; max-width: 180px; overflow-wrap: anywhere; }
+
+/* ---- shared: tone lists (Rivens, Compare Weapons) ---- */
+.hint-list { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 0.85rem; line-height: 1.4; }
+.tone-good { color: #a8e6b8; }
+.tone-bad { color: #ffb4a0; }
+.tone-good b, .tone-bad b { color: inherit; }
+
+/* ---- Rivens tab ---- */
+.riven-page, .compare-weapons { display: grid; gap: 16px; }
+.riven-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.riven-side { display: grid; gap: 16px; }
+@media (max-width: 900px) { .riven-grid { grid-template-columns: minmax(0, 1fr); } }
+.riven-range-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.riven-range-table th, .riven-range-table td { padding: 4px 8px 4px 0; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.riven-range-table td.buff { color: #8fd18f; white-space: nowrap; }
+.riven-range-table td.curse { color: #ff8a8a; white-space: nowrap; }
+.riven-range-table .section-row td { color: #c9a8ff; padding-top: 12px; font-weight: 600; }
+.riven-progress { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.riven-progress progress { width: 200px; }
+.riven-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; align-items: start; }
+@media (max-width: 1100px) { .riven-results { grid-template-columns: minmax(0, 1fr); } }
+.riven-results h4 { margin: 0 0 8px; font-size: 0.85rem; }
+.riven-stat-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.82rem; }
+.riven-stat-bars li { display: grid; grid-template-columns: minmax(0, 1fr) 90px 56px; align-items: center; gap: 6px; }
+.riven-stat-bars li.dim { color: var(--muted); }
+.riven-stat-bars .advisor-meter { width: 90px; margin: 0; }
+.riven-stat-bars b { text-align: right; }
+.riven-candidates { margin: 0 0 14px; padding-left: 18px; display: grid; gap: 8px; font-size: 0.85rem; }
+.riven-candidates .link-button { font-size: 0.78rem; padding: 0; }
+.curse-list { font-size: 0.85rem; }
+.curse-list p { margin: 6px 0 2px; }
+.curse-list ul { margin: 0; padding-left: 18px; }
+
+/* ---- Compare Weapons tab ---- */
+.cw-pickers { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: center; }
+.cw-picker { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+.cw-picker > :nth-child(2) { flex: 1; min-width: 180px; }
+.cw-vs { color: var(--muted); font-weight: 600; }
+.cw-evos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%; }
+.cw-evos select { max-width: 100%; font-size: 0.8rem; }
+@media (max-width: 700px) { .cw-pickers { grid-template-columns: minmax(0, 1fr); } .cw-vs { justify-self: center; } }
+.cw-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.cw-table th, .cw-table td { padding: 6px 10px 6px 0; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.cw-table th { color: var(--muted); font-weight: 600; }
+.cw-table.fixed { table-layout: fixed; }
+.cw-table.fixed th:first-child { width: 18%; }
+.cw-table.fixed th:last-child { width: 10%; }
+.cw-table td { overflow-wrap: anywhere; white-space: normal; }
+.riven-range-table td:first-child, .riven-candidates { white-space: normal; }
+.cw-table td.cw-better { color: var(--accent); font-weight: 600; }
+.cw-standing { font-size: 0.72rem; font-weight: 400; color: var(--muted); }
+.cw-standing.good { color: #a8e6b8; }
+.cw-standing.bad { color: #ffb4a0; }
+.cw-profiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+@media (max-width: 800px) { .cw-profiles { grid-template-columns: minmax(0, 1fr); } }

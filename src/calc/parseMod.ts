@@ -43,9 +43,11 @@ export type ModEffect =
   | { kind: 'flatStat'; stat: 'critChance' | 'statusChance'; value: number } // "+20 Final Status Chance", added after mods
   | { kind: 'critPerHit'; value: number; resetsAfter: number } // Secondary Enervate: flat crit per hit, gone after N big crits
   | { kind: 'forcedProcChance'; damageType: string; value: number } // extra proc chance on every hit, outside the damage split
+  | { kind: 'napalm'; fraction: number; seconds: number; procChance: number } // Nightwatch Napalm: a burning patch per rocket, see damage.ts
 
 // armor/health are flat ("+900 Armor"), the *Percent ones % of base, damageResistance is one multiplicative DR source
-export type FrameStat = 'armor' | 'armorPercent' | 'health' | 'healthPercent' | 'shieldPercent' | 'energyPercent' | 'strength' | 'duration' | 'damageResistance'
+export type FrameStat = 'armor' | 'armorPercent' | 'health' | 'healthPercent' | 'shieldPercent' | 'energyPercent' | 'strength' | 'duration' | 'range' | 'efficiency'
+  | 'sprintSpeed' | 'castingSpeed' | 'parkourVelocity' | 'shieldRecharge' | 'damageResistance'
 
 // Warframe arcanes that buff one weapon type ("+180% Melee Damage to Melee Weapons", "+120% Fire Rate to Pistols")
 export type WeaponScope = 'melee' | 'primary' | 'primaryNoShotgun' | 'secondary' | 'shotgun' | 'sniper' | 'guns'
@@ -89,6 +91,13 @@ const FRAME_STAT_PATTERNS: [RegExp, FrameStat][] = [
   [/^([+-][\d.]+)% Energy Max$/, 'energyPercent'], // Flow, Primed Flow, Archon Flow
   [/^([+-][\d.]+)% Ability Strength$/, 'strength'],
   [/^([+-][\d.]+)% Ability Duration$/, 'duration'],
+  // the rest don't touch weapon damage, they're for the panel's stat block (Stretch, Streamline, Rush, Natural Talent...)
+  [/^([+-][\d.]+)% Ability Range$/, 'range'],
+  [/^([+-][\d.]+)% Ability Efficiency$/, 'efficiency'],
+  [/^([+-][\d.]+)% Sprint Speed$/, 'sprintSpeed'],
+  [/^([+-][\d.]+)% Casting Speed$/, 'castingSpeed'],
+  [/^([+-][\d.]+)% (?:to )?Parkour Velocity$/, 'parkourVelocity'],
+  [/^([+-][\d.]+)% Shield Recharge$/, 'shieldRecharge'],
   // Adaptation is per damage type, against one kind of enemy that's all of it
   [/^([+-][\d.]+)% (?:[Dd]amage [Rr]esistance|Resistance to that Damage Type)$/, 'damageResistance'],
 ]

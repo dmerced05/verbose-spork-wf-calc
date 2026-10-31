@@ -274,6 +274,7 @@ function calculateOnce({
   let separateDamageMultiplier = 1 // Longbow Sharpshot style, multiplies outside the damage mods
   let multishotLocked = false // Acuity mods
   let duplicateOnCritChance = 0 // Melee Duplicate
+  let napalm: Extract<ModEffect, { kind: 'napalm' }> | null = null // Nightwatch Napalm
   const modFlat = { critChance: 0, statusChance: 0 } // "+20 Final Status Chance" (Entropy Burst, Napalm Grenades)
   let critPerHit: { value: number; resetsAfter: number } | null = null // Secondary Enervate
   let infiniteAmmo = false
@@ -323,6 +324,9 @@ function calculateOnce({
         break
       case 'duplicateOnCrit':
         duplicateOnCritChance += effect.value * times
+        break
+      case 'napalm':
+        napalm = effect
         break
       case 'heavyScaledCritChance':
         // normal attacks get the value, heavies get value x factor, so the extra part only counts on heavies
@@ -1010,6 +1014,41 @@ function calculateOnce({
         },
       }
     })
+  // Nightwatch Napalm (wiki Nightwatch_Napalm): each rocket's explosion leaves fire that deals "30% of the weapon's
+  // modified base damage as Heat damage ... over 6 seconds". "Damage output can only be increased by base damage mods"
+  // and faction mods (Kuva bonus element too, it's already in the base here), "Napalm cannot deal critical damage via any
+  // means", Status Damage mods don't touch it. so: base x (1 + damage mods) x faction, no CO, no elements, no crit.
+  // the fire also procs Heat at a fixed 68% chance, "ticking for 50% of napalm's damage per second for 3 seconds", and
+  // those procs do get Heat mods. I assume 1 tick/s, the target stays in the fire, and each rocket's patch burns on its own
+  // (the cast: TS can't see the assignment inside applyEffect's closure)
+  const napalmEffect = napalm as Extract<ModEffect, { kind: 'napalm' }> | null
+  if (napalmEffect && attack.isAoE) {
+    const napalm = napalmEffect
+    const flat = (value: number): CritSplit => ({ normal: value, crit: value, average: value })
+    const fireTick = (napalm.fraction / napalm.seconds) * baseDamage * (1 + bonus.damage) * heavyComboFactor * factionMultiplier * (1 + vulnerability)
+    const ticks = Math.max(1, Math.round(napalm.seconds))
+    const fireFactors = { fraction: napalm.fraction / napalm.seconds, statusBase: baseDamage * (1 + bonus.damage), element: 1, faction: factionMultiplier, statusDamage: 0, vulnerability, headshot: 1, merged: 1, type: typeMultiplier('heat') }
+    const fire = flat(fireTick * typeMultiplier('heat'))
+    dots.push({
+      damageType: 'napalm', procsPerSecond: pelletsPerSecond, tick: fire, ticks, perProc: scaleSplit(fire, ticks), dps: fire.average * ticks * pelletsPerSecond, aoe: null,
+      note: `Nightwatch Napalm: ${Math.round(napalm.fraction * 100)}% of the rocket's base damage (base damage and faction mods only) as Heat over ${napalm.seconds} s. No crits. Assumes the target stays in the fire and every rocket's patch burns separately.`,
+      factors: fireFactors,
+    })
+    if (statusMode !== 'immune') {
+      const heatScale = 1 + (elementBonus.heat ?? 0)
+      const durationScale = 1 + bonus.statusDuration + (statusDurationByType['*'] ?? 0) + (statusDurationByType.heat ?? 0)
+      const procTicks = Math.max(1, Math.floor(3 * durationScale + 1e-9))
+      const procTick = flat(0.5 * fireTick * heatScale * typeMultiplier('heat'))
+      const procsPerSecond = pelletsPerSecond * ticks * napalm.procChance
+      dots.push({
+        damageType: 'napalm-heat', procsPerSecond, tick: procTick, ticks: procTicks, perProc: scaleSplit(procTick, procTicks), dps: procTick.average * procTicks * procsPerSecond, aoe: null,
+        note: `Heat procs from the napalm: ${Math.round(napalm.procChance * 100)}% per fire tick (mods don't change it), each ticking for 50% of a fire tick x (1 + Heat mods) for 3 s (longer with Status Duration). Counted from the moment the rocket lands.`,
+        factors: { ...fireFactors, fraction: 0.5 * fireFactors.fraction, element: heatScale },
+      })
+    }
+    const line = 'Nightwatch Napalm: target stays in the fire for the full burn'
+    if (!requirements.includes(line)) requirements.push(line)
+  }
   const dotDps = sum(dots.map((dot) => dot.dps))
 
   // ---- biggest single instance (damage cap tab) ----

@@ -30,6 +30,7 @@ const usefulEffect = (effect: ModEffect, includeFireRate: boolean, { isHeavy, na
     case 'flatStat':
     case 'forcedProcChance':
     case 'duplicateOnCrit':
+    case 'napalm': // Nightwatch Napalm, only does anything on the rocket explosion
       return true
     case 'faction':
       return Boolean(target && BANE_TARGET[target.faction] === effect.faction)

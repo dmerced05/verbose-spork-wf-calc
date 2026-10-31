@@ -16,6 +16,16 @@ export function mechanicTags(weapon: Weapon, attack: Attack): MechanicTag[] {
   const isMelee = weapon.category === 'Melee'
   const isIncarnon = /incarnon/i.test(attack.name)
 
+  // Vinquibus: a rifle and a bayonet in one, each half modded on its own (the melee half is its own entry here)
+  if (/^Vinquibus/.test(weapon.name)) {
+    tags.push({
+      label: isMelee ? 'Bayonet half' : 'Rifle half',
+      explanation:
+        'Vinquibus sits in both the primary and the melee slot at once, with a separate mod setup and riven for each half (polarities are shared). ' +
+        `Here the halves are two entries: "Vinquibus" for the rifle and "Vinquibus (Melee)" for the bayonet. This is the ${isMelee ? 'bayonet' : 'rifle'}.`,
+    })
+  }
+
   if (attack.continuous) {
     tags.push({
       label: 'Beam',

@@ -239,7 +239,28 @@ const exaltedWeapons = readJson('Misc')
     if (/^Artemis Bow/.test(item.name)) weapon.attacks = weapon.attacks.map((attack) => (/^Base /.test(attack.name) ? { ...attack, multishot: 7 } : attack))
     return weapon
   })
-const weapons = [...regularWeapons, ...exaltedWeapons]
+// Vinquibus is one weapon in both the primary and the melee slot, with a separate mod setup (and riven) for each half.
+// the export only has the rifle, so the bayonet gets its own melee entry from the published stats (progametalk.com
+// Vinquibus page: "Attack Speed: 1", "Puncture: 182", "Slash: 78", "Critical Chance: 40%", "Critical Damage: 3.2x",
+// "Status Chance: 20%", "Heavy Attack: 1,300"). the slide attack (520) isn't an attack the calc ranks
+const vinquibus = regularWeapons.find((weapon) => weapon.name === 'Vinquibus')
+const handMadeWeapons = vinquibus ? [{
+  ...vinquibus,
+  uniqueName: `${vinquibus.uniqueName}#Melee`,
+  name: 'Vinquibus (Melee)',
+  type: 'Melee',
+  category: 'Melee',
+  multishot: 1,
+  trigger: null,
+  magazineSize: null,
+  reloadTime: null,
+  isBow: false,
+  attacks: [
+    { name: 'Normal Attack', isAoE: false, fireRate: 1, chargeTime: null, multishot: 1, critChance: 0.4, critMultiplier: 3.2, statusChance: 0.2, damage: { puncture: 182, slash: 78 } },
+    { name: 'Heavy Attack', isAoE: false, fireRate: 1, chargeTime: null, multishot: 1, critChance: 0.4, critMultiplier: 3.2, statusChance: 0.2, damage: { puncture: 910, slash: 390 }, heavy: true, heavyMultiplier: 5 },
+  ],
+}] : []
+const weapons = [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons]
 weapons.sort((a, b) => a.name.localeCompare(b.name))
 
 const weaponMods = readJson('Mods')
@@ -338,6 +359,7 @@ const warframes = readJson('Warframes')
     shield: frame.shield ?? 0,
     armor: frame.armor ?? 0,
     energy: frame.power ?? 0,
+    sprintSpeed: Math.round((frame.sprintSpeed ?? 1) * 1000) / 1000, // the export has float noise (0.89999998)
     auraPolarities: [frame.aura ?? null].flat().map((polarity) => (polarity === 'aura' ? 'universal' : polarity)),
     polarities: frame.polarities ?? [],
     exilusPolarity: frame.exilusPolarity ?? null,

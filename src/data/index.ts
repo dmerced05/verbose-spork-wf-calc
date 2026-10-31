@@ -62,7 +62,16 @@ const SUBTYPE_COMPAT: Record<string, (weapon: Weapon) => boolean> = {
 
 // weapon-specific mods name their weapon in compatName, not always in the same case ("AX-52" vs the weapon's "Ax-52",
 // "EFV-8 Mars" vs "Efv-8 Mars"), so it's a case-insensitive prefix match
-const namedFor = (weapon: Weapon, compatName: string) => weapon.name.toLowerCase().startsWith(compatName.toLowerCase())
+// augments go on every variant of their weapon (Nightwatch Napalm on the Kuva Ogris, Scattered Justice on the Vaykor Hek):
+// the weapon's name with its variant prefix dropped has to start with the mod's weapon name, as a whole word, so "Bolto"
+// doesn't catch "Boltor" and "Sobek" catches "Kuva Sobek". Prime / Wraith / Vandal come after the name already
+const VARIANT_PREFIX = /^(kuva|tenet|coda|prisma|mk1-|rakta|sancti|secura|synoid|telos|vaykor|dex|mara|carmine)\s*/
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const namedFor = (weapon: Weapon, compatName: string) => {
+  const name = weapon.name.toLowerCase()
+  const pattern = new RegExp(`^${escapeRegExp(compatName.toLowerCase())}(\\s|$)`)
+  return pattern.test(name) || pattern.test(name.replace(VARIANT_PREFIX, ''))
+}
 
 export function getCompatibleMods(weapon: Weapon): Mod[] {
   const modType = modTypeFor(weapon)

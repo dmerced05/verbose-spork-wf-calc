@@ -8,7 +8,7 @@ import { abilitiesById, type AbilityCast, type WarframeState } from '../data/war
 import type { Arcane, Mod, Warframe } from '../types'
 import { parseUpgrade, type FrameStat, type ModEffect } from './parseMod'
 import { countSets, setEnhancement, type SetPieces } from './modSets'
-import { NO_SHARD_BONUS, rank30Energy, shardTotals, type ShardSlot, type ShardWeaponBonus } from '../data/archonShards'
+import { NO_SHARD_BONUS, rank30Energy, shardBuffsById, shardTotals, type ShardSlot, type ShardWeaponBonus } from '../data/archonShards'
 
 export interface EquippedWarframeMod {
   mod: Mod
@@ -44,6 +44,13 @@ export interface DrSource {
 export interface WarframeTotals {
   abilityStrength: number // 1 = 100%
   abilityDuration: number // 1 = 100%
+  abilityRange: number // 1 = 100%
+  abilityEfficiency: number // 1 = 100%, before the 175% cap
+  energyCost: number // what abilities cost vs their base: 2 - efficiency, efficiency capped at 175%
+  sprintSpeed: number // the frame's base sprint x (1 + mods)
+  castingSpeed: number // bonus, 0 = normal
+  parkourVelocity: number // bonus, 0 = normal
+  shieldRecharge: number // bonus, 0 = normal
   armor: number
   health: number
   shields: number
@@ -66,6 +73,13 @@ export interface WarframeTotals {
   lines: string[] // what got counted, for the panel
 }
 
+const STAT_LABELS: Partial<Record<FrameStat, string>> = {
+  damageResistance: 'DR', range: 'range', efficiency: 'efficiency', sprintSpeed: 'sprint speed', castingSpeed: 'casting speed',
+  parkourVelocity: 'parkour velocity', shieldRecharge: 'shield recharge',
+}
+// Ability Efficiency stops at 175% (abilities never cost less than 25%)
+export const EFFICIENCY_CAP = 1.75
+
 const segments = (lines: string[]) => lines.flatMap((line) => line.split(/\\n|\n/)).map((segment) => segment.trim()).filter(Boolean)
 const percent = (text: string) => Number(text) / 100
 export const SHIELD_INNATE_DR = 0.5
@@ -74,7 +88,10 @@ const combineDr = (values: number[]) => 1 - values.reduce((taken, value) => take
 
 export function warframeTotals(build: WarframeBuild): WarframeTotals {
   const flat = { armor: build.extraArmor, health: 0 }
-  const scaling = { strength: build.extraStrength, duration: build.extraDuration ?? 0, armorPercent: 0, healthPercent: 0, shieldPercent: 0, energyPercent: 0 }
+  const scaling = {
+    strength: build.extraStrength, duration: build.extraDuration ?? 0, armorPercent: 0, healthPercent: 0, shieldPercent: 0, energyPercent: 0,
+    range: 0, efficiency: 0, sprintSpeed: 0, castingSpeed: 0, parkourVelocity: 0, shieldRecharge: 0,
+  }
   const drSources: DrSource[] = []
   const auraDamage = { melee: 0, rifle: 0, sniper: 0, pistol: 0, shotgun: 0 }
   let weakpointCritChance = 0
@@ -86,9 +103,8 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
     const total = value * times
     if (stat === 'damageResistance') drSources.push({ label: source, value: Math.min(0.9, total), on: 'both' })
     else if (stat === 'armor' || stat === 'health') flat[stat] += total
-    else if (stat === 'strength' || stat === 'duration') scaling[stat] += total
     else scaling[stat] += total
-    lines.push(`${source}: ${stat === 'armor' || stat === 'health' ? `+${Math.round(total)} ${stat}` : `${total >= 0 ? '+' : ''}${Math.round(total * 1000) / 10}% ${stat.replace('Percent', '').replace('damageResistance', 'DR')}`}`)
+    lines.push(`${source}: ${stat === 'armor' || stat === 'health' ? `+${Math.round(total)} ${stat}` : `${total >= 0 ? '+' : ''}${Math.round(total * 1000) / 10}% ${STAT_LABELS[stat] ?? stat.replace('Percent', '')}`}`)
   }
   const addUpgrade = (name: string, levelStats: string[][], rank: number, stacks: number, enhance = 1) => {
     const parsed = parseUpgrade(levelStats, rank)
@@ -155,6 +171,13 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
   const shards = shardTotals(build.shards ?? [], energyBeforeShards)
   scaling.strength += shards.strength
   scaling.duration += shards.duration
+  // Amber casting speed / parkour shards don't touch weapons, so shardTotals skips them, but they're frame stats
+  for (const slot of build.shards ?? []) {
+    const shard = slot && shardBuffsById.get(slot.buffId)
+    const value = shard ? (slot.tauforged ? shard.tauforged : shard.normal) : 0
+    if (shard?.id === 'amber-casting') scaling.castingSpeed += value
+    if (shard?.id === 'amber-parkour') scaling.parkourVelocity += value
+  }
   flat.armor += shards.armor
   flat.health += shards.health
   if (shards.lines.length) lines.push(`Archon Shards: ${shards.lines.join(', ')}`)
@@ -162,6 +185,8 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
 
   const abilityStrength = Math.max(0, 1 + scaling.strength)
   const abilityDuration = Math.max(0, 1 + scaling.duration)
+  const abilityRange = Math.max(0, 1 + scaling.range)
+  const abilityEfficiency = 1 + scaling.efficiency
 
   // abilities: % of base armor/health/shields go in with the mods, DR sources stack multiplicatively
   const frameName = warframeBaseName(build.frame.name)
@@ -206,7 +231,11 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
   const effectiveHealth = health / Math.max(1e-6, 1 - healthDr) + shields / Math.max(1e-6, 1 - shieldDr)
 
   return {
-    abilityStrength, abilityDuration, armor, health, shields, energy,
+    abilityStrength, abilityDuration, abilityRange, abilityEfficiency,
+    energyCost: 2 - Math.min(EFFICIENCY_CAP, abilityEfficiency),
+    sprintSpeed: (build.frame.sprintSpeed ?? 1) * (1 + scaling.sprintSpeed),
+    castingSpeed: scaling.castingSpeed, parkourVelocity: scaling.parkourVelocity, shieldRecharge: scaling.shieldRecharge,
+    armor, health, shields, energy,
     shards: shards.weapon ?? NO_SHARD_BONUS, shardStrength: shards.strength, violetDoubled: shards.violetDoubled,
     drSources: allSources, healthDr, shieldDr, effectiveHealth, damageCap, setPieces,
     auraDamage, weakpointCritChance, corrosiveProjections, lines,

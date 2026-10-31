@@ -3,11 +3,16 @@ import { Calculator, type BuildToLoad } from './Calculator'
 import { Leaderboard } from './components/Leaderboard'
 import { Compare } from './components/Compare'
 import { DamageCap } from './components/DamageCap'
+import { CompareWeapons } from './components/CompareWeapons'
+import { RivenPage } from './components/RivenPage'
 import type { CompareScenario } from './optimizer/compare'
 import type { RivenConfig } from './calc/riven'
 
-type Tab = 'calculator' | 'leaderboard' | 'compare' | 'cap'
-const TABS: Tab[] = ['calculator', 'leaderboard', 'compare', 'cap']
+type Tab = 'calculator' | 'leaderboard' | 'compare' | 'weapons' | 'rivens' | 'cap'
+const TABS: Tab[] = ['calculator', 'leaderboard', 'compare', 'weapons', 'rivens', 'cap']
+const TAB_LABELS: Record<Tab, string> = {
+  calculator: 'Calculator', leaderboard: 'Leaderboard', compare: 'Compare Build Paths', weapons: 'Compare Weapons', rivens: 'Rivens', cap: 'Damage Cap',
+}
 const tabFromHash = (): Tab => {
   if (typeof window === 'undefined') return 'calculator'
   const fromHash = window.location.hash.slice(1) as Tab
@@ -19,6 +24,8 @@ export default function App() {
   const [leaderboardOpened, setLeaderboardOpened] = useState(tab === 'leaderboard') // only fetch the JSON once it's needed
   const [compareOpened, setCompareOpened] = useState(tab === 'compare')
   const [capOpened, setCapOpened] = useState(tab === 'cap')
+  const [weaponsOpened, setWeaponsOpened] = useState(tab === 'weapons')
+  const [rivensOpened, setRivensOpened] = useState(tab === 'rivens')
   const [buildToLoad, setBuildToLoad] = useState<BuildToLoad | null>(null)
   // the calculator's setup, so Compare can run against it and reuse its riven
   const [calculatorScenario, setCalculatorScenario] = useState<CompareScenario | null>(null)
@@ -26,7 +33,16 @@ export default function App() {
 
   // the tab lives in the URL hash so a leaderboard link can be shared and back/forward works
   useEffect(() => {
-    const onHashChange = () => setTab(tabFromHash())
+    const onHashChange = () => {
+      const next = tabFromHash()
+      // a tab reached by link / back button mounts like a clicked one
+      if (next === 'leaderboard') setLeaderboardOpened(true)
+      if (next === 'compare') setCompareOpened(true)
+      if (next === 'cap') setCapOpened(true)
+      if (next === 'weapons') setWeaponsOpened(true)
+      if (next === 'rivens') setRivensOpened(true)
+      setTab(next)
+    }
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
@@ -35,6 +51,8 @@ export default function App() {
     if (next === 'leaderboard') setLeaderboardOpened(true)
     if (next === 'compare') setCompareOpened(true)
     if (next === 'cap') setCapOpened(true)
+    if (next === 'weapons') setWeaponsOpened(true)
+    if (next === 'rivens') setRivensOpened(true)
     setTab(next)
     window.history.replaceState(null, '', next === 'calculator' ? '#' : `#${next}`)
   }
@@ -44,18 +62,11 @@ export default function App() {
       <header className="app-header">
         <h1>WF Damage Calc</h1>
         <nav className="tabs" role="tablist">
-          <button role="tab" aria-selected={tab === 'calculator'} className={tab === 'calculator' ? 'active' : ''} onClick={() => openTab('calculator')}>
-            Calculator
-          </button>
-          <button role="tab" aria-selected={tab === 'leaderboard'} className={tab === 'leaderboard' ? 'active' : ''} onClick={() => openTab('leaderboard')}>
-            Leaderboard
-          </button>
-          <button role="tab" aria-selected={tab === 'compare'} className={tab === 'compare' ? 'active' : ''} onClick={() => openTab('compare')}>
-            Compare
-          </button>
-          <button role="tab" aria-selected={tab === 'cap'} className={tab === 'cap' ? 'active' : ''} onClick={() => openTab('cap')}>
-            Damage Cap
-          </button>
+          {TABS.map((id) => (
+            <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'active' : ''} onClick={() => openTab(id)}>
+              {TAB_LABELS[id]}
+            </button>
+          ))}
         </nav>
       </header>
 
@@ -79,6 +90,23 @@ export default function App() {
           <Compare
             calculatorScenario={calculatorScenario}
             calculatorRiven={calculatorRiven}
+            onLoadBuild={(entry, riven, keepScenario) => {
+              setBuildToLoad({ entry, nonce: Date.now(), riven, keepScenario })
+              openTab('calculator')
+              window.scrollTo({ top: 0 })
+            }}
+          />
+        </div>
+      )}
+      {weaponsOpened && (
+        <div hidden={tab !== 'weapons'}>
+          <CompareWeapons />
+        </div>
+      )}
+      {rivensOpened && (
+        <div hidden={tab !== 'rivens'}>
+          <RivenPage
+            calculatorScenario={calculatorScenario}
             onLoadBuild={(entry, riven, keepScenario) => {
               setBuildToLoad({ entry, nonce: Date.now(), riven, keepScenario })
               openTab('calculator')

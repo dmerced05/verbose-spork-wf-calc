@@ -45,6 +45,12 @@ const RULES: [RegExp, (match: RegExpMatchArray) => SpecialLine][] = [
   [/^Increased Damage and Status Chance by \+?([\d.]+)% for every ([\d,]+) Warframe Health\. Capped at ([\d.]+)%/i, (m) => ({
     trigger: `Warframe health per ${m[2]}:`, maxStacks: Math.round(Number(m[3]) / Number(m[1])), effects: [stat('damage', pct(m[1])), stat('statusChance', pct(m[1]))],
   })],
+  // Nightwatch Napalm (Ogris): "Rockets disperse napalm, inflicting 30% damage over 6s across 90% of the explosion area."
+  // the wiki: "The fire will deal 30% of the weapon's modified base damage as Heat damage with 68% chance to proc over 6
+  // seconds". the 68% isn't in the mod text and "Status chance is not affected by mods", so it's fixed here
+  [/^Rockets disperse napalm, inflicting ([\d.]+)% damage over ([\d.]+)s/i, (m) => ({
+    effects: [{ kind: 'napalm', fraction: pct(m[1]), seconds: Number(m[2]), procChance: 0.68 }],
+  })],
   // Entropy Burst / Napalm Grenades: "+20 Final Status Chance"
   [/^\+([\d.]+) Final Status Chance$/i, (m) => ({ effects: [{ kind: 'flatStat', stat: 'statusChance', value: pct(m[1]) }] })],
   // Exposing Harpoon

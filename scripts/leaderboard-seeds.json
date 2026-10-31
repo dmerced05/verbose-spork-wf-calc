@@ -376,5 +376,134 @@
     ],
     "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
     "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Thanotech/ThanoPistol/ThanotechPistol",
+    "attack": "Lock-On Mode + Lock-On Radial Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Pistol/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/MagneticCritDamagePistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/WeaponFireDamageModExpert",
+      "/Lotus/Upgrades/Mods/Pistol/Event/CritChanceWhileAimingPistolSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/Event/FireRateWhileAimingPistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/GrinderMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/SecondaryDamageOnHeatProc",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Pistols/ConclaveLeverPistol/ConclaveLeverPistol",
+    "attack": "Incarnon Form + Incarnon Form Radial Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Pistol/Expert/WeaponFireDamageModExpert",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/RadiationFireratePistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/MagneticCritDamagePistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/Event/CritChanceWhileAimingPistolSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/Event/FireRateWhileAimingPistolMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/SecondaryDamageOnHeatProc",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Precision's Payoff"
+      },
+      {
+        "tier": "IV",
+        "name": "Commodore's Fortune"
+      }
+    ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/ThrowingWeapons/StalkerKunai",
+    "attack": "Incarnon Form + Incarnon Form Radial Attack",
+    "board": "window3-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Pistol/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Event/CritDamageWhileAimingPistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/WeaponFireDamageModExpert",
+      "/Lotus/Upgrades/Mods/Pistol/Event/CritChanceWhileAimingPistolSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponDamageAmountMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/MagneticCritDamagePistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/WeaponCritChanceModBeginnerExpert"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/SecondaryDamageOnHeatProc",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Stalker's Vendetta"
+      },
+      {
+        "tier": "IV",
+        "name": "Critical Parallel"
+      }
+    ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Thanotech/ThanoPistol/ThanotechPistol",
+    "attack": "Lock-On Mode + Lock-On Radial Attack",
+    "board": "window3-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Pistol/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/CorruptedCritChanceFireRatePistol",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/WeaponFireDamageModExpert",
+      "/Lotus/Upgrades/Mods/Pistol/Event/CritChanceWhileAimingPistolSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/MagneticCritDamagePistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponDamageAmountMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/SecondaryDamageOnHeatProc",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Thanotech/ThanoPistol/ThanotechPistol",
+    "attack": "Primary-Fire + Radial Attack",
+    "board": "attack",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Pistol/Expert/WeaponFireDamageModExpert",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/CorruptedCritChanceFireRatePistol",
+      "/Lotus/Upgrades/Mods/Pistol/Event/CritChanceWhileAimingPistolSPMod",
+      "/Lotus/Upgrades/Mods/Pistol/Expert/PrimedWeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Pistol/DualStat/MagneticCritDamagePistolMod",
+      "/Lotus/Upgrades/Mods/Pistol/WeaponDamageAmountMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/SecondaryDamageOnHeatProc",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Rifle/Rifle",
+    "attack": "Incarnon Form + Incarnon Form AoE",
+    "board": "attack",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponProcTimeMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Daring Reverie"
+      },
+      {
+        "tier": "IV",
+        "name": "Survivor's Edge"
+      }
+    ]
   }
 ]

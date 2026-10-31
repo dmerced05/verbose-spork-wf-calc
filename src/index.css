@@ -646,3 +646,33 @@ select { max-width: 100%; }
 .cw-standing.bad { color: #ffb4a0; }
 .cw-profiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 @media (max-width: 800px) { .cw-profiles { grid-template-columns: minmax(0, 1fr); } }
+
+.advisor-add { margin-left: 6px; padding: 1px 8px; font-size: 0.72rem; border-radius: 4px; vertical-align: middle; }
+
+/* status guide tab */
+.status-guide { display: grid; gap: 16px; max-width: 1200px; margin: 0 auto; }
+.status-guide h3 { margin-top: 0; }
+.status-guide p { font-size: 0.88rem; line-height: 1.5; }
+.sg-jump { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; }
+.sg-jump .link-button { font-size: 0.85rem; }
+.sg-formula { white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 0.82rem; }
+.sg-type { font-weight: 600; text-transform: capitalize; }
+.sg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+.sg-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: rgba(255, 255, 255, 0.02); display: grid; gap: 6px; align-content: start; }
+.sg-card header { display: flex; gap: 8px; align-items: baseline; font-size: 1rem; }
+.sg-card p { margin: 0; font-size: 0.84rem; }
+.sg-card h4 { margin: 4px 0 2px; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.sg-card ul { margin: 0; padding-left: 16px; font-size: 0.8rem; line-height: 1.4; }
+.sg-card .link-button { justify-self: start; }
+.sg-tick { font-size: 0.86rem; }
+.sg-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sg-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 0.82rem; }
+.sg-table th, .sg-table td { text-align: left; vertical-align: top; padding: 8px 6px; border-top: 1px solid var(--border); white-space: normal; line-height: 1.4; }
+.sg-table th:first-child { width: 120px; }
+@media (max-width: 700px) {
+  .sg-grid { grid-template-columns: 1fr; }
+  .sg-cols { grid-template-columns: 1fr; }
+  .sg-table thead { display: none; }
+  .sg-table tr { display: block; border-top: 1px solid var(--border); padding: 6px 0; }
+  .sg-table td { display: block; border: 0; padding: 3px 0; }
+}

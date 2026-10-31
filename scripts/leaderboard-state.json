@@ -1,5 +1,5 @@
 {
- "engine": "8c8ad3c628e3f46c",
+ "engine": "ac984204f59be3b9",
  "fingerprints": {
   "/Lotus/Weapons/Tenno/LongGuns/SapientPrimary/SapientPrimaryWeapon": "5d21d2f53f3958a7",
   "/Lotus/Weapons/Tenno/LongGuns/PrimeAcceltra/PrimeAcceltraWeapon": "bbf1157d438ce34d",
@@ -77,7 +77,7 @@
   "/Lotus/Weapons/Tenno/Rifle/BoltoRifle": "13257be1d0f1c92f",
   "/Lotus/Weapons/Tenno/LongGuns/PrimeBoltor/PrimeBoltor": "7cbb7dc4e733325c",
   "/Lotus/Weapons/Grineer/Pistols/GrineerHandShotgun/GrineerHandCannon": "b9dba36642bf0219",
-  "/Lotus/Weapons/Tenno/Rifle/Rifle": "215a7547a73fdf79",
+  "/Lotus/Weapons/Tenno/Rifle/Rifle": "e08e972db331780e",
   "/Lotus/Weapons/Tenno/Rifle/BratonPrime": "c290522bebe4f42e",
   "/Lotus/Weapons/Tenno/Rifle/VIPRifle": "a907acc798e31696",
   "/Lotus/Weapons/Grineer/Melee/GrnQueenSceptre/GrnQueenSceptreWeapon": "d0db9e923f1b9794",
@@ -137,7 +137,7 @@
   "/Lotus/Weapons/ClanTech/Energy/DeraVandal": "7e4ccaf08e1e010e",
   "/Lotus/Powersuits/Pacifist/PacifistFist": "286a3f6230d576ff",
   "/Lotus/Powersuits/Pacifist/PacifistFistPrime": "fcb4c5f3b96e57ac",
-  "/Lotus/Weapons/Tenno/ThrowingWeapons/StalkerKunai": "362f39cbdeef2b51",
+  "/Lotus/Weapons/Tenno/ThrowingWeapons/StalkerKunai": "e9539c7f69f47c9b",
   "/Lotus/Weapons/Tenno/Melee/Swords/TnoRapier/TnoRapier": "a0491d98bc8cdb24",
   "/Lotus/Weapons/Tenno/Melee/Swords/PRapier/DestrezaPrime": "23e247c5d7e73ad6",
   "/Lotus/Weapons/Corpus/Pistols/CorpusHandShotgun/CorpusHandCannon": "52f6d07eac1050eb",
@@ -451,7 +451,7 @@
   "/Lotus/Weapons/Syndicates/PerrinSequence/Melee/PSLecta": "31341976821f5310",
   "/Lotus/Weapons/Syndicates/PerrinSequence/LongGuns/PSPenta": "7954c093e6364aa9",
   "/Lotus/Weapons/Grineer/GrineerPistol/GrnScopedPistolPlayer": "29565876190474cf",
-  "/Lotus/Weapons/Thanotech/ThanoPistol/ThanotechPistol": "cf7a6c8fcd20c23d",
+  "/Lotus/Weapons/Thanotech/ThanoPistol/ThanotechPistol": "fe48dff5374013d6",
   "/Lotus/Weapons/Corpus/Melee/Polearm/CorpusPolearm01/CorpusPolearmWeapon": "814b2f83c2498c35",
   "/Lotus/Powersuits/Wraith/ReaperMeleeWeapon": "3e76ba79e8f4c29c",
   "/Lotus/Powersuits/Wraith/SevagothShadowPrimeClawsWeapon": "914176251c347cb9",
@@ -603,7 +603,7 @@
   "/Lotus/Weapons/Tenno/LongGuns/LoginPrimary/SundialRifle": "73c6c3034fa7b127",
   "/Lotus/Weapons/Tenno/LongGuns/RepeatingCrossbow/RepeatingCrossbow": "fdfb92175beaf8d2",
   "/Lotus/Weapons/Tenno/LongGuns/PrimeZhuge/PrimeZhugeCrossbow": "9e4bd3e80298a5a4",
-  "/Lotus/Weapons/Tenno/Pistols/ConclaveLeverPistol/ConclaveLeverPistol": "b58e96f43ad71925",
+  "/Lotus/Weapons/Tenno/Pistols/ConclaveLeverPistol/ConclaveLeverPistol": "00a0ead0d2cb0366",
   "/Lotus/Weapons/Tenno/Pistols/PrimeZylok/ZylokPrimePistol": "d10f64b4f21e49ba",
   "/Lotus/Weapons/Infested/Pistols/InfUzi/InfUziWeapon": "daa53a1f9f414fdf"
  }

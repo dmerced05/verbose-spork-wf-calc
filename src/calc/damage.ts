@@ -214,12 +214,19 @@ export function statusTrigger(trigger: string): string | null {
 export function calculate(input: CalcInput): CalcResult {
   // a whole shot: every part with the same build, each on its own rules, then added up per shot
   const parts = partsOf(input)
-  const run = (off: string[]) => parts.map((part) => calculateOnce(part, off))
-  const first = run([])
+  // a whole shot's parts all hit the same enemy, so each part's CO / Galvanized count includes the status types the
+  // other parts apply (Bubonico's Burst counts the Radial Attack's Viral). first pass finds them, second pass uses them
+  const appliedTypes = (result: CalcResult) => [
+    ...(result.statusChance > 0 ? result.damageTypes.filter((row) => row.modded > 0).map((row) => row.damageType) : []),
+    ...result.procTypes,
+  ].filter((type) => type !== 'true')
+  const run = (off: string[], others: string[][]) => parts.map((part, index) => calculateOnce(part, off, others[index] ?? []))
+  const first = run([], [])
   const procTypes = [...new Set(first.flatMap((result) => result.procTypes))]
   const dead = [...new Map(first.flatMap((result) => result.statusTriggers).map((trigger) => [trigger.key, trigger])).values()]
     .filter(({ type }) => (type === 'any' ? procTypes.length === 0 : !procTypes.includes(type)))
-  const results = dead.length ? run(dead.map(({ key }) => key)) : first
+  const others = parts.length > 1 ? first.map((_, index) => first.filter((__, other) => other !== index).flatMap(appliedTypes)) : []
+  const results = dead.length || others.some((list) => list.length) ? run(dead.map(({ key }) => key), others) : first
   return results.length === 1 ? results[0] : combineParts(results, parts.map((part) => part.attack.name))
 }
 
@@ -310,7 +317,7 @@ function combineParts(results: CalcResult[], names: string[]): CalcResult {
 
 function calculateOnce({
   weapon, attack, mods, arcane, coBehavior, incarnonPerks = [], passives = [], bonusElement, heavyMode = 'biggestHit', target, armor, debuffs, buffs,
-}: CalcInput, offTriggers: string[]): CalcResult {
+}: CalcInput, offTriggers: string[], otherPartStatusTypes: string[] = []): CalcResult {
   // multi-hit heavies (src/data/heavyAttacks.ts): the export's heavy number isn't one hit, so rescale the Heavy Attack to
   // the biggest single hit, or every hit added up for the "full heavy" ranking
   const heavyComboData = attack.heavy && attack.heavyMultiplier ? heavyComboFor(weapon.name) : null
@@ -851,9 +858,11 @@ function calculateOnce({
 
   // which status types the target has, for CO / Galvanized. by default it's the build's own damage types
   // (base physical + modded elements), so a gun can't count statuses it never applies
-  const buildStatusTypes = attack.statusChance > 0 && statusMode !== 'immune'
-    ? Object.entries(proportions).filter(([damageType, proportion]) => damageType !== 'true' && quantize(proportion) > 0).length
-    : 0
+  // the build's own status types, plus (in a whole shot) the ones the other parts put on the same enemy
+  const ownStatusTypes = attack.statusChance > 0
+    ? Object.entries(proportions).filter(([damageType, proportion]) => damageType !== 'true' && quantize(proportion) > 0).map(([damageType]) => damageType)
+    : []
+  const buildStatusTypes = statusMode === 'immune' ? 0 : new Set([...ownStatusTypes, ...otherPartStatusTypes]).size
   const activeStatusTypes =
     (debuffs.statusTypeSource === 'debuffs' ? debuffStatusTypes : buildStatusTypes) + (debuffs.liftedOrKnockedDown ? 1 : 0)
   // Cedo: +60% per status type, in with the damage mods (not CO-style)

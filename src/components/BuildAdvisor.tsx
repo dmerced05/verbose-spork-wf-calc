@@ -1,7 +1,7 @@
 // what each stat is worth to the build on screen right now, which mod gets it best / cheapest, which slots pull the
 // least, and greedy build paths you can load. all measured with the calc, so it follows the target, buffs and perks
 import { useMemo, useState } from 'react'
-import { advise, arcaneOptions, buildPaths, pctText, rankingScorer, rating, type BuildPath, type LeverRow } from '../calc/advisor'
+import { advise, arcaneOptions, buildPaths, pctText, rankingScorer, rating, type BuildPath, type LeverRow, type ModOption } from '../calc/advisor'
 import { calculate } from '../calc/damage'
 import type { CalcInput } from '../calc/damage'
 import { OBJECTIVES, type ObjectiveId } from '../optimizer/objectives'
@@ -17,6 +17,7 @@ interface Props {
   keep: EquippedMod[] // stays in every suggested path (the riven)
   onLoadPath: (mods: Mod[], arcane: EquippedArcane | null) => void
   onEquipArcane: (arcane: EquippedArcane) => void
+  onAddMod: (mod: Mod, replaces: string | null) => void // replaces = the mod it takes the slot of (full build)
 }
 
 // a 3 s window by default: about how long a target lives, so it counts the opening burst, procs that land in time and
@@ -34,7 +35,7 @@ const HOW_IT_WORKS =
 
 const RATING_CLASS: Record<string, string> = { 'Top pick': 'top', Strong: 'strong', Some: 'some', Little: 'little', 'No effect': 'none', Hurts: 'hurts' }
 
-export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, onLoadPath, onEquipArcane }: Props) {
+export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, onLoadPath, onEquipArcane, onAddMod }: Props) {
   const [objectiveId, setObjectiveId] = useState<ObjectiveId>('window3')
   const [paths, setPaths] = useState<{ key: string; paths: BuildPath[] } | null>(null)
   const objective = OBJECTIVES.find((candidate) => candidate.id === objectiveId)!
@@ -114,7 +115,7 @@ export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, o
           </tr>
         </thead>
         <tbody>
-          {advice.levers.map((lever) => <LeverLine key={lever.id} lever={lever} top={top} goal={objective.label} showCheap={showCheap} />)}
+          {advice.levers.map((lever) => <LeverLine key={lever.id} lever={lever} top={top} goal={objective.label} showCheap={showCheap} onAdd={onAddMod} />)}
         </tbody>
       </table>
       </div>
@@ -160,7 +161,12 @@ export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, o
           {advice.swaps.length > 0 && (
             <p>
               Better than <b>{advice.swaps[0].out.name}</b>:{' '}
-              {advice.swaps.map((swap) => `${swap.in.name} ${pctText(swap.gain)}`).join(', ')}
+              {advice.swaps.map((swap, index) => (
+                <span key={swap.in.name}>
+                  {index > 0 && ', '}{swap.in.name} {pctText(swap.gain)}
+                  <button className="advisor-add" title={`Put ${swap.in.name} in place of ${swap.out.name}`} onClick={() => onAddMod(swap.in, swap.out.name)}>Swap in</button>
+                </span>
+              ))}
             </p>
           )}
         </div>
@@ -201,7 +207,18 @@ export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, o
   )
 }
 
-function LeverLine({ lever, top, goal, showCheap }: { lever: LeverRow; top: number; goal: string; showCheap: boolean }) {
+// a quick add next to a suggested mod: into a free slot, or in place of the weakest mod when all 8 are full
+function AddButton({ option, onAdd }: { option: ModOption; onAdd: (mod: Mod, replaces: string | null) => void }) {
+  if (option.gain <= 0) return null
+  return (
+    <button className="advisor-add" title={option.swapsOut ? `Put ${option.mod.name} in place of ${option.swapsOut}` : `Add ${option.mod.name} to a free slot`}
+      onClick={() => onAdd(option.mod, option.swapsOut)}>
+      {option.swapsOut ? 'Swap in' : 'Add'}
+    </button>
+  )
+}
+
+function LeverLine({ lever, top, goal, showCheap, onAdd }: { lever: LeverRow; top: number; goal: string; showCheap: boolean; onAdd: (mod: Mod, replaces: string | null) => void }) {
   const best = lever.bestMod
   // only a mod that actually gains is "cheap"
   const cheap = lever.cheapestMod ?? (best && best.gain > 0 ? best : null)
@@ -230,10 +247,10 @@ function LeverLine({ lever, top, goal, showCheap }: { lever: LeverRow; top: numb
       <td>{lever.equippedCount || ''}</td>
       <td>
         {!best ? <span className="muted-inline">—</span>
-          : best.gain > 0 ? <>{best.mod.name} <b>{pctText(best.gain)}</b></>
+          : best.gain > 0 ? <>{best.mod.name} <b>{pctText(best.gain)}</b> <AddButton option={best} onAdd={onAdd} /></>
             : <span className="muted-inline">{best.mod.name} {pctText(best.gain)}</span>}
       </td>
-      {showCheap && <td>{cheap ? <>{cheap.mod.name} <span className="muted-inline">{pctText(cheap.gain / cheap.drain)} / pt ({cheap.drain})</span></> : ''}</td>}
+      {showCheap && <td>{cheap ? <>{cheap.mod.name} <span className="muted-inline">{pctText(cheap.gain / cheap.drain)} / pt ({cheap.drain})</span> <AddButton option={cheap} onAdd={onAdd} /></> : ''}</td>}
     </tr>
   )
 }

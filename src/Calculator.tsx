@@ -408,6 +408,17 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
             compatibleArcanes={compatibleArcanes}
             keep={equippedMods.filter((slot) => slot.mod.uniqueName === RIVEN_MOD_ID)}
             onEquipArcane={(arcane) => setArcaneSlot({ arcaneId: arcane.arcane.uniqueName, rank: arcane.rank, conditionalStacks: arcane.conditionalStacks })}
+            onAddMod={(mod, replaces) => {
+              // into the slot of the mod it beats when the build is full, else the first free normal slot (the exilus
+              // slot last, and only for exilus mods)
+              const equipped = equipMod(mod, isMelee)
+              const slot = { modId: mod.uniqueName, rank: equipped.rank, conditionalStacks: equipped.conditionalStacks }
+              const replaceAt = replaces ? slots.findIndex((other) => other && modFor(other.modId)?.name === replaces) : -1
+              const freeAt = slots.findIndex((other, index) => !other && index < EXILUS_SLOT)
+              const target = replaceAt >= 0 ? replaceAt : freeAt >= 0 ? freeAt : mod.isExilus && !slots[EXILUS_SLOT] ? EXILUS_SLOT : -1
+              if (target < 0) return
+              setSlots(slots.map((other, index) => (index === target ? slot : other)))
+            }}
             onLoadPath={(pathMods, pathArcane) => {
               // the riven keeps its slot, the path fills the rest in order
               const next = emptySlots()

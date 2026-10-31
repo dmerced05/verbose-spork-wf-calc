@@ -5,13 +5,14 @@ import { Compare } from './components/Compare'
 import { DamageCap } from './components/DamageCap'
 import { CompareWeapons } from './components/CompareWeapons'
 import { RivenPage } from './components/RivenPage'
+import { StatusGuide } from './components/StatusGuide'
 import type { CompareScenario } from './optimizer/compare'
 import type { RivenConfig } from './calc/riven'
 
-type Tab = 'calculator' | 'leaderboard' | 'compare' | 'weapons' | 'rivens' | 'cap'
-const TABS: Tab[] = ['calculator', 'leaderboard', 'compare', 'weapons', 'rivens', 'cap']
+type Tab = 'calculator' | 'leaderboard' | 'compare' | 'weapons' | 'rivens' | 'cap' | 'status'
+const TABS: Tab[] = ['calculator', 'leaderboard', 'compare', 'weapons', 'rivens', 'cap', 'status']
 const TAB_LABELS: Record<Tab, string> = {
-  calculator: 'Calculator', leaderboard: 'Leaderboard', compare: 'Compare Build Paths', weapons: 'Compare Weapons', rivens: 'Rivens', cap: 'Damage Cap',
+  calculator: 'Calculator', leaderboard: 'Leaderboard', compare: 'Compare Build Paths', weapons: 'Compare Weapons', rivens: 'Rivens', cap: 'Damage Cap', status: 'Status Guide',
 }
 const tabFromHash = (): Tab => {
   if (typeof window === 'undefined') return 'calculator'
@@ -128,6 +129,8 @@ export default function App() {
           />
         </div>
       )}
+      {/* static text, so it just mounts when shown */}
+      {tab === 'status' && <StatusGuide />}
     </main>
   )
 }

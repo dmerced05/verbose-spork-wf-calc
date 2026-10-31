@@ -18,10 +18,13 @@ interface Props {
   onEquipArcane: (arcane: EquippedArcane) => void
 }
 
-const ADVISOR_OBJECTIVES: ObjectiveId[] = ['sustained', 'single', 'attack']
+// a 3 s window by default: about how long a target lives, so it counts the opening burst, procs that land in time and
+// no reload unless the magazine runs dry that fast
+const ADVISOR_OBJECTIVES: ObjectiveId[] = ['window3', 'sustained', 'single', 'attack']
 const HOW_IT_WORKS =
   'Every number here comes from re-running the calculator with one change to your current build, so it follows your target, Warframe buffs, arcane and perks.\n\n' +
-  '"Worth adding?" compares stats against each other: it gives every stat the same small boost and sees which one raises your damage the most. ' +
+  '"Worth adding?" compares stats against each other: it adds one typical mod of each stat (+90% Heat like Hellfire, +165% damage like ' +
+  'Serration...) and sees which one raises your damage the most. ' +
   'It changes as you mod. Stats of the same kind add up, but different kinds multiply each other (damage × multishot × crit × elements × fire rate), ' +
   'so a stat you already have a lot of gives less for the next bit. 1 Serration takes base damage from 1x to 2.65x (+165%), a 2nd only to 4.3x (+62%).\n\n' +
   '"Best mod" = the real mod that raises your damage the most (when all 8 slots are full: put in place of your weakest one). "Cheapest" = most damage ' +
@@ -30,7 +33,7 @@ const HOW_IT_WORKS =
 const RATING_CLASS: Record<string, string> = { 'Top pick': 'top', Strong: 'strong', Some: 'some', Little: 'little', 'No effect': 'none', Hurts: 'hurts' }
 
 export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, onLoadPath, onEquipArcane }: Props) {
-  const [objectiveId, setObjectiveId] = useState<ObjectiveId>(input.weapon.category === 'Melee' || input.attack.heavy ? 'attack' : 'sustained')
+  const [objectiveId, setObjectiveId] = useState<ObjectiveId>('window3')
   const [paths, setPaths] = useState<{ key: string; paths: BuildPath[] } | null>(null)
   const objective = OBJECTIVES.find((candidate) => candidate.id === objectiveId)!
   const isMelee = input.weapon.category === 'Melee'
@@ -188,8 +191,10 @@ function LeverLine({ lever, top, goal, showCheap }: { lever: LeverRow; top: numb
   const cheap = lever.cheapestMod ?? (best && best.gain > 0 ? best : null)
   const label = rating(lever.weight, top)
   const explain = lever.weight < -0.0005
-    ? `Adding a bit of ${lever.label} would lower your ${goal} (${pctText(lever.weight)} for a small +10% of it).`
-    : `A small boost to ${lever.label} (+10%, about a tenth of a mod) would raise your ${goal} by ${pctText(lever.weight)}. ` +
+    ? `One typical mod of it (${lever.size}) would lower your ${goal} by ${pctText(lever.weight).replace('-', '')}. ` +
+      'This happens when it takes status procs away from a stronger one: Slash bleeds ignore armor, so on an armored target ' +
+      'a new element can cost more in lost bleeds than its own damage adds.'
+    : `One typical mod of it (${lever.size}) would raise your ${goal} by ${pctText(lever.weight)}, on top of what you have now. ` +
       'Ratings compare this against the other stats: "Top pick" is the best stat to add right now. ' +
       'With all 8 slots full, adding means giving up a mod, see Best mod for what a swap does.'
   return (

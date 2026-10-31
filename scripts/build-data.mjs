@@ -161,6 +161,7 @@ function toWeapon(weapon) {
     magazineSize: weapon.magazineSize ?? null,
     reloadTime: weapon.reloadTime ?? null,
     imageName: weapon.imageName ?? null,
+    wikiImage: weapon.wikiaThumbnail ?? null, // the wiki's picture, for when WFCD's CDN doesn't have the imageName (Galvanized Chamber, Heavy Caliber)
     polarities: weapon.polarities ?? [], // pre-installed slot polarities, fill the first slots
     // newer data has a Bow type, the path check covers older entries still listed as Rifle
     isBow: weapon.type === 'Bow' || /\/Bows?\//i.test(weapon.uniqueName),
@@ -278,6 +279,7 @@ const mods = weaponMods
     baseDrain: mod.baseDrain ?? 0,
     fusionLimit: mod.fusionLimit ?? 0,
     imageName: mod.imageName ?? null,
+    wikiImage: mod.wikiaThumbnail ?? null, // the wiki's picture, for when WFCD's CDN doesn't have the imageName (Galvanized Chamber, Heavy Caliber)
     // restrictions only live in the description, e.g. "Only compatible with Semi-Auto Trigger. Fire Rate cannot be modified."
     semiOnly: /only compatible with semi-auto/i.test(mod.description ?? ''),
     locksFireRate: /fire rate cannot be modified/i.test(mod.description ?? ''),
@@ -320,6 +322,7 @@ const arcanes = readJson('Arcanes')
     type: arcane.type === 'Arcane' ? 'Warframe Arcane' : arcane.type,
     rarity: arcane.rarity ?? null,
     imageName: arcane.imageName ?? null,
+    wikiImage: arcane.wikiaThumbnail ?? null, // the wiki's picture, for when WFCD's CDN doesn't have the imageName (Galvanized Chamber, Heavy Caliber)
     levelStats: arcane.levelStats.map((level) => level.stats.map(cleanStatLine)),
   }))
   .sort((a, b) => a.name.localeCompare(b.name))
@@ -340,6 +343,7 @@ const warframes = readJson('Warframes')
     exilusPolarity: frame.exilusPolarity ?? null,
     passive: frame.passiveDescription ? frame.passiveDescription.replace(/<[^>]+>/g, '').replace(/ {2,}/g, ' ').trim() : null,
     imageName: frame.imageName ?? null,
+    wikiImage: frame.wikiaThumbnail ?? null, // the wiki's picture, for when WFCD's CDN doesn't have the imageName (Galvanized Chamber, Heavy Caliber)
     // the four abilities, for the ability list under the mods and the Helminth picker
     abilities: (frame.abilities ?? []).map((ability) => ({ name: ability.name, description: (ability.description ?? '').replace(/<[^>]+>/g, '').replace(/ {2,}/g, ' ').trim(), imageName: ability.imageName ?? null })),
   }))

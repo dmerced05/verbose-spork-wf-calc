@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
 import { auraCapacity, capacityFor, modDrain, nextPolarity, type SlotPolarity } from '../calc/capacity'
 import { defaultConditionalStacks, maxConditionalStacks, raisesFireRate } from '../calc/parseMod'
+import { nicheNote } from '../calc/nicheMods'
+import { Tip } from './Tip'
 import { blockingMod } from '../calc/modConflicts'
 import { arcanesById, modsById } from '../data'
 import type { Arcane, Mod } from '../types'
 import { PolarityIcon } from './PolarityIcon'
-import { IMAGE_BASE } from './Thumb' // WFCD's image CDN, keyed by the imageName in warframe-items
+import { FallbackImage, imageSources } from './Thumb' // WFCD's image CDN, keyed by the imageName in warframe-items, wiki as backup
 
 export interface ModSlot {
   modId: string
@@ -57,14 +59,8 @@ const statLinesAt = (levelStats: string[][], rank: number) =>
     .map((line) => line.replace(/\\n/g, ' ').replace(/\s*\+1 Arcane Revive/g, '').trim())
     .filter(Boolean)
 
-function ModArt({ imageName }: { imageName: string | null }) {
-  if (!imageName) return null
-  return (
-    <img
-      className="mod-art" src={IMAGE_BASE + imageName} alt="" loading="lazy"
-      onError={(event) => (event.currentTarget.style.display = 'none')}
-    />
-  )
+function ModArt({ imageName, wikiImage }: { imageName: string | null; wikiImage?: string | null }) {
+  return <FallbackImage sources={imageSources(imageName, wikiImage)} className="mod-art" alt="" />
 }
 
 function RankPips({ rank, maxRank }: { rank: number; maxRank: number }) {
@@ -139,10 +135,11 @@ function ModCard({ slot, mod, conflictWith, slotPolarity, isExilusSlot, isAuraSl
       </div>
       {mod && slot ? (
         <>
-          <ModArt imageName={mod.imageName} />
+          <ModArt imageName={mod.imageName} wikiImage={mod.wikiImage} />
           <div className="mod-name">
             {mod.name}
             {raisesFireRate(mod.levelStats, slot.rank) && <span className="fr-tag" title="Fire rate / attack speed mod">FR</span>}
+            {nicheNote(mod.levelStats, slot.rank) && <Tip className="niche-tag" text={`Niche: ${nicheNote(mod.levelStats, slot.rank)}`}>Niche</Tip>}
           </div>
           <ul className="mod-lines">
             {statLinesAt(mod.levelStats, slot.rank).map((line) => <li key={line}>{line}</li>)}
@@ -171,7 +168,7 @@ function ArcaneCard({ slot, selected, onSelect, onRemove }: ArcaneCardProps) {
     <CardShell selected={selected} rarity={arcane?.rarity ?? null} isEmpty={!arcane} extraClass="arcane-card" onSelect={onSelect}>
       {arcane && slot ? (
         <>
-          <ModArt imageName={arcane.imageName} />
+          <ModArt imageName={arcane.imageName} wikiImage={arcane.wikiImage} />
           <div className="arcane-label">Arcane</div>
           <div className="mod-name">{arcane.name}</div>
           <ul className="mod-lines">

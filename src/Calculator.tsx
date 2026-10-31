@@ -191,6 +191,20 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
   const bodyResult = calculate({ ...calcInput, target: { ...target, headshot: false } })
   const headResult = calculate({ ...calcInput, target: { ...target, headshot: true } })
   const result = target.headshot ? headResult : bodyResult
+  // what the in-game arsenal screen shows: mods' always-on stats only. no On Kill / On Status stacks, no Warframe
+  // abilities, no combo, no status types on the target (so no CO). and the weapon with no mods at all next to it
+  const arsenalInput = {
+    ...calcInput,
+    mods: equippedMods.map((mod) => ({ ...mod, conditionalStacks: 0 })),
+    arcane: equippedArcane ? { ...equippedArcane, conditionalStacks: 0 } : null,
+    incarnonPerks: incarnonPerks.map((perk) => ({ ...perk, stacks: 0 })),
+    passives: selectedPassives.map((passive) => ({ ...passive, stacks: 0 })),
+    debuffs: { ...debuffs, stacks: {}, liftedOrKnockedDown: false, statusTypeSource: 'debuffs' as const },
+    buffs: { roar: 0, combo: 1, gladiatorWarframePieces: buffs.gladiatorWarframePieces },
+    target: { ...target, headshot: false },
+  }
+  const arsenalResult = calculate(arsenalInput)
+  const unmoddedResult = calculate({ ...arsenalInput, mods: [], arcane: null })
 
   // the enemy box needs health and shield numbers no matter which layer the main results show
   const scaledEnemy = resolveEnemy(target)
@@ -278,7 +292,7 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
                 />
               ),
             }] : []),
-            { id: 'results', label: 'Full results', summary: 'DoT, head vs body, procs', group: 'output' as const, content: <StatsPanel result={result} body={bodyResult} head={headResult} canHeadshot={!attack.isAoE} /> },
+            { id: 'results', label: 'Full results', summary: 'DoT, head vs body, procs', group: 'output' as const, content: <StatsPanel result={result} body={bodyResult} head={headResult} arsenal={arsenalResult} unmodded={unmoddedResult} canHeadshot={!attack.isAoE} /> },
           ]}
         />
         {/* weapon side and Warframe side, 50/50 on wide screens, stacked otherwise */}
@@ -287,7 +301,7 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
           <section className="panel">
             <h2>Weapon</h2>
             <div className="row">
-              <Thumb imageName={weapon.imageName} alt={weapon.name} wide />
+              <Thumb imageName={weapon.imageName} wikiImage={weapon.wikiImage} alt={weapon.name} wide />
               <SearchSelect options={weaponOptions} selectedId={weaponId} onSelect={pickWeapon} placeholder="Search weapons" />
               {weapon.attacks.length > 1 && (
                 <select value={attackIndex} onChange={(event) => { setAttackIndex(Number(event.target.value)); setCoOverride('auto') }}>

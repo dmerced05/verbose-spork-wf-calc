@@ -273,6 +273,7 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 
 /* fire rate / attack speed mods */
 .fr-tag { display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 3px; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; color: #1a1205; background: #f0a64b; vertical-align: middle; }
+.niche-tag { display: inline-block; margin-left: 5px; padding: 0 4px; border-radius: 3px; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.04em; color: #e8d6ff; border: 1px solid rgba(190, 150, 255, 0.6); vertical-align: middle; cursor: help; }
 .fire-rate-chip { border-color: rgba(240, 166, 75, 0.6); }
 
 /* luck ranges */

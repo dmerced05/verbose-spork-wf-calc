@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { FULL_HEAVY_BOARD, TIME_WINDOWS, boardKey, objectiveById, type ObjectiveId } from '../optimizer/objectives'
 import { raisesFireRate } from '../calc/parseMod'
+import { nicheNote } from '../calc/nicheMods'
+import { Tip } from './Tip'
 import { modsById, weaponsById } from '../data'
 import { biggestHit, comboTotal, heavyBreakdownText, heavyComboFor } from '../data/heavyAttacks'
 import { ATTACK_KINDS, attackKind, type AttackKind } from '../optimizer/attackKinds'
@@ -264,9 +266,11 @@ export function Leaderboard({ onLoadBuild }: Props) {
               {entry.mods.map((mod) => {
                 const equipped = modsById.get(mod.id)
                 const fireRate = equipped ? raisesFireRate(equipped.levelStats, mod.rank) : false
+                const niche = equipped ? nicheNote(equipped.levelStats, mod.rank) : null
                 return (
                   <span key={mod.id} className={`chip ${fireRate ? 'fire-rate-chip' : ''}`} title={fireRate ? 'Fire rate / attack speed mod' : undefined}>
                     {mod.name}{fireRate && <span className="fr-tag">FR</span>}
+                    {niche && <Tip className="niche-tag" text={`Niche: ${niche}`}>Niche</Tip>}
                   </span>
                 )
               })}

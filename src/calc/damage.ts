@@ -6,7 +6,7 @@
 // status DoTs use the same modded base, but faction applies twice and only literal element mods count.
 
 import {
-  AMMO_EFFICIENCY_CAP, BANE_TARGET, BLAST_DETONATION_MULTIPLIER, CAPPED_STATUS_STACKS, GLADIATOR_CRIT_PER_PIECE, GLADIATOR_MAX_PIECES, MAX_HEAVY_EFFICIENCY, hitsPerComboTier, maxComboFor, HEADCRIT_MULTIPLIER, WEAK_POINT_BONUS_RATE_ON_HEAD, hasHeadcrits, headMultiplierFor, COMBINED_ELEMENTS, DOT_STATUSES, FACTION_DAMAGE_MODIFIERS, PHYSICAL_TYPES, PRIMARY_ELEMENTS,
+  AMMO_EFFICIENCY_CAP, BANE_TARGET, BLAST_DETONATION_MULTIPLIER, CAPPED_STATUS_STACKS, GLADIATOR_CRIT_PER_PIECE, GLADIATOR_MAX_PIECES, MAX_HEAVY_EFFICIENCY, hitsPerComboTier, maxComboFor, HEADCRIT_MULTIPLIER, WEAK_POINT_BONUS_RATE_ON_HEAD, hasHeadcrits, headMultiplierFor, COMBINED_ELEMENTS, DAMAGE_TYPES, DOT_STATUSES, FACTION_DAMAGE_MODIFIERS, PHYSICAL_TYPES, PRIMARY_ELEMENTS,
   coldCritMultiplierBonus, magneticMultiplier, punctureCritChanceBonus, tauStatusChanceBonus, viralMultiplier,
 } from './constants'
 import { parseUpgrade, scopeApplies, type ModEffect, type StatKey } from './parseMod'
@@ -156,6 +156,8 @@ export interface CalcResult {
   abilities: string[] // Warframe abilities that apply to this weapon
   setBonuses: ReturnType<typeof setSummary> // mod sets with pieces equipped (weapon + Warframe)
   requirements: string[] // every conditional the numbers assume (kills, headshots, buffs up, frozen target...)
+  statusTriggers: { key: string; type: string }[] // status-triggered buffs that were on ("upgrade|trigger", status type or 'any')
+  procTypes: string[] // statuses this attack actually applies
   heavyCombo: { combo: HeavyCombo; mode: HeavyMode; multiplier: number } | null // multi-hit heavy, what got scored
   detonation: { ownProcs: number; existingStacks: number } | null // Harmony heavy: DoT damage dealt at once, per heavy
   melee: {
@@ -197,9 +199,27 @@ export function enervateAverageCrit(startCrit: number, step: number, resets: num
 // rounds to the nearest 1/32, sign(x) * floor(|x| * 32 + 0.5) / 32
 const quantize = (proportion: number) => (Math.sign(proportion) * Math.floor(Math.abs(proportion) * 32 + 0.5)) / 32
 
-export function calculate({
+// "On Toxin Status Effect:" (Primary Blight), "On Melee Electricity Status:", "On Status Effect:" -> the status it waits
+// for ('any' for no type), null when the trigger isn't a status one
+export function statusTrigger(trigger: string): string | null {
+  const match = trigger.match(/^On (?:Weapon |Melee )?(?:([A-Za-z]+) )?Status\b/i)
+  if (!match) return null
+  const type = match[1]?.toLowerCase()
+  return type && DAMAGE_TYPES.includes(type) ? type : 'any'
+}
+
+// status-triggered buffs only count when the build actually lands that status. Primary Blight on a pure Electricity
+// Alternox never gets a stack, so the optimizer was picking it for free crit damage. I run the calc, and if a status
+// trigger's type never procs, run it again with that trigger off (turning it off can't add a status, so once is enough)
+export function calculate(input: CalcInput): CalcResult {
+  const first = calculateOnce(input, [])
+  const dead = first.statusTriggers.filter(({ type }) => (type === 'any' ? first.procTypes.length === 0 : !first.procTypes.includes(type)))
+  return dead.length ? calculateOnce(input, dead.map(({ key }) => key)) : first
+}
+
+function calculateOnce({
   weapon, attack, mods, arcane, coBehavior, incarnonPerks = [], passives = [], bonusElement, heavyMode = 'biggestHit', target, armor, debuffs, buffs,
-}: CalcInput): CalcResult {
+}: CalcInput, offTriggers: string[]): CalcResult {
   // multi-hit heavies (src/data/heavyAttacks.ts): the export's heavy number isn't one hit, so rescale the Heavy Attack to
   // the biggest single hit, or every hit added up for the "full heavy" ranking
   const heavyComboData = attack.heavy && attack.heavyMultiplier ? heavyComboFor(weapon.name) : null
@@ -335,6 +355,7 @@ export function calculate({
   ]
   // everything the build's numbers assume is happening in the fight (shown in red under the results)
   const requirements: string[] = []
+  const statusTriggers: CalcResult['statusTriggers'] = []
   let frameArcaneFlatCrit = 0 // Arcane Avenger: "adds 45 percentage points to a weapon's critical chance after other bonuses"
   for (const upgrade of upgrades) {
     const parsed = parseUpgrade(upgrade.levelStats, upgrade.rank)
@@ -350,6 +371,13 @@ export function calculate({
     parsed.effects.forEach((effect) => apply(effect, 1))
     for (const conditional of parsed.conditionals) {
       if (!scopeApplies(conditional.scope, weapon)) continue
+      const triggerType = statusTrigger(conditional.trigger)
+      const triggerKey = `${upgrade.name}|${conditional.trigger}`
+      if (triggerType && offTriggers.includes(triggerKey)) {
+        const line = `${upgrade.name}: off, this build never applies ${triggerType === 'any' ? 'a status effect' : `${triggerType[0].toUpperCase()}${triggerType.slice(1)} procs`} (its trigger)`
+        if (!requirements.includes(line)) requirements.push(line)
+        continue
+      }
       let activeStacks = Math.min(upgrade.conditionalStacks, conditional.maxStacks)
       // Primary Bulwark: with a Warframe armor set in the Warframe panel, its stacks come from that (1 stack = 1 armor past 1,000)
       const armorThreshold = conditional.trigger.match(/^Warframe armor past ([\d,]+)/)
@@ -363,6 +391,7 @@ export function calculate({
         activeStacks = Math.min(conditional.maxStacks, Math.floor(buffs.warframe!.health! / Number(healthStep[1].replace(/,/g, ''))))
       }
       if (activeStacks > 0) {
+        if (triggerType) statusTriggers.push({ key: triggerKey, type: triggerType })
         apply(conditional.effect, activeStacks)
         const label = `${upgrade.name}: ${conditional.trigger.replace(/:$/, '').replace(/^On /, 'on ').replace(/^When /, 'when ').replace(/^While /, 'while ')}` +
           (conditional.maxStacks > 1 ? ` (${activeStacks}/${conditional.maxStacks} stacks)` : '')
@@ -917,6 +946,7 @@ export function calculate({
 
   // an immune target takes no procs at all, forced ones included
   if (statusMode === 'immune') for (const damageType of Object.keys(procRates)) procRates[damageType] = 0
+  const procTypes = Object.keys(procRates).filter((damageType) => procRates[damageType] > 0)
 
   // procs inherit the crit of the hit that applied them, so I keep the normal/crit/average split.
   // modded base here is NOT quantized and uses the full base damage, not just that element's share.
@@ -1124,6 +1154,8 @@ export function calculate({
     passives: activePassives,
     abilities: activeAbilities,
     requirements,
+    statusTriggers,
+    procTypes,
     setBonuses: setSummary(setPieces),
     heavyCombo,
     detonation,

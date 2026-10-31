@@ -311,7 +311,7 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest }
       <div className="row spread">
         <h2>Warframe</h2>
         <div className="row">
-          <Thumb imageName={frame.imageName} alt={frame.name} />
+          <Thumb imageName={frame.imageName} wikiImage={frame.wikiImage} alt={frame.name} />
           <SearchSelect options={frameOptions} selectedId={frameId} onSelect={pickFrame} placeholder="Search Warframes" />
         </div>
       </div>

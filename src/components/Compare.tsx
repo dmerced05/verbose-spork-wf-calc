@@ -10,10 +10,12 @@ import { BOARDS } from '../optimizer/objectives'
 import { boardsFor, emptyPath, type CompareResult, type ComparePath, type CompareRequest, type CompareScenario } from '../optimizer/compare'
 import type { CompareMessage } from '../optimizer/compareWorker'
 import type { SeedBuild } from '../optimizer/optimize'
-import type { LeaderboardFile, LeaderboardEntry } from '../optimizer/leaderboardTypes'
+import { expandLeaderboard, type Leaderboard, type LeaderboardEntry, type LeaderboardFile } from '../optimizer/leaderboardTypes'
 import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from '../optimizer/scenario'
 import type { StatusMode } from '../types'
 import { RivenEditor } from './RivenEditor'
+import { Tip } from './Tip'
+import { nicheNote } from '../calc/nicheMods'
 import { SearchSelect } from './SearchSelect'
 
 interface Props {
@@ -51,9 +53,12 @@ const saveBeats = (beats: Beat[]) => {
 }
 
 // the leaderboard JSON is ~9 MB, fetched once and only when a run in the leaderboard scenario needs it
-let leaderboardPromise: Promise<LeaderboardFile | null> | null = null
+let leaderboardPromise: Promise<Leaderboard | null> | null = null
 const loadLeaderboard = () =>
-  (leaderboardPromise ??= fetch('./leaderboard.json').then((response) => (response.ok ? (response.json() as Promise<LeaderboardFile>) : null)).catch(() => null))
+  (leaderboardPromise ??= fetch('./leaderboard.json')
+    .then((response) => (response.ok ? (response.json() as Promise<LeaderboardFile>) : null))
+    .then((file) => (file ? expandLeaderboard(file) : null))
+    .catch(() => null))
 
 const boardLabel = (key: string) => {
   const spec = BOARDS.find((candidate) => candidate.key === key)!
@@ -168,7 +173,7 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
 
   // leaderboard scenario, no riven: anything noticeably above the leaderboard's number for that board is a build the
   // leaderboard search missed
-  const [leaderboard, setLeaderboard] = useState<LeaderboardFile | null>(null)
+  const [leaderboard, setLeaderboard] = useState<Leaderboard | null>(null)
   const recordBeats = async (request: CompareRequest, found: CompareResult[]) => {
     const file = await loadLeaderboard()
     setLeaderboard(file)
@@ -372,7 +377,10 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
                         </div>
                         <ol className="build-mods">
                           {entry.mods.map(([id, name, rank]) => (
-                            <li key={id}>{id === RIVEN_MOD_ID ? <span className="riven-title">{name}</span> : name}{rank !== (modsById.get(id)?.fusionLimit ?? rank) ? ` (rank ${rank})` : ''}</li>
+                            <li key={id}>
+                              {id === RIVEN_MOD_ID ? <span className="riven-title">{name}</span> : name}{rank !== (modsById.get(id)?.fusionLimit ?? rank) ? ` (rank ${rank})` : ''}
+                              {modsById.get(id) && nicheNote(modsById.get(id)!.levelStats, rank) && <Tip className="niche-tag" text={`Niche: ${nicheNote(modsById.get(id)!.levelStats, rank)}`}>Niche</Tip>}
+                            </li>
                           ))}
                         </ol>
                         <div className="row">

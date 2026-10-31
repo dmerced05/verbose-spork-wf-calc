@@ -14,25 +14,30 @@
 // way and kept only if it beats the search, and adding one reruns just that weapon
 // the stale weapons get split across child processes (one per CPU core).
 import { spawn } from 'node:child_process'
+import { buildSync } from 'esbuild'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { weapons, weaponsById } from '../src/data'
 import { BOARDS } from '../src/optimizer/objectives'
-import { optimizeWeapon, type WeaponEntry } from '../src/optimizer/leaderboardWeapon'
+import { optimizeWeapon } from '../src/optimizer/leaderboardWeapon'
 import type { SeedBuild } from '../src/optimizer/optimize'
-import type { CompactEntry, LeaderboardFile } from '../src/optimizer/leaderboardTypes'
+import { encodeEntry, expandLeaderboard, toStored, type CompactEntry, type LeaderboardFile, type LeaderboardFileV1, type StoredEntry } from '../src/optimizer/leaderboardTypes'
 import { SCENARIO_DESCRIPTION } from '../src/optimizer/scenario'
 import { engineFingerprint, weaponFingerprint } from './leaderboardFingerprint'
 
-const ROOT = new URL('../', import.meta.url)
+// the shards run from a bundle in the cache folder (see main), so they get the project root passed in
+const ROOT = process.env.WF_ROOT ? new URL(`file://${process.env.WF_ROOT}/`) : new URL('../', import.meta.url)
 const CACHE_DIR = new URL('node_modules/.cache/leaderboard/', ROOT)
 const OUTPUT = new URL('public/leaderboard.json', ROOT)
+// the incremental-rebuild bookkeeping (engine hash + per-weapon fingerprints), kept out of the file the site downloads
+const STATE = new URL('scripts/leaderboard-state.json', ROOT)
+interface State { engine?: string; fingerprints?: Record<string, string> }
 const SEEDS = new URL('scripts/leaderboard-seeds.json', ROOT)
 const loadSeeds = (): SeedBuild[] => (existsSync(SEEDS) ? (JSON.parse(readFileSync(SEEDS, 'utf8')) as SeedBuild[]) : [])
 const seedsFor = (seeds: SeedBuild[], weaponId: string) => seeds.filter((seed) => seed.weaponId === weaponId)
 
-type Boards = Record<string, WeaponEntry[]>
+type Boards = Record<string, StoredEntry[]>
 const flag = (name: string) => process.argv.includes(`--${name}`)
 const option = (name: string) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
 
@@ -49,54 +54,54 @@ function runShard(shard: number, count: number) {
   writeFileSync(new URL(`shard-${shard}.json`, CACHE_DIR), JSON.stringify(boards))
 }
 
-// the old file's entries back to uniqueNames, so they can be re-indexed with the new ones
-function loadOld(): { file: LeaderboardFile | null; boards: Boards } {
+// the old file's entries back to uniqueNames (either file version), so they can be re-indexed with the new ones
+function loadOld(): { file: LeaderboardFile | LeaderboardFileV1 | null; state: State; boards: Boards } {
   const boards: Boards = Object.fromEntries(BOARDS.map((board) => [board.key, []]))
-  if (!existsSync(OUTPUT)) return { file: null, boards }
-  const file = JSON.parse(readFileSync(OUTPUT, 'utf8')) as LeaderboardFile
-  const unindex = ([index, rank, stacks]: [number, number, number]): [string, string, number, number] => {
-    const { id, name } = file.upgrades[index]
-    return [id, name, rank, stacks]
-  }
-  for (const { key } of BOARDS) {
-    boards[key] = (file.boards[key] ?? []).map((entry) => ({ ...entry, mods: entry.mods.map(unindex), arcane: entry.arcane ? unindex(entry.arcane) : null }))
-  }
-  return { file, boards }
+  const savedState: State = existsSync(STATE) ? JSON.parse(readFileSync(STATE, 'utf8')) : {}
+  if (!existsSync(OUTPUT)) return { file: null, state: savedState, boards }
+  const file = JSON.parse(readFileSync(OUTPUT, 'utf8')) as LeaderboardFile | LeaderboardFileV1
+  const expanded = expandLeaderboard(file)
+  for (const { key } of BOARDS) boards[key] = (expanded.boards[key] ?? []).map(toStored)
+  // a version 1 file carried its own fingerprints
+  const state = savedState.engine ? savedState : file.version !== 2 ? { engine: file.engine, fingerprints: file.fingerprints } : savedState
+  return { file, state, boards }
 }
 
 function writeFile(boards: Boards, engine: string, fingerprints: Record<string, string>) {
-  // fresh table every time, in board order, so nothing points at a mod that's no longer listed
+  // fresh tables every time, in board order, so nothing points at a mod or weapon that's no longer listed
   const upgrades: { id: string; name: string }[] = []
-  const indexOf = new Map<string, number>()
-  const tableIndexFor = (id: string, name: string) => {
-    if (!indexOf.has(id)) {
-      indexOf.set(id, upgrades.length)
+  const upgradeIndexes = new Map<string, number>()
+  const upgradeIndex = (id: string, name: string) => {
+    if (!upgradeIndexes.has(id)) {
+      upgradeIndexes.set(id, upgrades.length)
       upgrades.push({ id, name })
     }
-    return indexOf.get(id)!
+    return upgradeIndexes.get(id)!
+  }
+  const weaponTable: LeaderboardFile['weapons'] = []
+  const weaponIndexes = new Map<string, number>()
+  const weaponIndex = (entry: StoredEntry) => {
+    if (!weaponIndexes.has(entry.weaponId)) {
+      weaponIndexes.set(entry.weaponId, weaponTable.length)
+      weaponTable.push([entry.weaponId, entry.weaponName, entry.category, entry.type])
+    }
+    return weaponIndexes.get(entry.weaponId)!
   }
   const compact: Record<string, CompactEntry[]> = {}
-  for (const { key } of BOARDS) {
-    compact[key] = boards[key]
-      .sort((a, b) => b.score - a.score)
-      .map((entry) => ({
-        ...entry,
-        mods: entry.mods.map(([id, name, rank, stacks]) => [tableIndexFor(id, name), rank, stacks]),
-        arcane: entry.arcane ? [tableIndexFor(entry.arcane[0], entry.arcane[1]), entry.arcane[2], entry.arcane[3]] : null,
-      }))
-  }
+  for (const { key } of BOARDS) compact[key] = boards[key].sort((a, b) => b.score - a.score).map((entry) => encodeEntry(entry, upgradeIndex, weaponIndex))
   const itemsPackage = JSON.parse(readFileSync(new URL('node_modules/@wfcd/items/package.json', ROOT), 'utf8'))
   const file: LeaderboardFile = {
+    version: 2,
     generatedAt: new Date().toISOString(),
     dataVersion: `@wfcd/items ${itemsPackage.version}`,
     scenario: SCENARIO_DESCRIPTION,
     upgrades,
+    weapons: weaponTable,
     boards: compact,
-    engine,
-    fingerprints,
   }
   mkdirSync(new URL('public/', ROOT), { recursive: true })
   writeFileSync(OUTPUT, JSON.stringify(file))
+  writeFileSync(STATE, `${JSON.stringify({ engine, fingerprints } satisfies State, null, 1)}\n`)
 }
 
 async function main() {
@@ -118,18 +123,18 @@ async function main() {
 
   // what's stale and why
   const forced = new Set((option('only') ?? '').split(',').map((name) => name.trim().toLowerCase()).filter(Boolean))
-  const engineChanged = !old.file?.engine || old.file.engine !== engine
+  const engineChanged = !old.state.engine || old.state.engine !== engine
   const reasons = new Map<string, string>()
   for (const weapon of weapons) {
     if (flag('all')) reasons.set(weapon.uniqueName, '--all')
-    else if (engineChanged) reasons.set(weapon.uniqueName, old.file?.engine ? 'engine changed' : 'no fingerprints yet')
+    else if (engineChanged) reasons.set(weapon.uniqueName, old.state.engine ? 'engine changed' : 'no fingerprints yet')
     else if (forced.has(weapon.name.toLowerCase())) reasons.set(weapon.uniqueName, '--only')
-    else if (!old.file?.fingerprints?.[weapon.uniqueName]) reasons.set(weapon.uniqueName, 'new weapon')
-    else if (old.file.fingerprints[weapon.uniqueName] !== fingerprints[weapon.uniqueName]) reasons.set(weapon.uniqueName, 'inputs changed')
+    else if (!old.state.fingerprints?.[weapon.uniqueName]) reasons.set(weapon.uniqueName, 'new weapon')
+    else if (old.state.fingerprints[weapon.uniqueName] !== fingerprints[weapon.uniqueName]) reasons.set(weapon.uniqueName, 'inputs changed')
   }
   const todo = [...reasons.keys()]
   // weapons that left the data just disappear from the boards
-  const removed = Object.keys(old.file?.fingerprints ?? {}).filter((id) => !weaponsById.has(id))
+  const removed = Object.keys(old.state.fingerprints ?? {}).filter((id) => !weaponsById.has(id))
 
   if (todo.length <= 40) for (const id of todo) console.log(`  ${weaponsById.get(id)!.name} (${reasons.get(id)})`)
   else console.log(`  ${todo.length} weapons (${reasons.get(todo[0])})`)
@@ -142,16 +147,21 @@ async function main() {
   const boards: Boards = Object.fromEntries(BOARDS.map(({ key }) => [key, old.boards[key].filter((entry) => !stale.has(entry.weaponId))]))
 
   if (todo.length) {
-    const count = Math.max(1, Math.min(cpus().length - 1, 12, todo.length))
+    // every core: this process just waits while the shards run
+    const count = Math.max(1, Math.min(cpus().length, 12, todo.length))
     rmSync(CACHE_DIR, { recursive: true, force: true })
     mkdirSync(CACHE_DIR, { recursive: true })
     writeFileSync(new URL('todo.json', CACHE_DIR), JSON.stringify(todo))
     console.log(`optimizing ${todo.length} of ${weapons.length} weapons x ${BOARDS.length} rankings on ${count} process(es)...`)
-    const self = fileURLToPath(import.meta.url)
+    // the shards run a plain-JS bundle of this script instead of going through tsx: ~1.6x faster, same results
+    // (tsx's on-the-fly compile wraps every inner function of the calc in a naming helper, and it runs millions of times)
+    const runner = fileURLToPath(new URL('runner.mjs', CACHE_DIR))
+    buildSync({ entryPoints: [fileURLToPath(import.meta.url)], bundle: true, platform: 'node', format: 'esm', outfile: runner, logLevel: 'warning', packages: 'external' })
+    const root = fileURLToPath(ROOT).replace(/\/$/, '')
     await Promise.all(
       Array.from({ length: count }, (_, shard) =>
         new Promise<void>((resolve, reject) => {
-          const child = spawn(process.execPath, [...process.execArgv, self, `--shard=${shard}`, `--of=${count}`], { stdio: ['ignore', 'inherit', 'inherit'] })
+          const child = spawn(process.execPath, [runner, `--shard=${shard}`, `--of=${count}`], { stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, WF_ROOT: root } })
           child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`shard ${shard} exited with ${code}`))))
         }),
       ),

@@ -4,15 +4,15 @@ import { evaluateSeed, optimizeAttack, type OptimizedBuild, type SeedBuild } fro
 import { raisesFireRate } from '../calc/parseMod'
 import { BOARDS, boardKey } from './objectives'
 import { heavyComboFor } from '../data/heavyAttacks'
-import type { CompactEntry } from './leaderboardTypes'
+import type { LeaderboardStats, StoredEntry } from './leaderboardTypes'
 import type { Weapon } from '../types'
 
 const round = (value: number, digits = 4) => Math.round(value * 10 ** digits) / 10 ** digits
 
-// mods stay as [uniqueName, name, rank, stacks] here, the build script turns them into indexes into the shared table
-export interface WeaponEntry extends Omit<CompactEntry, 'mods' | 'arcane'> {
-  mods: [string, string, number, number][]
-  arcane: [string, string, number, number] | null
+// mods stay as [uniqueName, name, rank, stacks] here, the build script turns them into indexes into the shared table.
+// fresh runs keep every stat, the file only keeps what the leaderboard rows show
+export interface WeaponEntry extends Omit<StoredEntry, 'stats'> {
+  stats: LeaderboardStats
 }
 
 export function toEntry(build: OptimizedBuild): WeaponEntry {

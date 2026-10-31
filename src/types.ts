@@ -35,6 +35,7 @@ export interface Weapon {
   magazineSize?: number | null
   reloadTime?: number | null // seconds
   imageName: string | null
+  wikiImage?: string | null // fallback picture from the wiki
   polarities: string[]
   isBow: boolean
   isGlaive?: boolean // takes "Thrown Melee" mods (Power Throw, Volatile Rebound...)
@@ -52,6 +53,7 @@ export interface Mod {
   baseDrain: number
   fusionLimit: number // max rank
   imageName: string | null
+  wikiImage?: string | null // fallback picture from the wiki
   isExilus: boolean
   semiOnly?: boolean // Semi-___ Cannonade
   locksFireRate?: boolean // Semi-___ Cannonade: fire rate mods stop working
@@ -71,6 +73,7 @@ export interface Warframe {
   exilusPolarity: string | null
   passive: string | null
   imageName: string | null
+  wikiImage?: string | null // fallback picture from the wiki
   abilities: WarframeAbilityInfo[] // the frame's 4 abilities, in order
 }
 
@@ -86,6 +89,7 @@ export interface Arcane {
   type: string // Primary Arcane, Secondary Arcane, Melee Arcane, Bow Arcane, Shotgun Arcane
   rarity: string | null
   imageName: string | null
+  wikiImage?: string | null // fallback picture from the wiki
   levelStats: string[][] // index 0 = rank 0, max rank is levelStats.length - 1 (5)
 }
 

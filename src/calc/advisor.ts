@@ -14,7 +14,8 @@ export type LeverId = string // 'damage', 'critChance', 'element:heat', 'physica
 export interface Lever {
   id: LeverId
   label: string
-  line: string // the +10% test line fed to the calc
+  line: string // the test line fed to the calc: one typical mod's worth of the stat
+  size: string // that amount in words, for the explanation ("+90% Heat, like Hellfire")
 }
 
 export interface LeverRow extends Lever {
@@ -80,7 +81,12 @@ export function rating(weight: number, top: number): Rating {
 const ELEMENTS = ['heat', 'cold', 'electricity', 'toxin']
 const PHYSICALS = ['impact', 'puncture', 'slash']
 const SLOTS = 8
-const STEP = '+10%'
+// how much of each stat one typical max-rank mod gives. a +10% sliver can read as "hurts" when a real mod helps:
+// a little Heat on a Slash weapon vs heavy armor steals Slash procs (bleeds ignore armor) and adds almost nothing back
+const typical = (melee: boolean) => ({
+  damage: melee ? 120 : 165, multishot: 90, critChance: 120, critDamage: 120, statusChance: 90, fireRate: melee ? 30 : 60,
+  element: 90, physical: 120, perStatus: melee ? 120 : 80,
+})
 
 const cap = (word: string) => word[0].toUpperCase() + word.slice(1)
 const drainOf = (mod: Mod) => mod.baseDrain + mod.fusionLimit
@@ -124,21 +130,25 @@ export function arcaneOptions(input: CalcInput, score: Scorer, arcanes: Equipped
 // the stats worth testing on this weapon: no multishot on melee, physical types only if the attack has them
 export function leversFor(input: CalcInput): Lever[] {
   const melee = input.weapon.category === 'Melee'
+  const size = typical(melee)
+  const lever = (id: LeverId, label: string, amount: number, stat: string, like: string): Lever =>
+    ({ id, label, line: `+${amount}% ${stat}`, size: `+${amount}% ${stat.replace(' affecting target', '')}, like ${like}` })
   const levers: Lever[] = [
-    { id: 'damage', label: 'Base damage (Serration-type)', line: `${STEP} Damage` },
-    ...(melee ? [] : [{ id: 'multishot', label: 'Multishot', line: `${STEP} Multishot` }]),
-    { id: 'critChance', label: 'Crit chance', line: `${STEP} Critical Chance` },
-    { id: 'critDamage', label: 'Crit damage', line: `${STEP} Critical Damage` },
-    { id: 'statusChance', label: 'Status chance', line: `${STEP} Status Chance` },
-    { id: 'fireRate', label: melee ? 'Attack speed' : 'Fire rate', line: `${STEP} ${melee ? 'Attack Speed' : 'Fire Rate'}` },
-    ...ELEMENTS.map((element) => ({ id: `element:${element}`, label: `${cap(element)} (elemental)`, line: `${STEP} ${cap(element)}` })),
+    lever('damage', 'Base damage (Serration-type)', size.damage, 'Damage', melee ? 'Pressure Point' : 'Serration'),
+    ...(melee ? [] : [lever('multishot', 'Multishot', size.multishot, 'Multishot', 'Split Chamber')]),
+    lever('critChance', 'Crit chance', size.critChance, 'Critical Chance', melee ? 'True Steel' : 'Point Strike'),
+    lever('critDamage', 'Crit damage', size.critDamage, 'Critical Damage', melee ? 'Organ Shatter' : 'Vital Sense'),
+    lever('statusChance', 'Status chance', size.statusChance, 'Status Chance', 'Rifle Aptitude'),
+    lever('fireRate', melee ? 'Attack speed' : 'Fire rate', size.fireRate, melee ? 'Attack Speed' : 'Fire Rate', melee ? 'Fury' : 'Speed Trigger'),
+    ...ELEMENTS.map((element) => lever(`element:${element}`, `${cap(element)} (elemental)`, size.element, cap(element),
+      { heat: 'Hellfire', cold: 'Cryo Rounds', electricity: 'Stormbringer', toxin: 'Infected Clip' }[element]!)),
     ...PHYSICALS.filter((type) => (input.attack.damage[type] ?? 0) > 0)
-      .map((type) => ({ id: `physical:${type}`, label: `${cap(type)} (IPS)`, line: `${STEP} ${cap(type)}` })),
-    { id: 'perStatus', label: 'Per status type (CO / Galvanized)', line: `${STEP} Damage per Status Type affecting target` },
+      .map((type) => lever(`physical:${type}`, `${cap(type)} (IPS)`, size.physical, cap(type), { impact: 'Rupture', puncture: 'Piercing Hit', slash: 'Fanged Fusillade' }[type]!)),
+    lever('perStatus', 'Per status type (CO / Galvanized)', size.perStatus, 'Damage per Status Type affecting target', 'Condition Overload'),
   ]
   // a Bane only does something against its faction
   const bane = BANE_TARGET[input.target.faction]
-  if (bane) levers.push({ id: 'faction', label: `Faction (Bane of ${bane})`, line: `x1.1 Damage to ${bane}` })
+  if (bane) levers.push({ id: 'faction', label: `Faction (Bane of ${bane})`, line: `x1.55 Damage to ${bane}`, size: `+55% damage to ${bane}, like Primed Bane` })
   return levers
 }
 

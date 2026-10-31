@@ -18,10 +18,30 @@ interface Props {
   result: CalcResult // what the main numbers show (body or head, per the target toggle)
   body: CalcResult
   head: CalcResult
+  arsenal: CalcResult // mods' always-on stats only, like the in-game arsenal
+  unmodded: CalcResult // no mods, no arcane
   canHeadshot: boolean
 }
 
-export function StatsPanel({ result, body, head, canHeadshot }: Props) {
+const totalDamage = (calc: CalcResult) => sum(calc.damageTypes.map((row) => row.modded))
+const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
+
+// one stat across the three columns. in-fight gets highlighted when the fight changes it (conditionals, buffs, combo)
+function StatRow({ label, title, values, format }: { label: string; title?: string; values: [number | null, number | null, number | null]; format: (value: number) => string }) {
+  const [unmodded, arsenal, fight] = values
+  const cell = (value: number | null) => (value === null ? '–' : format(value))
+  const changed = fight !== null && arsenal !== null && format(fight) !== format(arsenal)
+  return (
+    <tr title={title}>
+      <td>{label}</td>
+      <td className="muted-inline">{cell(unmodded)}</td>
+      <td>{cell(arsenal)}</td>
+      <td className={changed ? 'accent' : ''}>{cell(fight)}</td>
+    </tr>
+  )
+}
+
+export function StatsPanel({ result, body, head, arsenal, unmodded, canHeadshot }: Props) {
   // bad luck / good luck: 10th and 90th percentile of 300 simulated fights (crit and status rolled per pellet)
   const ranges = result.simulateWindows(RANGE_WINDOWS)
   const sustainedRange = ranges[RANGE_WINDOWS.indexOf(SUSTAINED_FIGHT_SECONDS)]
@@ -185,33 +205,71 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
         </tbody>
       </table>
 
-      <h3>Modded stats</h3>
+      <h3>Stats <span className="muted-inline">(no mods · arsenal · in the fight)</span></h3>
+      <table className="stat-compare">
+        <thead>
+          <tr><th></th><th>No mods</th><th title="What the in-game arsenal shows: the mods' always-on stats. No On Kill / On Status stacks, abilities, combo or Condition Overload">Arsenal</th><th title="What the calculator uses: arsenal plus every conditional, buff and combo listed under This build assumes">In fight</th></tr>
+        </thead>
+        <tbody>
+          <StatRow label="Damage (all types)" title="Every damage type added up, per pellet, no crit. This is the arsenal's damage number" values={[totalDamage(unmodded), totalDamage(arsenal), totalDamage(result)]} format={(value) => formatNumber(value)} />
+          <StatRow label="Crit chance" values={[unmodded.critChance, arsenal.critChance, result.critChance]} format={formatPercent} />
+          <StatRow label="Crit multiplier" values={[unmodded.critMultiplier, arsenal.critMultiplier, result.critMultiplier]} format={(value) => `${formatNumber(value, 2)}x`} />
+          <StatRow label={`Status chance${result.beam && result.beamMerge > 1 ? ' (per beam)' : ''}`} values={[unmodded.statusChance, arsenal.statusChance, result.statusChance]} format={formatPercent} />
+          <StatRow label="Multishot" values={[unmodded.multishot, arsenal.multishot, result.multishot]} format={(value) => formatNumber(value, 2)} />
+          <StatRow label={`${result.melee ? (result.melee.windUp !== null ? 'Heavy attacks per second' : 'Attack speed') : 'Fire rate'}${result.fireRateLocked ? ' (locked by Cannonade)' : ''}`} values={[unmodded.fireRate, arsenal.fireRate, result.fireRate]} format={(value) => formatNumber(value, 2)} />
+          {result.magazineSize !== null && (
+            <>
+              <StatRow label="Magazine" values={[unmodded.magazineSize, arsenal.magazineSize, result.magazineSize]} format={(value) => formatNumber(value, 0)} />
+              <StatRow label={`Reload${result.shellByShell ? ' (one shell at a time)' : ''}`} values={[unmodded.reloadTime, arsenal.reloadTime, result.reloadTime]} format={(value) => `${formatNumber(value, 2)}s`} />
+            </>
+          )}
+        </tbody>
+      </table>
+
+      <h3>Damage types <span className="muted-inline">(per pellet)</span></h3>
+      <table className="stat-compare">
+        <thead>
+          <tr><th>Type</th><th>No mods</th><th>Arsenal</th><th>In fight</th><th>Vs target</th><th>Procs</th></tr>
+        </thead>
+        <tbody>
+          {result.damageTypes.map((row) => {
+            const inArsenal = arsenal.damageTypes.find((other) => other.damageType === row.damageType)
+            const inBase = unmodded.damageTypes.find((other) => other.damageType === row.damageType)
+            return (
+              <tr key={row.damageType}>
+                <td className={`dmg-${row.damageType}`}>{row.damageType}</td>
+                <td className="muted-inline">{inBase ? formatNumber(inBase.modded) : '–'}</td>
+                <td>{inArsenal ? formatNumber(inArsenal.modded) : '–'}</td>
+                <td className={inArsenal && formatNumber(inArsenal.modded) === formatNumber(row.modded) ? '' : 'accent'}>{formatNumber(row.modded)}</td>
+                <td>{formatNumber(row.vsTarget)}</td>
+                <td>{formatPercent(row.procShare)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <p className="proc-note">
+        The arsenal's damage is every type added up. Modded base damage below ({formatNumber(result.moddedBaseDamage)}) is a different number: base × (1 + damage
+        mods like Serration), before elements. Elemental mods are a % of that, so it's what Hellfire's +90% is +90% of.
+      </p>
+
+      <h3>Fight details</h3>
       <table>
         <tbody>
-          <tr><td>Modded base damage</td><td>{formatNumber(result.moddedBaseDamage)}</td></tr>
-          <tr><td>Crit chance</td><td>{formatPercent(result.critChance)}</td></tr>
-          <tr><td>Crit multiplier</td><td>{formatNumber(result.critMultiplier, 2)}x</td></tr>
-          <tr><td>Status chance{result.beam && result.beamMerge > 1 ? ' (per beam)' : ''}</td><td>{formatPercent(result.statusChance)}</td></tr>
+          <tr><td>Modded base damage (before elements)</td><td>{formatNumber(result.moddedBaseDamage)}</td></tr>
           {result.beam && result.beamMerge > 1 && (
             <tr title="The merged tick rolls the summed status chance: past 100% it's guaranteed procs plus a chance at one more. Same proc count as separate beams, but each damaging proc (Slash, Heat, Toxin, Electricity, Blast, Gas) comes off the bigger merged tick">
               <td>Status per merged tick</td><td>{formatPercent(result.statusChance * result.beamMerge)} ({formatNumber(result.statusChance * result.beamMerge, 2)} procs)</td>
             </tr>
           )}
-          <tr>
-            <td>
-              Multishot{result.multishotLocked ? ' (locked by Acuity)' : result.multishotModsIgnored ? ' (multishot mods don\'t apply to this attack)' : ''}
-              {result.beam && (
-                <span className="muted-inline" title="Wiki Multishot: extra beams on one target merge into a single tick with the summed damage and status chance. Slash, Heat, Toxin, Electricity, Blast and Gas procs come off that merged tick, so they scale with multishot twice. Forced procs (Hunter Munitions etc.) are one per tick.">
-                  {' '}(beam: merged ticks)
-                </span>
-              )}
-            </td>
-            <td>{formatNumber(result.multishot, 2)}</td>
-          </tr>
-          <tr>
-            <td>{result.melee ? (result.melee.windUp !== null ? 'Heavy attacks per second' : 'Attack speed') : 'Fire rate'}{result.fireRateLocked ? ' (locked by Cannonade)' : ''}</td>
-            <td>{formatNumber(result.fireRate, 2)}</td>
-          </tr>
+          {(result.multishotLocked || result.multishotModsIgnored || result.beam) && (
+            <tr>
+              <td>Multishot</td>
+              <td title={result.beam ? 'Wiki Multishot: extra beams on one target merge into a single tick with the summed damage and status chance. Slash, Heat, Toxin, Electricity, Blast and Gas procs come off that merged tick, so they scale with multishot twice. Forced procs (Hunter Munitions etc.) are one per tick.' : undefined}>
+                {result.multishotLocked ? 'locked by Acuity' : result.multishotModsIgnored ? 'multishot mods don\'t apply to this attack' : 'beam: merged ticks'}
+              </td>
+            </tr>
+          )}
           {result.melee && (
             <>
               <tr><td>Combo multiplier{result.melee.heavy ? ' (heavy damage ×)' : ''}</td><td>{formatNumber(result.melee.combo, 1)}x</td></tr>
@@ -227,13 +285,6 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
               )}
             </>
           )}
-          <tr>
-            <td>Magazine / reload</td>
-            <td>
-              {result.magazineSize ? `${result.magazineSize} / ${formatNumber(result.reloadTime ?? 0, 2)}s` : 'no reload'}
-              {result.shellByShell && <span className="muted-inline"> (one shell at a time)</span>}
-            </td>
-          </tr>
           <tr><td>Time spent firing</td><td>{formatPercent(result.uptime)}</td></tr>
           <tr><td>Direct / DoT DPS (burst)</td><td>{formatNumber(result.burstDps, 0)} / {formatNumber(result.dotDps, 0)}</td></tr>
           <tr><td>Faction multiplier</td><td>{formatNumber(result.factionMultiplier, 2)}x</td></tr>
@@ -250,23 +301,6 @@ export function StatsPanel({ result, body, head, canHeadshot }: Props) {
             <td>Armor</td>
             <td>{formatNumber(result.armor.before, 0)} → {formatNumber(result.armor.after, 0)} ({formatPercent(1 - result.armor.damageMultiplier)} DR)</td>
           </tr>
-        </tbody>
-      </table>
-
-      <h3>Damage types (per projectile)</h3>
-      <table>
-        <thead>
-          <tr><th>Type</th><th>Modded</th><th>Vs target</th><th>Procs</th></tr>
-        </thead>
-        <tbody>
-          {result.damageTypes.map((row) => (
-            <tr key={row.damageType}>
-              <td className={`dmg-${row.damageType}`}>{row.damageType}</td>
-              <td>{formatNumber(row.modded)}</td>
-              <td>{formatNumber(row.vsTarget)}</td>
-              <td>{formatPercent(row.procShare)}</td>
-            </tr>
-          ))}
         </tbody>
       </table>
 

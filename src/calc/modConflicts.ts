@@ -59,7 +59,18 @@ export function modConflict(a: Mod, b: Mod): ConflictReason | null {
   return null
 }
 
-export const modsConflict = (a: Mod, b: Mod) => modConflict(a, b) !== null
+// remembered per pair: the optimizer asks the same pairs millions of times and the check runs regexes on the paths
+const conflictMemo = new WeakMap<Mod, WeakMap<Mod, boolean>>()
+export const modsConflict = (a: Mod, b: Mod) => {
+  let row = conflictMemo.get(a)
+  if (!row) conflictMemo.set(a, (row = new WeakMap()))
+  let known = row.get(b)
+  if (known === undefined) {
+    known = modConflict(a, b) !== null
+    row.set(b, known)
+  }
+  return known
+}
 
 // the first equipped mod that blocks `candidate`, for the "incompatible with X" label
 export const blockingMod = (candidate: Mod, equipped: Mod[]) => equipped.find((mod) => modsConflict(candidate, mod)) ?? null

@@ -150,11 +150,14 @@ const withShiver = run(testAttack({ slash: 100 }), {
 })
 expectClose('Shiver x10 cold', withShiver.hit.average, 100 * (1 + 4.5))
 
-// Primary Blight at 40 stacks: +144% crit damage, +72% multishot
+// Primary Blight at 40 stacks: +144% crit damage, +72% multishot. it needs Toxin procs, so a toxin attack
 const blight = arcanes.find((arcane) => arcane.name === 'Primary Blight')!
-const withBlight = run(testAttack({ slash: 100 }, { critMultiplier: 2 }), { arcane: { arcane: blight, rank: 5, conditionalStacks: 40 } })
+const withBlight = run(testAttack({ toxin: 100 }, { critMultiplier: 2, statusChance: 0.2 }), { arcane: { arcane: blight, rank: 5, conditionalStacks: 40 } })
 expectClose('Blight crit multiplier', withBlight.critMultiplier, 2 * (1 + 1.44))
 expectClose('Blight multishot', withBlight.multishot, 1.72)
+// and without any Toxin procs it never stacks (pure Slash here)
+const blightNoToxin = run(testAttack({ slash: 100 }, { critMultiplier: 2, statusChance: 0.2 }), { arcane: { arcane: blight, rank: 5, conditionalStacks: 40 } })
+expectClose('Blight off without Toxin procs', blightNoToxin.critMultiplier, 2)
 
 // level scaling + Steel Path, checked against the wiki curves by hand:
 // Grineer health at 50 levels over base: 1 + 0.015 x 50^2.12 (below 70, no blend)
@@ -1097,9 +1100,17 @@ expectClose('riven disposition is x1.2 for all', RIVEN_DISPOSITION, 1.2)
     target: { ...grineerTarget, faction: 'None' },
   })
   const weightOf = (names: string[], lever: string) => advise(advisorInput(names), (result) => result.sustainedDps, pool).levers.find((row) => row.id === lever)!.weight
-  // the same +10% damage is worth less once Serration is in (1.0 -> 2.65 base damage bucket): 10% / 265% ~ 3.8%
-  expectClose('advisor: +10% damage on an empty build', weightOf([], 'damage'), 0.1)
-  expectClose('advisor: +10% damage after Serration', weightOf(['Serration'], 'damage'), 0.1 / 2.65)
+  // a Serration-sized +165% damage is worth less once Serration is in (1.0 -> 2.65 base damage bucket): 165% / 265% ~ 62%
+  expectClose('advisor: +165% damage on an empty build', weightOf([], 'damage'), 1.65)
+  expectClose('advisor: +165% damage after Serration', weightOf(['Serration'], 'damage'), 1.65 / 2.65)
+  // a full +90% Heat mod helps Laetum vs a 2,700-armor Heavy Gunner even though a +10% sliver doesn't (it steals Slash procs)
+  {
+    const laetum = weapons.find((weapon) => weapon.name === 'Laetum')!
+    const laetumPool = damageModPool(getCompatibleMods(laetum), true).map((mod) => equipMod(mod, false))
+    const heat = advise({ weapon: laetum, attack: laetum.attacks[0], mods: [], armor: 2700, debuffs: noDebuffs(), buffs: { roar: 0 }, target: grineerTarget },
+      (result) => result.sustainedDps, laetumPool).levers.find((row) => row.id === 'element:heat')!
+    expectClose('advisor: a full Heat mod helps vs heavy armor', heat.weight > 0 ? 1 : 0, 1)
+  }
   // Hellfire in, +10% Electricity turns the Heat into Radiation
   expectClose('advisor: element combining is labelled', advise(advisorInput(['Hellfire']), (result) => result.sustainedDps, pool).levers.find((row) => row.id === 'element:electricity')!.combines.includes('radiation') ? 1 : 0, 1)
   // a greedy path never goes down and fills 8 slots

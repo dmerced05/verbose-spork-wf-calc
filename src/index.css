@@ -398,21 +398,29 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 /* ---- riven ---- */
 .mod-card.rarity-riven { border-top: 2px solid #b48cf0; }
 .browser-card.rarity-riven { border-left: 3px solid #b48cf0; }
-.riven-editor { margin-top: 12px; border: 1px solid #4a3a66; border-radius: 6px; padding: 10px; display: grid; gap: 8px; }
+.riven-editor { margin-top: 12px; border: 1px solid #4a3a66; border-radius: 6px; padding: 10px; display: grid; gap: 8px; min-width: 0; container-type: inline-size; }
+/* one stat per row: sign, stat picker, value + range, remove. under ~520px (Compare's path cards) the numbers drop to a
+   second line so the stat name gets the full width */
+.riven-stats { display: grid; gap: 6px; }
+.riven-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto; grid-template-areas: 'sign stat nums remove'; gap: 4px 8px; align-items: center; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.riven-row:last-child { border-bottom: none; padding-bottom: 0; }
+.riven-sign { grid-area: sign; font-weight: 600; color: #8fd18f; }
+.riven-stat { grid-area: stat; min-width: 0; }
+.riven-stat select { width: 100%; min-width: 0; text-overflow: ellipsis; }
+.riven-stat .muted-inline { display: block; overflow-wrap: anywhere; }
+.riven-nums { grid-area: nums; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.riven-value-wrap { white-space: nowrap; }
+.riven-remove { grid-area: remove; }
+.riven-row.negative .riven-sign, .riven-row.negative select { color: #ff8a8a; }
+.riven-value { width: 76px; margin-right: 4px; }
+@container (max-width: 520px) {
+  .riven-row { grid-template-columns: 14px minmax(0, 1fr) auto; grid-template-areas: 'sign stat remove' '. nums nums'; }
+}
 .riven-title { color: #c9a8ff; }
-.riven-stats { width: 100%; border-collapse: collapse; }
-.riven-stats td { padding: 4px 6px 4px 0; vertical-align: middle; }
-.riven-stats select { max-width: 100%; }
-.riven-stats tr.negative .riven-sign, .riven-stats tr.negative select { color: #ff8a8a; }
-.riven-sign { width: 14px; font-weight: 600; color: #8fd18f; }
-.riven-value { width: 80px; margin-right: 4px; }
 .out-of-range { color: #ff6b6b; border-color: #ff6b6b; }
 .remove-inline { padding: 0 6px; }
 .riven-splice button { font-size: 0.8rem; }
 .riven-issues { margin: 0; padding-left: 18px; color: #ff8a8a; font-size: 0.8rem; }
-@media (max-width: 600px) { .riven-stats td { display: block; padding: 2px 0; } .riven-stats tr { display: block; border-bottom: 1px solid var(--border); padding: 4px 0; } }
-.riven-stats td:nth-child(2) { width: 45%; }
-.riven-stats td:nth-child(2) select { width: 100%; }
 
 /* ---- compare tab ---- */
 .compare { display: grid; gap: 16px; }

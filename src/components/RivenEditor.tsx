@@ -53,16 +53,15 @@ export function RivenEditor({ type, disposition, config, onChange }: Props) {
         </span>
       </div>
 
-      <table className="riven-stats">
-        <tbody>
+      <div className="riven-stats">
           {config.stats.map((stat, index) => {
             const range = stat.tag ? rivenRange(type, disposition, config.stats, stat) : null
             const roll = stat.tag ? rivenRoll(type, disposition, config.stats, stat) : null
             const outside = range && (stat.value < range[0] - 0.05 || stat.value > range[1] + 0.05)
             return (
-              <tr key={index} className={stat.negative ? 'negative' : ''}>
-                <td className="riven-sign">{stat.negative ? '−' : '+'}</td>
-                <td>
+              <div key={index} className={`riven-row ${stat.negative ? 'negative' : ''}`}>
+                <span className="riven-sign">{stat.negative ? '−' : '+'}</span>
+                <div className="riven-stat">
                   <select value={stat.tag} onChange={(event) => changeTag(index, event.target.value)}>
                     {!stat.tag && <option value="">(pick the stat the game rolled)</option>}
                     <optgroup label="Rolled stats">
@@ -81,15 +80,16 @@ export function RivenEditor({ type, disposition, config, onChange }: Props) {
                     )}
                   </select>
                   {stat.tag && isSpliced(type, stat.tag) && <div className="muted-inline">spliced from {recipeFor(stat.tag)}</div>}
-                </td>
-                <td>
+                </div>
+                <div className="riven-nums">
+                  <span className="riven-value-wrap">
                   <input
                     type="number" step="0.1" className={`riven-value ${outside ? 'out-of-range' : ''}`}
                     value={stat.value} onChange={(event) => updateStat(index, { value: Number(event.target.value) })}
                   />
                   {stat.tag && unitOf(stat.tag)}
-                </td>
-                <td className="muted-inline">
+                  </span>
+                  <span className="muted-inline">
                   {range && (
                     <>
                       <button className="link-button" title="Set to the lowest roll" onClick={() => updateStat(index, { value: Number(fmt(range[0])) })}>{fmt(range[0])}</button>
@@ -98,13 +98,13 @@ export function RivenEditor({ type, disposition, config, onChange }: Props) {
                       {roll !== null && <span className={outside ? 'out-of-range' : ''}> · roll {Math.round(roll * 100)}%</span>}
                     </>
                   )}
-                </td>
-                <td><button className="remove-inline" title="Remove stat" onClick={() => setStats(config.stats.filter((_, other) => other !== index))}>×</button></td>
-              </tr>
+                  </span>
+                </div>
+                <button className="remove-inline riven-remove" title="Remove stat" onClick={() => setStats(config.stats.filter((_, other) => other !== index))}>×</button>
+              </div>
             )
           })}
-        </tbody>
-      </table>
+      </div>
 
       <div className="row">
         <button disabled={positives >= 3} onClick={() => addStat(false)}>+ Positive</button>

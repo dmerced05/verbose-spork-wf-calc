@@ -3,11 +3,13 @@
 // everything is measured by running the calc with one more (or one less) mod, so the weights move as the build does:
 // Warframe damage is a product of buckets (base damage x multishot x crit x elements x fire rate...), and adding to a
 // bucket that's already big moves the product less than adding to a small one. that's what "over-stacking" means here
-import { calculate, type CalcInput, type CalcResult } from './damage'
+import { SUSTAINED_FIGHT_SECONDS, calculate, type CalcInput, type CalcResult } from './damage'
 import { parseUpgrade, type ModEffect } from './parseMod'
 import { modsConflict } from './modConflicts'
 import { BANE_TARGET } from './constants'
-import type { Arcane, EquippedArcane, EquippedMod, Mod } from '../types'
+import { modCatch } from './modTieBreak'
+import { expectedDamage } from './simulate'
+import type { Arcane, Attack, EquippedArcane, EquippedMod, Mod } from '../types'
 
 export type LeverId = string // 'damage', 'critChance', 'element:heat', 'physical:slash', 'faction', 'perStatus'...
 
@@ -88,6 +90,32 @@ const typical = (melee: boolean) => ({
   element: 90, physical: 120, perStatus: melee ? 120 : 80,
 })
 
+// ties go to the mod without a catch: no Niche tag first (Serration over Heavy Caliber), then no condition (Vital Sense
+// over Bladed Rounds). the calc can't see accuracy and counts conditionals at full stacks, so those tie on paper
+const isNiche = (mod: Mod) => modCatch(mod) === 2
+const beats = (value: number, mod: Mod, bestValue: number, bestMod: Mod) => {
+  const tie = Math.abs(value - bestValue) <= 1e-6 * Math.max(1, Math.abs(bestValue))
+  return tie ? modCatch(mod) < modCatch(bestMod) : value > bestValue
+}
+
+// status DoTs count half in the advisor's rankings unless the weapon is built for them (25%+ base status, a beam, or
+// forced procs): Electricity's procs shouldn't outrank Primed Cryo Rounds' raw damage on a 20% status rifle. it's
+// still real damage, the panel says so, but a target often dies before the ticks land
+export const DOT_WEIGHT_OFF_DOT_WEAPON = 0.5
+export const isDotWeapon = (attack: Attack) => attack.statusChance >= 0.25 || Boolean(attack.continuous) || Boolean(attack.forcedProcs?.length)
+const dotsIn = (result: CalcResult, seconds: number) =>
+  expectedDamage({ ...result.shotModel, hit: { normal: 0, crit: 0, average: 0 } }, seconds)
+export function rankingScorer(objectiveId: string, score: Scorer, attack: Attack): { score: Scorer; dotWeight: number } {
+  const dotWeight = isDotWeapon(attack) ? 1 : DOT_WEIGHT_OFF_DOT_WEAPON
+  if (dotWeight === 1) return { score, dotWeight }
+  const seconds = objectiveId === 'sustained' ? SUSTAINED_FIGHT_SECONDS : /^window(\d+)$/.test(objectiveId) ? Number(objectiveId.slice(6)) : null
+  if (seconds) {
+    return { dotWeight, score: (result) => (result.damageInWindow(seconds) - (1 - dotWeight) * dotsIn(result, seconds)) / (objectiveId === 'sustained' ? seconds : 1) }
+  }
+  if (objectiveId === 'attack') return { dotWeight, score: (result) => result.averageShot + dotWeight * (result.attackTotal - result.averageShot) }
+  return { score, dotWeight } // single hit has no DoT in it
+}
+
 const cap = (word: string) => word[0].toUpperCase() + word.slice(1)
 const drainOf = (mod: Mod) => mod.baseDrain + mod.fusionLimit
 
@@ -127,12 +155,31 @@ export function arcaneOptions(input: CalcInput, score: Scorer, arcanes: Equipped
     .sort((a, b) => b.gain - a.gain)
 }
 
-// the stats worth testing on this weapon: no multishot on melee, physical types only if the attack has them
-export function leversFor(input: CalcInput): Lever[] {
+// the biggest plain amount of one stat a real mod you could still add gives (Primed Cryo Rounds: +165% Cold), so a stat
+// with a bigger mod isn't ranked as if it only had the +90% one. only always-on lines count
+function biggestMod(available: Mod[], id: LeverId): { amount: number; name: string } | null {
+  let best: { amount: number; name: string; mod: Mod } | null = null
+  for (const mod of available) {
+    for (const effect of parseUpgrade(mod.levelStats, mod.fusionLimit).effects) {
+      if (!leversOfEffect(effect).includes(id) || !('value' in effect)) continue
+      const amount = Math.round(effect.value * 100)
+      if (amount > 0 && (!best || beats(amount, mod, best.amount, best.mod))) best = { amount, name: mod.name, mod }
+    }
+  }
+  return best
+}
+
+// the stats worth testing on this weapon: no multishot on melee, physical types only if the attack has them.
+// each is tested at one typical mod's worth, or at the biggest mod for it you could still add when that's bigger
+export function leversFor(input: CalcInput, available: Mod[] = []): Lever[] {
   const melee = input.weapon.category === 'Melee'
   const size = typical(melee)
-  const lever = (id: LeverId, label: string, amount: number, stat: string, like: string): Lever =>
-    ({ id, label, line: `+${amount}% ${stat}`, size: `+${amount}% ${stat.replace(' affecting target', '')}, like ${like}` })
+  const lever = (id: LeverId, label: string, typicalAmount: number, stat: string, like: string): Lever => {
+    const real = id === 'faction' ? null : biggestMod(available, id)
+    const amount = real && real.amount > typicalAmount ? real.amount : typicalAmount
+    const example = real && real.amount > typicalAmount ? real.name : like
+    return { id, label, line: `+${amount}% ${stat}`, size: `+${amount}% ${stat.replace(' affecting target', '')}, like ${example}` }
+  }
   const levers: Lever[] = [
     lever('damage', 'Base damage (Serration-type)', size.damage, 'Damage', melee ? 'Pressure Point' : 'Serration'),
     ...(melee ? [] : [lever('multishot', 'Multishot', size.multishot, 'Multishot', 'Split Chamber')]),
@@ -186,18 +233,23 @@ export function advise(input: CalcInput, score: Scorer, pool: EquippedMod[]): Ad
   const options = candidates.map((option) => ({ option: optionFor(option), levers: leversOf(option.mod) }))
 
   const baseTypes = new Set(calculate({ ...input, mods: equipped }).damageTypes.map((row) => row.damageType))
-  const levers: LeverRow[] = leversFor(input).map((lever) => {
+  const levers: LeverRow[] = leversFor(input, candidates.map((option) => option.mod)).map((lever) => {
     const withLever = calculate({ ...input, mods: [...equipped, { mod: fakeMod(modTypeOf(input), lever.id, lever.line), rank: 0, conditionalStacks: 0 }] })
     const weight = ratio(score(withLever))
     const own = lever.id.startsWith('element:') ? lever.id.slice(8) : null
     const combines = own ? withLever.damageTypes.map((row) => row.damageType).filter((type) => type !== own && !baseTypes.has(type)) : []
     // a full build shows the best swap even when it's a loss, so you can see how far off it is
     const forLever = options.filter((entry) => entry.levers.includes(lever.id) && (full || entry.option.gain > 1e-6)).map((entry) => entry.option)
-    const bestMod = forLever.reduce<ModOption | null>((best, option) => (!best || option.gain > best.gain ? option : best), null)
+    const bestMod = forLever.reduce<ModOption | null>((best, option) => (!best || beats(option.gain, option.mod, best.gain, best.mod) ? option : best), null)
     const cheapest = forLever.filter((option) => option.gain > 0)
-      .reduce<ModOption | null>((best, option) => (!best || option.gain / option.drain > best.gain / best.drain ? option : best), null)
+      .reduce<ModOption | null>((best, option) => (!best || beats(option.gain / option.drain, option.mod, best.gain / best.drain, best.mod) ? option : best), null)
+    // with a free slot, a stat is worth at least what its best real mod adds: Galvanized Chamber's on-kill stacks
+    // make Multishot worth far more than a plain +90%. with all 8 full that number is a swap, so it stays the test
+    const realBeats = !full && bestMod !== null && bestMod.gain > weight
     return {
-      ...lever, weight, combines,
+      ...lever, combines,
+      weight: realBeats ? bestMod!.gain : weight,
+      size: realBeats ? `${bestMod!.mod.name}, the best mod for it (conditional parts at the usual stacks)` : lever.size,
       equippedCount: equipped.filter((slot) => leversOf(slot.mod).includes(lever.id)).length,
       bestMod,
       cheapestMod: cheapest && cheapest !== bestMod ? cheapest : null,
@@ -206,7 +258,7 @@ export function advise(input: CalcInput, score: Scorer, pool: EquippedMod[]): Ad
 
   // swaps that beat the weakest slot (only meaningful when the build is full)
   const swaps = full
-    ? options.filter((entry) => entry.option.gain > 0.005).sort((a, b) => b.option.gain - a.option.gain).slice(0, 3)
+    ? options.filter((entry) => entry.option.gain > 0.005).sort((a, b) => b.option.gain - a.option.gain || Number(isNiche(a.option.mod)) - Number(isNiche(b.option.mod))).slice(0, 3)
       .map((entry) => ({ out: equipped[weakestIndex].mod, in: entry.option.mod, gain: entry.option.gain }))
     : []
 
@@ -229,7 +281,7 @@ export function advise(input: CalcInput, score: Scorer, pool: EquippedMod[]): Ad
       if (entry.levers.includes(lever.id)) continue // another mod of the same stat isn't "something else"
       const option = pool.find((candidate) => candidate.mod === entry.option.mod)!
       const gain = ratio(run(equipped.map((slot, index) => (index === weakest.index ? option : slot))))
-      if (!best || gain > best.gain) best = { mod: option.mod, gain }
+      if (!best || beats(gain, option.mod, best.gain, best.mod)) best = { mod: option.mod, gain }
     }
     if (best && best.gain > 0.01) {
       flagged.add(weakest.slot.mod.name)
@@ -262,7 +314,7 @@ export function greedyPath(input: CalcInput, score: Scorer, pool: EquippedMod[],
     for (const option of pool) {
       if (!allow(option.mod) || picked.some((slot) => slot.mod.name === option.mod.name || modsConflict(slot.mod, option.mod))) continue
       const next = run([...picked, option])
-      if (!best || next > best.score) best = { option, score: next }
+      if (!best || beats(next, option.mod, best.score, best.option.mod)) best = { option, score: next }
     }
     if (!best || best.score <= current * (1 + 1e-6)) break
     picked.push(best.option)

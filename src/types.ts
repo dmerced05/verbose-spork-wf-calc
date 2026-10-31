@@ -21,6 +21,9 @@ export interface Attack {
   hitscanAoE?: boolean // the explosion of a hitscan/beam shot. only the directly hit enemy gets CO
   baseDamagePool?: number // the whole shot's base damage when this is one part of it (Stug blob + explosion)
   finisher?: boolean // finisher damage (Blade Storm's clones): Finisher Damage mods and finisher vulnerability apply
+  parts?: string[] // a whole shot: the attacks (by name) that one trigger pull does, scored together (damage.ts)
+  headshotOnly?: boolean // a part that only happens on a headshot (Vectis Incarnon's orb explosion)
+  bodyShotOnly?: boolean // a part that only happens on a body shot (the orb's embedded ticks)
 }
 
 export interface Weapon {

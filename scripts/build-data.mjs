@@ -105,7 +105,8 @@ function aoeParent(weapon, attack) {
   return best ?? direct.find((other) => other.name.split(' ').includes(words.at(-1))) ?? null
 }
 
-// Incarnon forms the GunCO sheet (Feb 2025) says "suffer from hitscan AoE characteristics (no MS, but gets CO)"
+// Incarnon forms the GunCO sheet (Feb 2025) says "suffer from hitscan AoE characteristics (no MS, but gets CO)". that's
+// the area part only: the direct shot does get multishot, the radial part doesn't (checked in game, Burston Prime)
 const NO_MULTISHOT_INCARNON = /^(Braton|Mk1-Braton|Braton Prime|Braton Vandal|Burston|Burston Prime|Zylok|Zylok Prime)$/
 
 // attacks multishot mods don't touch. hitscan explosions are one explosion per trigger pull (GunCO sheet / wiki CO
@@ -121,16 +122,14 @@ function multishotRule(weapon, attack) {
   if (weapon.category === 'Primary' && /\bSpear\b|\bThrow\b/.test(attack.name) && weapon.attacks.some((other) => /Throw/.test(other.name))) {
     return { noMultishotMods: true }
   }
-  if (NO_MULTISHOT_INCARNON.test(weapon.name) && /^Incarnon Form/.test(attack.name)) return { noMultishotMods: true }
+  if (NO_MULTISHOT_INCARNON.test(weapon.name) && /^Incarnon Form/.test(attack.name) && attack.shot_type === 'AoE') return { noMultishotMods: true }
   return {}
 }
 
 // attacks the export ships with no damage numbers, from their wiki pages (Haalvu: "33 per shot, 100% Tau",
 // alt-fire "34 per projectile, 100% Tau"). only used while the export's own damage is empty
-// Vectis Prime's Incarnon Form is listed at 5 Cold per part, wikiwiki.jp has 150 direct + 150 blast (300 base)
 const ATTACK_DAMAGE_FIXES = {
   Haalvu: { 'Normal Attack': { tau: 33 }, 'Alt-Fire': { tau: 34 } },
-  'Vectis Prime': { 'Incarnon Form': { cold: 150 }, 'Incarnon Form Headshot AoE': { cold: 150 }, 'Incarnon Form Embed AoE': { cold: 150 } },
 }
 const attackDamage = (weapon, attack) => {
   const fix = ATTACK_DAMAGE_FIXES[weapon.name]?.[attack.name]
@@ -143,7 +142,6 @@ const attackDamage = (weapon, attack) => {
 // the Incarnon bounces are more of the same explosion
 const BASE_DAMAGE_POOLS = {
   Stug: { 'Blob Embed': 79, 'Blob Explosion': 79, 'Incarnon Form Blob Embed': 250, 'Incarnon Form Blob Explosion': 250, 'Incarnon Form Bounce Explosion': 250 },
-  'Vectis Prime': { 'Incarnon Form': 300, 'Incarnon Form Headshot AoE': 300, 'Incarnon Form Embed AoE': 300 },
 }
 
 // one weapon in the shape the calc wants. also used for the exalted weapons below
@@ -191,6 +189,27 @@ function toWeapon(weapon) {
   }
 }
 
+// Vectis Incarnon (wiki Vectis_Incarnon_Genesis): "Fires projectiles which deal 150 Cold direct hit damage, then embed
+// an orb which instantly deals an additional 25 Cold AoE damage ... with a guaranteed Cold proc. On body shots, the orb
+// remains embedded for 2.5s, dealing another 2 ticks of 25 AoE damage before disappearing. On headshots, the orb instead
+// explodes after a 0.4s delay, dealing 2 simultaneous hits of 150 Cold damage in a 6.7m AoE, each with a guaranteed Cold
+// proc." the export has both area parts at 150 (and plain Vectis's direct hit at 5), so they're rebuilt from that.
+// every part gets EVO2's +base damage ("Direct hit, orb embed, and orb AoE explosion damage are all affected"), taken
+// as the same proportion of each (pool 150). the delays (0.4 s, ticks over 2.5 s) aren't timed, it all lands per shot
+function vectisIncarnon(weapon) {
+  if (!/^Vectis( Prime)?$/.test(weapon.name)) return
+  const form = weapon.attacks.find((attack) => attack.name === 'Incarnon Form')
+  if (!form) return
+  const area = { ...form, isAoE: true, baseDamagePool: 150 }
+  weapon.attacks = [
+    ...weapon.attacks.filter((attack) => !/^Incarnon Form/.test(attack.name)),
+    { ...form, damage: { cold: 150 } },
+    { ...area, name: 'Incarnon Form Embed AoE', damage: { cold: 25 }, forcedProcs: ['cold'] },
+    { ...area, name: 'Incarnon Form Embed Ticks', damage: { cold: 50 }, forcedProcs: ['cold', 'cold'], bodyShotOnly: true },
+    { ...area, name: 'Incarnon Form Headshot AoE', damage: { cold: 300 }, forcedProcs: ['cold', 'cold'], headshotOnly: true },
+  ]
+}
+
 const regularWeapons = [...readJson('Primary'), ...readJson('Secondary'), ...readJson('Melee')]
   .filter(
     (weapon) =>
@@ -200,6 +219,7 @@ const regularWeapons = [...readJson('Primary'), ...readJson('Secondary'), ...rea
       weapon.attacks?.length,
   )
   .map((weapon) => toWeapon(weapon))
+  .map((weapon) => { vectisIncarnon(weapon); return weapon })
 
 
 // exalted weapons (Exalted Blade, Valkyr Talons, Regulators...) and the pseudo-exalted abilities that take mods (Landslide,
@@ -260,6 +280,57 @@ const handMadeWeapons = vinquibus ? [{
     { name: 'Heavy Attack', isAoE: false, fireRate: 1, chargeTime: null, multishot: 1, critChance: 0.4, critMultiplier: 3.2, statusChance: 0.2, damage: { puncture: 910, slash: 390 }, heavy: true, heavyMultiplier: 5 },
   ],
 }] : []
+// ---- whole shots ----
+// one trigger pull that does a direct hit and an area hit (Rocket Impact + Rocket Explosion, Burston Incarnon's shot +
+// its radial part) gets an extra attack that scores both parts together with one build. each part keeps its own rules
+// (CO, multishot, headshots), see damage.ts. pairing: the area attack's name minus its area word matches a direct
+// attack's name minus its hit word, or starts with it, or failing that the one direct attack at the same fire rate (or
+// the only one). candidates were reviewed by hand; these two aren't one shot
+const NOT_WHOLE_SHOTS = new Set(['Coda Pox|Spore Impact', 'Neutralizer|Normal Attack'])
+// pairs the name rules can't find. Bubonico's alt-fire: the Burst and its viral Radial Attack are one priming shot
+const EXTRA_WHOLE_SHOTS = { Bubonico: [['Burst', 'Radial Attack']], 'Coda Bubonico': [['Burst', 'Radial Attack']] }
+const AREA_WORDS = /\s*(Radial Attack|Explosion|Detonation|AoE|Cloud|Pool|Field|Blast|Collapse|Merging Damage)$/i
+const HIT_WORDS = /\s*(Impact|Contact|Direct Hit|Projectile)$/i
+const stemOf = (name, words) => name.replace(words, '').trim().toLowerCase()
+function wholeShots(weapon) {
+  const usable = weapon.attacks.filter((attack) => !attack.heavy && !/slam|slide/i.test(attack.name) && !attack.parts)
+  const areas = usable.filter((attack) => attack.isAoE)
+  const directs = usable.filter((attack) => !attack.isAoE)
+  const groups = new Map()
+  const taken = new Set()
+  for (const [directName, ...areaNames] of EXTRA_WHOLE_SHOTS[weapon.name] ?? []) {
+    const direct = usable.find((attack) => attack.name === directName)
+    const parts = areaNames.map((name) => usable.find((attack) => attack.name === name)).filter(Boolean)
+    if (!direct || parts.length !== areaNames.length) continue
+    groups.set(direct.name, { direct, areas: parts })
+    areaNames.forEach((name) => taken.add(name))
+  }
+  for (const area of areas) {
+    if (taken.has(area.name)) continue
+    const stem = stemOf(area.name, AREA_WORDS)
+    let owner = stem ? directs.find((direct) => stemOf(direct.name, HIT_WORDS) === stem) : undefined
+    if (!owner && stem) {
+      owner = directs.filter((direct) => stemOf(direct.name, HIT_WORDS) && stem.startsWith(stemOf(direct.name, HIT_WORDS)))
+        .sort((a, b) => b.name.length - a.name.length)[0]
+    }
+    if (!owner) {
+      const sameRate = directs.filter((direct) => Math.abs(direct.fireRate - area.fireRate) < 1e-6)
+      owner = sameRate.length === 1 ? sameRate[0] : directs.length === 1 ? directs[0] : undefined
+    }
+    if (!owner || NOT_WHOLE_SHOTS.has(`${weapon.name}|${owner.name}`)) continue
+    if (!groups.has(owner.name)) groups.set(owner.name, { direct: owner, areas: [] })
+    if (!groups.get(owner.name).areas.some((other) => other.name === area.name)) groups.get(owner.name).areas.push(area)
+  }
+  return [...groups.values()].map(({ direct, areas: parts }) => {
+    const damage = {}
+    for (const part of [direct, ...parts]) for (const [type, amount] of Object.entries(part.damage)) damage[type] = (damage[type] ?? 0) + amount
+    // the direct part's numbers stand in for the shot on screen; damage is both parts added up (display only, the
+    // calc runs each part on its own)
+    return { ...direct, name: `${direct.name} + ${parts.map((part) => part.name).join(' + ')}`, damage, parts: [direct.name, ...parts.map((part) => part.name)] }
+  })
+}
+for (const weapon of [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons]) weapon.attacks.push(...wholeShots(weapon))
+
 const weapons = [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons]
 weapons.sort((a, b) => a.name.localeCompare(b.name))
 

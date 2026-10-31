@@ -1151,5 +1151,15 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
   expectClose('Nightwatch Napalm ticks', fire?.ticks ?? 0, 6)
 }
 
+// Melee Doughty (wiki): +0.1 x rank value per 1% Puncture status chance as crit multiplier, Puncture part only.
+// pure Puncture, 50% status -> +5x: 100 x (1 + 0.5 x (2 + 5 - 1)) = 400. half Heat: Puncture status 25% -> +2.5x on the
+// 50 Puncture only: 100 x 1.5 + 50 x 0.5 x 2.5 = 212.5
+{
+  const doughty = arcanes.find((arcane) => arcane.name === 'Melee Doughty')!
+  const withDoughty = (damage: Record<string, number>) => run(testAttack(damage, { critChance: 0.5, critMultiplier: 2, statusChance: 0.5 }), { arcane: { arcane: doughty, rank: 5, conditionalStacks: 0 } })
+  expectClose('Melee Doughty pure Puncture', withDoughty({ puncture: 100 }).hit.average, 400)
+  expectClose('Melee Doughty half Heat', withDoughty({ puncture: 50, heat: 50 }).hit.average, 212.5)
+}
+
 if (failures) throw new Error(`${failures} check(s) failed`)
 console.log('\nall checks passed')

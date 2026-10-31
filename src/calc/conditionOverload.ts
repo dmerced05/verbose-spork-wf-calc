@@ -42,7 +42,7 @@ const CO_RULES: CoRule[] = [
   { weapons: ['Basmu'], attack: /^Auto$/, mode: 'multiply' },
   { weapons: ['Battacor'], attack: /^Normal Attack$/, mode: 'multiply' },
   { weapons: ['Braton', 'Mk1-Braton', 'Braton Prime', 'Braton Vandal'], attack: /^Incarnon Form AoE$/, mode: 'add', scale: 0.95, note: DIRECT_ONLY },
-  { weapons: ['Bubonico'], attack: /^(Auto|Burst)$/, mode: 'multiply' },
+  { weapons: ['Bubonico', 'Coda Bubonico'], attack: /^(Auto|Burst)$/, mode: 'multiply' }, // the Coda one too (same weapon, Coda variant)
   { weapons: ['Burston', 'Burston Prime'], attack: /^Incarnon Form Radial Attack$/, mode: 'add', scale: 0.24, note: DIRECT_ONLY },
   { weapons: ['Buzlok'], attack: /^(Normal Attack|Beacon)$/, mode: 'multiply' },
   { weapons: ['Cedo', 'Cedo Prime'], attack: /^Alt-Fire Glaive$/, mode: 'multiply' },

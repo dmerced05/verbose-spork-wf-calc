@@ -10,6 +10,7 @@ import { defaultConditionalStacks, parseUpgrade, raisesFireRate, utilityValue } 
 import { getCompatibleArcanes, getCompatibleMods } from '../data'
 import type { Arcane, Attack, Buffs, Debuffs, EquippedArcane, EquippedMod, Mod, TargetSettings, Weapon } from '../types'
 import { conflicts, damageModPool } from './modPool'
+import { modCatch } from '../calc/modTieBreak'
 import type { Objective } from './objectives'
 import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from './scenario'
 
@@ -164,9 +165,11 @@ export function optimizeAttack(
       target: scenario.target, armor: scenario.armor, debuffs: scenario.debuffs, buffs: scenario.buffs,
     })
   // outside the crit limits the score drops off steeply but smoothly, so the search can still tell which way is better
+  // ties go to the mod without a catch (Vital Sense over Bladed Rounds, Serration over Heavy Caliber): a sliver off the
+  // search score per conditional / Niche mod. far too small to beat any real difference
   const evaluate = (mods: EquippedMod[]) => {
     const result = run(mods)
-    const score = objective.score(result)
+    const score = objective.score(result) * (1 - 1e-7 * mods.reduce((total, { mod }) => total + modCatch(mod), 0))
     if (!constraints) return score
     const miss = critViolation(result.critChance, constraints)
     return miss > 0 ? score * Math.exp(-20 * miss) * 1e-3 : score

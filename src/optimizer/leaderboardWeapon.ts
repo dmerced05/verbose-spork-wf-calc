@@ -54,13 +54,17 @@ export function toEntry(build: OptimizedBuild): WeaponEntry {
 // only replaces the search's build when it scores higher, so a seed can never make an entry worse
 export function optimizeWeapon(weapon: Weapon, seeds: SeedBuild[] = []): Record<string, WeaponEntry[]> {
   const boards = Object.fromEntries(BOARDS.map((board) => [board.key, [] as WeaponEntry[]]))
-  // event-only attacks (reload explosions, turret expiry) don't fire at the fire rate, so they're skipped
+  // event-only attacks (reload explosions, turret expiry) don't fire at the fire rate, so they're skipped.
   const attacks = weapon.attacks.filter(
-    (attack) => Object.values(attack.damage).some((amount) => amount > 0) && !/reload|expiry|turret/i.test(attack.name),
+    // headshot-only parts (Vectis Incarnon's orb explosion) never happen in the leaderboard's body-shot scenario
+    (attack) => Object.values(attack.damage).some((amount) => amount > 0) && !/reload|expiry|turret/i.test(attack.name) && !attack.headshotOnly,
   )
   // every attack (component) gets its own listing: slam, heavy slam, heavy attack, alt-fire, Incarnon form...
+  // whole shots come after their parts in the data, so the parts' builds are there to try on the whole shot
+  const found = new Map<string, Map<string, OptimizedBuild>>()
   for (const attack of attacks) {
     const builds = new Map<string, OptimizedBuild>()
+    found.set(attack.name, builds)
     for (const { key, objective, allowFireRateMods, heavyMode, heavyOnly } of BOARDS) {
       // heavies use up the combo, so spamming them at max combo isn't real DPS. they only compete for single hits
       if (attack.heavy && objective.usesFireRate) continue
@@ -73,7 +77,14 @@ export function optimizeWeapon(weapon: Weapon, seeds: SeedBuild[] = []): Record<
       const without = builds.get(boardKey(objective.id, false))
       if (allowFireRateMods && objective.usesFireRate && without && without.score > (builds.get(key)?.score ?? 0)) builds.set(key, without)
     }
-    for (const seed of seeds) {
+    // a whole shot is at least as good as each part's best build on it: the search can walk into a weaker corner
+    // (Orvius's charged throw + bounce came out below the throw alone), so every part's build gets a turn
+    const partSeeds: SeedBuild[] = (attack.parts ?? []).flatMap((part) => [...(found.get(part)?.entries() ?? [])].map(([board, build]) => ({
+      weaponId: weapon.uniqueName, attack: attack.name, board,
+      mods: build.mods.map(({ mod }) => mod.uniqueName), arcane: build.arcane?.arcane.uniqueName ?? null,
+      perks: build.perks.map(({ perk }) => ({ tier: perk.tier, name: perk.name })), bonusElement: build.bonusElement,
+    })))
+    for (const seed of [...seeds, ...partSeeds]) {
       if (seed.weaponId !== weapon.uniqueName || seed.attack !== attack.name) continue
       const spec = BOARDS.find((candidate) => candidate.key === seed.board)
       if (!spec || !builds.has(spec.key)) continue

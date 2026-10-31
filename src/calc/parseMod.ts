@@ -44,6 +44,7 @@ export type ModEffect =
   | { kind: 'critPerHit'; value: number; resetsAfter: number } // Secondary Enervate: flat crit per hit, gone after N big crits
   | { kind: 'forcedProcChance'; damageType: string; value: number } // extra proc chance on every hit, outside the damage split
   | { kind: 'napalm'; fraction: number; seconds: number; procChance: number } // Nightwatch Napalm: a burning patch per rocket, see damage.ts
+  | { kind: 'critPerPunctureStatus'; value: number } // Melee Doughty: +Nx crit multiplier per 10% Puncture status chance, see damage.ts
 
 // armor/health are flat ("+900 Armor"), the *Percent ones % of base, damageResistance is one multiplicative DR source
 export type FrameStat = 'armor' | 'armorPercent' | 'health' | 'healthPercent' | 'shieldPercent' | 'energyPercent' | 'strength' | 'duration' | 'range' | 'efficiency'

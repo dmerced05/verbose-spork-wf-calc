@@ -96,5 +96,285 @@
         "name": "Survivor's Edge"
       }
     ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/VoidTrader/PrismaSkana",
+    "attack": "Normal Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Melee/WeaponDamageIfVictimProcActive",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponToxinDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponCritChanceSPMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboCritChanceMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritFireRateBonusMod",
+      "/Lotus/Upgrades/Mods/Sets/Gladiator/MeleeGladiatorMightMod",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponMeleeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritDamageMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/CorrosiveMeleePerAbilityCast",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Guardian's Promise"
+      },
+      {
+        "tier": "IV",
+        "name": "Absolute Valor"
+      }
+    ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Melee/Hammer/IceHammer/IceHammer",
+    "attack": "Normal Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Melee/WeaponDamageIfVictimProcActive",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponToxinDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponCritChanceSPMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboCritChanceMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritFireRateBonusMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Sets/Gladiator/MeleeGladiatorMightMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritDamageMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/ReplayLightCritHits",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Master's Shatter"
+      },
+      {
+        "tier": "IV",
+        "name": "Absolute Valor"
+      }
+    ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Melee/Hammer/ThrowingHammer",
+    "attack": "Throw",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Melee/WeaponDamageIfVictimProcActive",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponToxinDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponCritChanceSPMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboCritChanceMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritFireRateBonusMod",
+      "/Lotus/Upgrades/Mods/Melee/DualStat/MagneticAttackSpeedMeleeMod",
+      "/Lotus/Upgrades/Mods/Sets/Gladiator/MeleeGladiatorMightMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboStatusChanceMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/ReplayLightCritHits",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Melee/Dagger/CeramicDagger",
+    "attack": "Spectral Dagger",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Melee/WeaponDamageIfVictimProcActive",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponToxinDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritFireRateBonusMod",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponCritChanceSPMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboCritChanceMod",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponMeleeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Sets/Gladiator/MeleeGladiatorMightMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritDamageMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/CorrosiveMeleePerAbilityCast",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Breacher's Opportunity"
+      },
+      {
+        "tier": "IV",
+        "name": "Absolute Valor"
+      }
+    ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Melee/Swords/TnoRapier/TnoRapier",
+    "attack": "Normal Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Melee/WeaponDamageIfVictimProcActive",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponToxinDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponCritChanceSPMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboCritChanceMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritFireRateBonusMod",
+      "/Lotus/Upgrades/Mods/Sets/Gladiator/MeleeGladiatorMightMod",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponMeleeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/WeaponEventPunctureDamageMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/ReplayLightCritHits",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Weighted Impetus"
+      },
+      {
+        "tier": "IV",
+        "name": "Critical Forte"
+      }
+    ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Melee/Swords/CutlassAndPoignard/TennoCutlass",
+    "attack": "Normal Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Melee/WeaponDamageIfVictimProcActive",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponToxinDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponCritChanceSPMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboCritChanceMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritFireRateBonusMod",
+      "/Lotus/Upgrades/Mods/Sets/Gladiator/MeleeGladiatorMightMod",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponMeleeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritDamageMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/CorrosiveMeleePerAbilityCast",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Brigand's Frenzy"
+      },
+      {
+        "tier": "IV",
+        "name": "Absolute Valor"
+      }
+    ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Zariman/Melee/Tonfas/ZarimanTonfaWeapon",
+    "attack": "Normal Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Melee/WeaponDamageIfVictimProcActive",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponToxinDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponCritChanceSPMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboCritChanceMod",
+      "/Lotus/Upgrades/Mods/Melee/DualStat/MagneticAttackSpeedMeleeMod",
+      "/Lotus/Upgrades/Mods/Sets/Gladiator/MeleeGladiatorMightMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritFireRateBonusMod",
+      "/Lotus/Upgrades/Mods/Melee/DualStat/RadiationEfficiencyMeleeMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/ReplayLightCritHits",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Whirling Flurry"
+      }
+    ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Melee/Dagger/CeramicDagger",
+    "attack": "Normal Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponToxinDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/WeaponDamageIfVictimProcActive",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritFireRateBonusMod",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponCritChanceSPMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboCritChanceMod",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponMeleeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Sets/Gladiator/MeleeGladiatorMightMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/CorrosiveMeleePerAbilityCast",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Breacher's Opportunity"
+      },
+      {
+        "tier": "IV",
+        "name": "Absolute Valor"
+      }
+    ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Infested/LongGuns/QuantaFullyInfested/InfQuantaRifle",
+    "attack": "Normal Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Infested/Melee/InfWarfan/InfWarfanWeapon",
+    "attack": "Second Heavy Attack - Toxic Spines",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Melee/WeaponDamageIfVictimProcActive",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponToxinDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritFireRateBonusMod",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponCritChanceSPMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboCritChanceMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Sets/Gladiator/MeleeGladiatorMightMod",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponMeleeDamageModExpert"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/CorrosiveMeleePerAbilityCast",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Melee/Swords/TnTwoHandedKatana/TnTwoHandedKatana",
+    "attack": "Soul Swarm Projectile",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponToxinDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponMeleeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritFireRateBonusMod",
+      "/Lotus/Upgrades/Mods/Melee/Expert/WeaponCritChanceSPMod",
+      "/Lotus/Upgrades/Mods/Melee/Event/ComboCritChanceMod",
+      "/Lotus/Upgrades/Mods/Melee/WeaponDamageIfVictimProcActive",
+      "/Lotus/Upgrades/Mods/Melee/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Sets/Gladiator/MeleeGladiatorMightMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/CorrosiveMeleePerAbilityCast",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/ClanTech/Chemical/RocketLauncher",
+    "attack": "Rocket Impact + Rocket Explosion",
+    "board": "window3-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponElectricityDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/ElectEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": []
+  },
+  {
+    "weaponId": "/Lotus/Weapons/ClanTech/Chemical/RocketLauncher",
+    "attack": "Rocket Impact",
+    "board": "window3-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponElectricityDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/ElectEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": []
   }
 ]

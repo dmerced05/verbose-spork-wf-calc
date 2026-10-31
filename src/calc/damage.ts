@@ -212,9 +212,100 @@ export function statusTrigger(trigger: string): string | null {
 // Alternox never gets a stack, so the optimizer was picking it for free crit damage. I run the calc, and if a status
 // trigger's type never procs, run it again with that trigger off (turning it off can't add a status, so once is enough)
 export function calculate(input: CalcInput): CalcResult {
-  const first = calculateOnce(input, [])
-  const dead = first.statusTriggers.filter(({ type }) => (type === 'any' ? first.procTypes.length === 0 : !first.procTypes.includes(type)))
-  return dead.length ? calculateOnce(input, dead.map(({ key }) => key)) : first
+  // a whole shot: every part with the same build, each on its own rules, then added up per shot
+  const parts = partsOf(input)
+  const run = (off: string[]) => parts.map((part) => calculateOnce(part, off))
+  const first = run([])
+  const procTypes = [...new Set(first.flatMap((result) => result.procTypes))]
+  const dead = [...new Map(first.flatMap((result) => result.statusTriggers).map((trigger) => [trigger.key, trigger])).values()]
+    .filter(({ type }) => (type === 'any' ? procTypes.length === 0 : !procTypes.includes(type)))
+  const results = dead.length ? run(dead.map(({ key }) => key)) : first
+  return results.length === 1 ? results[0] : combineParts(results, parts.map((part) => part.attack.name))
+}
+
+// the attacks a whole shot is made of. each part gets its own CO rule (the radial part of a hitscan shot doesn't get
+// the shot's CO), unless the CO was set by hand
+function partsOf(input: CalcInput): CalcInput[] {
+  if (!input.attack.parts?.length) return [input]
+  const found = input.attack.parts.map((name) => input.weapon.attacks.find((attack) => attack.name === name && !attack.parts))
+  if (found.some((attack) => !attack)) return [input]
+  // parts that only happen on a headshot or only on a body shot follow the target's headshot toggle
+  const happens = (attack: Attack) => (input.target.headshot ? !attack.bodyShotOnly : !attack.headshotOnly)
+  return (found as Attack[]).filter(happens).map((attack) => ({
+    ...input, attack, coBehavior: input.coBehavior?.source === 'override' ? input.coBehavior : resolveCoBehavior(input.weapon, attack),
+  }))
+}
+
+// one shot's worth of every part. the direct part (first) is what the shot "is" for the stat lines (crit, status, fire
+// rate, magazine); damage numbers are added up. the biggest single instance stays the biggest one part lands, since in
+// game they're separate hits. parts at another fire rate keep their own (Alternox's alt-fire explosion)
+function combineParts(results: CalcResult[], names: string[]): CalcResult {
+  const [main] = results
+  const add = (pick: (result: CalcResult) => number) => sum(results.map(pick))
+  const labelFor = (index: number) => (index === 0 ? '' : ` (${names[index]})`)
+  const byType = new Map<string, DamageTypeRow>()
+  results.forEach((result) => result.damageTypes.forEach((row) => {
+    const existing = byType.get(row.damageType)
+    byType.set(row.damageType, existing
+      ? { ...existing, modded: existing.modded + row.modded, vsTarget: existing.vsTarget + row.vsTarget }
+      : { ...row })
+  }))
+  const totalProcs = add((result) => result.procsPerSecond)
+  const procsByType = new Map<string, number>()
+  results.forEach((result) => result.damageTypes.forEach((row) => procsByType.set(row.damageType, (procsByType.get(row.damageType) ?? 0) + row.procShare * result.procsPerSecond)))
+  const damageTypes = [...byType.values()].map((row) => ({ ...row, procShare: totalProcs > 0 ? (procsByType.get(row.damageType) ?? 0) / totalProcs : 0 }))
+    .sort((a, b) => b.modded - a.modded)
+  const dots = results.flatMap((result, index) => result.dots.map((dot) => ({ ...dot, damageType: `${dot.damageType}${labelFor(index)}` })))
+  // the formula panel's timeline: the main part's shots, every part's damage per main-part pellet
+  const mainPellets = Math.max(1e-9, main.shotModel.multishot)
+  const scale = (result: CalcResult) => result.shotModel.multishot / mainPellets
+  const shotModel: ShotModel = {
+    ...main.shotModel,
+    hit: {
+      normal: add((result) => result.shotModel.hit.normal * scale(result)),
+      crit: add((result) => result.shotModel.hit.crit * scale(result)),
+      average: add((result) => result.shotModel.hit.average * scale(result)),
+    },
+    dots: results.flatMap((result, index) => result.shotModel.dots.map((dot) => ({ ...dot, damageType: `${dot.damageType}${labelFor(index)}`, procsPerPellet: dot.procsPerPellet * scale(result) }))),
+  }
+  const peak = results.reduce((best, result) => (result.peakHit > best.peakHit ? result : best), main)
+  const peakDot = results.map((result) => result.peakDotTick).filter((tick): tick is NonNullable<typeof tick> => Boolean(tick))
+    .sort((a, b) => b.value - a.value)[0] ?? null
+  const unique = (lists: string[][]) => [...new Set(lists.flat())]
+  return {
+    ...main,
+    damageTypes,
+    moddedBaseDamage: add((result) => result.moddedBaseDamage),
+    hit: { normal: add((result) => result.hit.normal), crit: add((result) => result.hit.crit), average: add((result) => result.hit.average) },
+    peakHit: peak.peakHit,
+    peakDotTick: peakDot,
+    averageShot: add((result) => result.averageShot),
+    attackTotal: add((result) => result.attackTotal),
+    burstDps: add((result) => result.burstDps),
+    procsPerSecond: totalProcs,
+    dots,
+    dotDps: add((result) => result.dotDps),
+    totalDps: add((result) => result.totalDps),
+    sustainedDps: add((result) => result.sustainedDps),
+    steadyStateDps: add((result) => result.steadyStateDps),
+    damageInWindow: (seconds: number) => sum(results.map((result) => result.damageInWindow(seconds))),
+    // luck ranges added part by part, so the spread comes out a bit wider than one roll of the whole shot would be
+    simulateWindows: (windows: number[], runs?: number) => {
+      const each = results.map((result) => result.simulateWindows(windows, runs))
+      return windows.map((_, index) => ({
+        low: sum(each.map((ranges) => ranges[index].low)), expected: sum(each.map((ranges) => ranges[index].expected)),
+        median: sum(each.map((ranges) => ranges[index].median)), high: sum(each.map((ranges) => ranges[index].high)),
+      }))
+    },
+    shotModel,
+    activeStatusTypes: Math.max(...results.map((result) => result.activeStatusTypes)),
+    passives: unique(results.map((result) => result.passives)),
+    abilities: unique(results.map((result) => result.abilities)),
+    requirements: unique([[`Whole shot: ${names.join(' + ')}, each part on its own rules (CO, multishot, headshots), added up per shot`], ...results.map((result) => result.requirements)]),
+    statusTriggers: [...new Map(results.flatMap((result) => result.statusTriggers).map((trigger) => [trigger.key, trigger])).values()],
+    procTypes: unique(results.map((result) => result.procTypes)),
+    unparsed: unique(results.map((result) => result.unparsed)),
+  }
 }
 
 function calculateOnce({
@@ -275,6 +366,7 @@ function calculateOnce({
   let multishotLocked = false // Acuity mods
   let duplicateOnCritChance = 0 // Melee Duplicate
   let napalm: Extract<ModEffect, { kind: 'napalm' }> | null = null // Nightwatch Napalm
+  let critPerPunctureStatus = 0 // Melee Doughty
   const modFlat = { critChance: 0, statusChance: 0 } // "+20 Final Status Chance" (Entropy Burst, Napalm Grenades)
   let critPerHit: { value: number; resetsAfter: number } | null = null // Secondary Enervate
   let infiniteAmmo = false
@@ -327,6 +419,9 @@ function calculateOnce({
         break
       case 'napalm':
         napalm = effect
+        break
+      case 'critPerPunctureStatus':
+        critPerPunctureStatus += effect.value * times
         break
       case 'heavyScaledCritChance':
         // normal attacks get the value, heavies get value x factor, so the extra part only counts on heavies
@@ -802,7 +897,9 @@ function calculateOnce({
   // null/undefined = follow the faction, so stale or missing settings can't silently turn headcrits off
   const headMultiplier = target.headshotMultiplier ?? headMultiplierFor(target.faction)
   const headcrit = target.headcrit ?? hasHeadcrits(target.faction)
-  const weakpointCritBonus = isHeadshot ? bonus.weakpointCritChance : 0
+  // area parts take a 1x headshot multiplier and can't trigger headshot conditions, but when the projectile lands on the
+  // head they still get its weak point crit chance (Acuity: "+350% Weak Point Critical Chance")
+  const weakpointCritBonus = target.headshot ? bonus.weakpointCritChance : 0
   // status chance after mods, as a function of base status (Wiseman's Regard changes the base after crit is known)
   const moddedStatus = (baseStatus: number) =>
     baseStatus * (1 + bonus.statusChance + statusFromCombo) + perkFlat.statusChance + passiveFlat.statusChance + modFlat.statusChance +
@@ -908,10 +1005,22 @@ function calculateOnce({
     Object.entries(moddedByType).map(([damageType, amount]) => amount * typeMultiplier(damageType)),
   ) + extraHitNoCrit) * factionMultiplier * sharedMultiplier
 
+  // Melee Doughty (wiki Melee_Doughty): "round(Puncture Status Chance×0.1×Critical Multiplier Bonus)" as extra crit
+  // multiplier, to 0.1, "Capped at +50x Critical Multiplier". Puncture status chance = status chance x Puncture's share of
+  // the proc weighting, so elements lower it, and since Update 38.6 "the bonus no longer applies to the non-Puncture
+  // portion of a weapon's attack": only the Puncture part of the hit gets the bigger crits. DoTs don't get it
+  const procWeightOf = (damageType: string) => Math.max(0, (moddedByType[damageType] ?? 0) - quantize(separateElements[damageType] ?? 0) * moddedBaseDamage)
+  const weightTotal = sum(Object.keys(moddedByType).map(procWeightOf))
+  const punctureStatusChance = weightTotal > 0 ? Math.max(0, rawStatusChance) * procWeightOf('puncture') / weightTotal : 0
+  const doughtyBonus = critPerPunctureStatus > 0 ? Math.min(50, Math.round(punctureStatusChance * 100 * 0.1 * critPerPunctureStatus * 10) / 10) : 0
+  const puncturePart = doughtyBonus > 0 ? (moddedByType.puncture ?? 0) * typeMultiplier('puncture') * factionMultiplier * sharedMultiplier : 0
+  if (critPerPunctureStatus > 0) {
+    requirements.push(`Melee Doughty: ${Math.round(punctureStatusChance * 1000) / 10}% Puncture status chance -> +${doughtyBonus}x crit multiplier on the Puncture part of the hit only`)
+  }
   const hit = {
-    normal: vsTargetNoCrit * normalCritMultiplier,
-    crit: vsTargetNoCrit * critHitMultiplier,
-    average: vsTargetNoCrit * (averageCritMultiplier + attritionBonus),
+    normal: vsTargetNoCrit * normalCritMultiplier + puncturePart * Math.floor(Math.max(0, critChance)) * doughtyBonus,
+    crit: vsTargetNoCrit * critHitMultiplier + puncturePart * Math.ceil(Math.max(0, critChance)) * doughtyBonus,
+    average: vsTargetNoCrit * (averageCritMultiplier + attritionBonus) + puncturePart * Math.max(0, critChance) * (1 - superCritShare) * doughtyBonus,
   }
   // Melee Duplicate: "base (yellow) Critical Hits inflict a second instance of damage", the duplicate rerolls crit and
   // status (wiki). so a crit is worth one more hit and its procs. it's a separate instance, so hit.* stays one hit
@@ -1060,7 +1169,7 @@ function calculateOnce({
   )
   // Ballistic Battery adds to the base after damage mods, then elements/crit/faction/head scale it like the rest
   const batteryScale = moddedBaseDamage > 0 && oneShotFlat > 0 ? (moddedBaseDamage + oneShotFlat) / moddedBaseDamage : 1
-  const peakHit = vsTargetNoCrit * peakMultiplier * beamMerge * batteryScale
+  const peakHit = vsTargetNoCrit * peakMultiplier * beamMerge * batteryScale + (critChance > 0 ? puncturePart * Math.ceil(critChance) * doughtyBonus * beamMerge : 0)
   const peakDot = dots.filter((dot) => dot.damageType !== 'blast').sort((a, b) => b.tick.crit - a.tick.crit)[0]
   const peakDotTick = peakDot ? { damageType: peakDot.damageType, value: peakDot.tick.crit } : null
 

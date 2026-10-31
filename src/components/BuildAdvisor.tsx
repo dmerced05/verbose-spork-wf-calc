@@ -1,7 +1,8 @@
 // what each stat is worth to the build on screen right now, which mod gets it best / cheapest, which slots pull the
 // least, and greedy build paths you can load. all measured with the calc, so it follows the target, buffs and perks
 import { useMemo, useState } from 'react'
-import { advise, arcaneOptions, buildPaths, pctText, rating, type BuildPath, type LeverRow } from '../calc/advisor'
+import { advise, arcaneOptions, buildPaths, pctText, rankingScorer, rating, type BuildPath, type LeverRow } from '../calc/advisor'
+import { calculate } from '../calc/damage'
 import type { CalcInput } from '../calc/damage'
 import { OBJECTIVES, type ObjectiveId } from '../optimizer/objectives'
 import { damageModPool } from '../optimizer/modPool'
@@ -23,8 +24,9 @@ interface Props {
 const ADVISOR_OBJECTIVES: ObjectiveId[] = ['window3', 'sustained', 'single', 'attack']
 const HOW_IT_WORKS =
   'Every number here comes from re-running the calculator with one change to your current build, so it follows your target, Warframe buffs, arcane and perks.\n\n' +
-  '"Worth adding?" compares stats against each other: it adds one typical mod of each stat (+90% Heat like Hellfire, +165% damage like ' +
-  'Serration...) and sees which one raises your damage the most. ' +
+  '"Worth adding?" compares stats against each other: it adds one mod\'s worth of each stat and sees which one raises your damage the most. ' +
+  'That\'s the biggest mod for it you can still add (+165% Cold from Primed Cryo Rounds, not a +90% one), and while you have free slots a stat ' +
+  'is rated at least as high as its best real mod, conditional parts included (Galvanized Chamber\'s on-kill multishot). ' +
   'It changes as you mod. Stats of the same kind add up, but different kinds multiply each other (damage × multishot × crit × elements × fire rate), ' +
   'so a stat you already have a lot of gives less for the next bit. 1 Serration takes base damage from 1x to 2.65x (+165%), a 2nd only to 4.3x (+62%).\n\n' +
   '"Best mod" = the real mod that raises your damage the most (when all 8 slots are full: put in place of your weakest one). "Cheapest" = most damage ' +
@@ -46,8 +48,11 @@ export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, o
     [compatibleMods, objective.usesFireRate, input.attack, input.target.faction, input.target.headshot, isMelee],
   )
   const arcanePool = useMemo(() => compatibleArcanes.map((arcane) => equipArcane(arcane, isMelee)), [compatibleArcanes, isMelee])
-  const advice = advise(input, objective.score, pool)
-  const arcaneRanking = arcaneOptions(input, objective.score, arcanePool)
+  // rankings count status DoT at half on weapons that aren't built for it (calc/advisor.ts rankingScorer)
+  const ranking = rankingScorer(objective.id, objective.score, input.attack)
+  const advice = advise(input, ranking.score, pool)
+  const arcaneRanking = arcaneOptions(input, ranking.score, arcanePool)
+  const realScore = objective.score(calculate(input))
   const currentArcane = arcaneRanking.find((option) => option.current)
   const showCheap = advice.levers.some((lever) => ((lever.cheapestMod ?? lever.bestMod)?.gain ?? 0) > 0)
   const shownArcanes = arcaneRanking.filter((option) => !option.current && option.gain > 0.001).slice(0, 5)
@@ -58,7 +63,11 @@ export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, o
 
   const runPaths = () => setPaths({
     key: pathKey,
-    paths: buildPaths({ ...input, mods: [] }, objective.score, pool, arcanePool, keep, input.target.statusMode === 'immune'),
+    paths: buildPaths({ ...input, mods: [] }, ranking.score, pool, arcanePool, keep, input.target.statusMode === 'immune').map((path) => ({
+      ...path,
+      // shown as real damage, the ranking score only picks the order
+      score: objective.score(calculate({ ...input, mods: [...keep, ...path.steps.filter((step) => !keep.some((kept) => kept.mod === step.mod)).map((step) => equipMod(step.mod, isMelee))], arcane: path.arcane })),
+    })),
   })
   const fmt = (value: number) => (value >= 100 ? Math.round(value).toLocaleString() : value.toFixed(1))
 
@@ -76,9 +85,16 @@ export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, o
         </label>
       </div>
       <p className="muted">
-        Now: <b>{fmt(advice.score)}</b> {objective.unit} with {input.mods.length ? `${input.mods.length} mod${input.mods.length > 1 ? 's' : ''}` : 'no mods'}.
+        Now: <b>{fmt(realScore)}</b> {objective.unit} with {input.mods.length ? `${input.mods.length} mod${input.mods.length > 1 ? 's' : ''}` : 'no mods'}.
         {' '}Which stats would raise that most, for this build as it is now:
       </p>
+
+      {ranking.dotWeight < 1 && (
+        <p className="muted-inline">
+          Status DoT counts at half in these rankings: {Math.round(input.attack.statusChance * 100)}% base status isn't a DoT weapon, and targets often die
+          before the ticks land. Damage numbers shown are real.
+        </p>
+      )}
 
       {input.mods.length >= 8 && (
         <p className="muted">
@@ -166,7 +182,7 @@ export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, o
               <div key={path.name} className="advisor-path">
                 <div className="row spread">
                   <b>{path.name}</b>
-                  <span>{fmt(path.score)}{input.mods.length > 0 && advice.score > 0 && <span className="muted-inline"> ({(path.score / advice.score).toFixed(2)}x yours)</span>}</span>
+                  <span>{fmt(path.score)}{input.mods.length > 0 && realScore > 0 && <span className="muted-inline"> ({(path.score / realScore).toFixed(2)}x yours)</span>}</span>
                 </div>
                 <div className="muted-inline">{path.note}</div>
                 <ol>
@@ -191,10 +207,10 @@ function LeverLine({ lever, top, goal, showCheap }: { lever: LeverRow; top: numb
   const cheap = lever.cheapestMod ?? (best && best.gain > 0 ? best : null)
   const label = rating(lever.weight, top)
   const explain = lever.weight < -0.0005
-    ? `One typical mod of it (${lever.size}) would lower your ${goal} by ${pctText(lever.weight).replace('-', '')}. ` +
+    ? `Adding ${lever.size} would lower your ${goal} by ${pctText(lever.weight).replace('-', '')}. ` +
       'This happens when it takes status procs away from a stronger one: Slash bleeds ignore armor, so on an armored target ' +
       'a new element can cost more in lost bleeds than its own damage adds.'
-    : `One typical mod of it (${lever.size}) would raise your ${goal} by ${pctText(lever.weight)}, on top of what you have now. ` +
+    : `Adding ${lever.size} would raise your ${goal} by ${pctText(lever.weight)}, on top of what you have now. ` +
       'Ratings compare this against the other stats: "Top pick" is the best stat to add right now. ' +
       'With all 8 slots full, adding means giving up a mod, see Best mod for what a swap does.'
   return (

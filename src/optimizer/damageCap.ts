@@ -47,6 +47,8 @@ export const CAP_STEPS: CapStep[] = [
   { id: 'allies', label: '+ Allies', description: 'Teammates\' abilities (external Nourish, Roar...), at their strength' },
 ]
 
+const COMPRESSION_ID = arcanes.filter((arcane) => arcane.name === 'Primary Compression').map((arcane) => arcane.uniqueName)
+
 export interface CapRequest {
   weaponId: string
   attackIndex: number
@@ -58,6 +60,7 @@ export interface CapRequest {
   allyStrength: number
   allyCount: number
   meleeHeadshots: boolean // most melee can't reliably headshot, so off unless asked
+  allowCompression: boolean // Primary Compression shrinks the AoE (Niche), so it's only in the pool when asked
 }
 
 // one Warframe setup carried through the last four steps
@@ -508,6 +511,7 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
   const optimize = (stepTarget: TargetSettings, debuffs: Debuffs, buffs: Buffs) => {
     const constraints: OptimizeConstraints = {
       lockedMods, beamWidth: request.thorough ? 16 : 8,
+      excludedArcaneIds: request.allowCompression ? [] : COMPRESSION_ID,
       scenario: { target: stepTarget, armor: scenario.armor, debuffs, buffs },
     }
     return optimizeAttack(weapon, attack, PEAK_OBJECTIVE, true, request.heavyMode, constraints)

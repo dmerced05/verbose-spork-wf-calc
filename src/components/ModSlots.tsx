@@ -170,7 +170,10 @@ function ArcaneCard({ slot, selected, onSelect, onRemove }: ArcaneCardProps) {
         <>
           <ModArt imageName={arcane.imageName} wikiImage={arcane.wikiImage} />
           <div className="arcane-label">Arcane</div>
-          <div className="mod-name">{arcane.name}</div>
+          <div className="mod-name">
+            {arcane.name}
+            {nicheNote(arcane.levelStats, slot.rank) && <Tip className="niche-tag" text={`Niche: ${nicheNote(arcane.levelStats, slot.rank)}`}>Niche</Tip>}
+          </div>
           <ul className="mod-lines">
             {statLinesAt(arcane.levelStats, slot.rank).map((line) => <li key={line}>{line}</li>)}
           </ul>

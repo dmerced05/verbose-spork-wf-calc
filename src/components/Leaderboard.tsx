@@ -3,7 +3,7 @@ import { FULL_HEAVY_BOARD, TIME_WINDOWS, boardKey, objectiveById, type Objective
 import { raisesFireRate } from '../calc/parseMod'
 import { nicheNote } from '../calc/nicheMods'
 import { Tip } from './Tip'
-import { modsById, weaponsById } from '../data'
+import { arcanesById, modsById, weaponsById } from '../data'
 import { biggestHit, comboTotal, heavyBreakdownText, heavyComboFor } from '../data/heavyAttacks'
 import { ATTACK_KINDS, attackKind, type AttackKind } from '../optimizer/attackKinds'
 
@@ -274,7 +274,10 @@ export function Leaderboard({ onLoadBuild }: Props) {
                   </span>
                 )
               })}
-              {entry.arcane && <span className="chip arcane-chip">{entry.arcane.name}</span>}
+              {entry.arcane && (() => {
+                const niche = arcanesById.get(entry.arcane.id) ? nicheNote(arcanesById.get(entry.arcane.id)!.levelStats) : null
+                return <span className="chip arcane-chip">{entry.arcane.name}{niche && <Tip className="niche-tag" text={`Niche: ${niche}`}>Niche</Tip>}</span>
+              })()}
               {entry.perks.map((perk) => <span key={perk.tier} className="chip perk-chip">Evo {perk.tier}: {perk.name}</span>)}
               {entry.bonusElement && (
                 <span className="chip passive-chip">+{Math.round(entry.bonusElement.value * 100)}% {entry.bonusElement.damageType}</span>

@@ -129,11 +129,13 @@ export const WARFRAME_ABILITIES: WarframeAbility[] = [
     helminth: { effects: [{ kind: 'flatCritChance', value: 1 }], quote: 'The melee critical chance bonus is reduced to 25% / 50% / 75% / 100%.' },
   },
   {
-    id: 'nullStar', condition: 'all Null Star particles up', ability: 'Null Star', name: 'Null Star', warframe: 'Nova', appliesTo: 'all', scalesWithStrength: true,
+    // the particles' Blast damage is the Strength stat, the 5% DR per particle isn't: only the particle count (Duration)
+    // moves the DR (from you, matches the community's 150% duration = 18 particles = 90% cap)
+    id: 'nullStar', condition: 'all Null Star particles up', ability: 'Null Star', name: 'Null Star', warframe: 'Nova', appliesTo: 'all', scalesWithStrength: false,
     effects: [],
     defense: [{ kind: 'damageReduction', perStack: 0.05, stacks: 12, cap: 0.9, helminthCap: 0.75, selfOnly: true, stacksScaleWithDuration: true, stackLabel: 'particles' }],
-    quote: 'Duration: 12 (particles). 5% Damage Reduction per particle (Strength). Damage reduction is capped at 90%. Each active particle reduces damage to Nova\'s Health and Shields.',
-    note: 'Particles = 12 x Ability Duration (the wiki lists the count under Duration), each worth 5% x Ability Strength. Subsumed cap is 75%.',
+    quote: 'Duration: 12 (particles). 5% Damage Reduction per particle. Damage reduction is capped at 90%. Each active particle reduces damage to Nova\'s Health and Shields.',
+    note: 'Particles = 12 x Ability Duration, 5% each (Strength doesn\'t change it, only the particle count does). 18 particles (150% duration) hits the 90% cap. Subsumed cap is 75%.',
   },
   {
     id: 'elementalWardCold', ability: 'Elemental Ward', name: 'Elemental Ward (Cold)', warframe: 'Chroma', appliesTo: 'all', scalesWithStrength: true,

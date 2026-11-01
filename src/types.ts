@@ -151,5 +151,6 @@ export interface Buffs {
   roar: number // faction damage bonus from Roar etc, additive with bane mods
   combo?: number // melee combo multiplier (1x-12x), defaults to 1x
   gladiatorWarframePieces?: number // Gladiator set mods on the Warframe, they count toward the weapon's set bonus
+  tenaciousBond?: number // companion's Tenacious Bond: flat crit multiplier bonus (+0.2 per rank, +1.2 at max). 0 / undefined = off
   warframe?: WarframeState // ability strength, armor and active abilities (Warframe panel)
 }

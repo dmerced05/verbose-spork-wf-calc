@@ -103,12 +103,12 @@ export function StatusGuide() {
         <p>Every damaging status tick starts from the hit that applied it, so it inherits most of that hit's multipliers:</p>
         <pre className="sg-formula">tick = fraction × modded base × (1 + that element's mods) × (1 + faction)² × (1 + status damage) × crit × body part</pre>
         <ul className="hint-list">
-          <li><b>Modded base</b> is base damage × (1 + base damage mods like Serration). Physical and elemental mods aren't in it.</li>
-          <li><b>Element mods</b> only count for their own status, and only as that literal element: Hellfire buffs Heat procs, not Gas or Blast. Slash has no "element", so Sawtooth Clip does nothing for bleeds.</li>
-          <li><b>Faction mods count twice</b>: "they are applied once more during the calculation of damaging status effects". A 30% Bane is +69% on DoTs, a 55% Primed Bane is +140%.</li>
-          <li><b>Crits and headshots carry over</b>: a proc from an orange crit headshot ticks for the crit and the headshot multiplier. Sonar / Detect Vulnerability weak spots don't carry over.</li>
-          <li><b>Status damage</b> (Elementalist mods, Emerald shards) multiplies every DoT and stacks additively with other status damage.</li>
-          <li><b>More procs</b> come from status chance, multishot and fire rate. <b>More ticks</b> come from Status Duration: one tick per extra second (6 s → 12 s doubles a proc).</li>
+          <li>Modded base is base damage × (1 + base damage mods like Serration). Physical and elemental mods are not included in it.</li>
+          <li>Element mods only count for their own status, and only as that literal element: Hellfire buffs Heat procs, not Gas or Blast. Slash has no "element", so Sawtooth Clip does nothing for bleeds.</li>
+          <li>Faction mods count twice: "they are applied once more during the calculation of damaging status effects". A 30% Bane is +69% on DoTs, a 55% Primed Bane is +140%.</li>
+          <li>Crits and headshots carry over to the proc from an orange crit headshot ticks for the crit and the headshot multiplier. Sonar / Detect Vulnerability weak spots don't carry over.</li>
+          <li>Status damage (Elementalist mods, Emerald shards) multiplies every DoT and stacks additively with other status damage.</li>
+          <li>More procs come from status chance, multishot and fire rate. More ticks come from Status Duration: one tick per extra second (6 s → 12 s doubles a proc).</li>
         </ul>
         <p className="muted-inline">Wiki example: 100 base, Serration, Bane of Grineer, +90% status damage → Bleed per tick = 100 × 2.65 × 0.35 × 1.3² × 1.9 ≈ 298.</p>
       </section>

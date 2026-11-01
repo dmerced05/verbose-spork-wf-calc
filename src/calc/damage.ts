@@ -18,6 +18,7 @@ import { perkAppliesTo, type PerkEffect, type SelectedPerk } from './incarnon'
 import { armorDamageMultiplier, effectiveArmor } from './target'
 import { hasBonusElement, type BonusElement, type WeaponPassive } from '../data/passives'
 import { SHELL_BY_SHELL_RELOAD } from '../data/reloads'
+import { compressionFor } from '../data/compression'
 import { abilitiesById, abilityApplies, castStacks, effectsFor, scaledValue, strengthFor, type AbilityCast } from '../data/warframeAbilities'
 import { biggestHit, comboTotal, heavyComboFor, type HeavyCombo, type HeavyMode } from '../data/heavyAttacks'
 import { expectedDamage, simulateDamage, type DamageRange, type ShotModel } from './simulate'
@@ -222,7 +223,18 @@ export function calculate(input: CalcInput): CalcResult {
   ].filter((type) => type !== 'true')
   const run = (off: string[], others: string[][]) => parts.map((part, index) => calculateOnce(part, off, others[index] ?? []))
   const first = run([], [])
-  const procTypes = [...new Set(first.flatMap((result) => result.procTypes))]
+  // a part scored on its own (Latron's Incarnon direct hit) still comes with the rest of its shot in game, so the other
+  // parts' procs count for its triggers too (the AoE's Puncture keeps Riddled Target up for the direct hit)
+  const siblingProcTypes = (): string[] => {
+    if (parts.length > 1) return []
+    const owner = input.weapon.attacks.find((attack) => attack.parts?.includes(input.attack.name))
+    if (!owner) return []
+    return partsOf({ ...input, attack: owner }).filter((part) => part.attack.name !== input.attack.name)
+      .flatMap((part) => calculateOnce(part, [], []).procTypes)
+  }
+  const ownProcTypes = first.flatMap((result) => result.procTypes)
+  const anyDead = first.some((result) => result.statusTriggers.length > 0)
+  const procTypes = [...new Set([...ownProcTypes, ...(anyDead ? siblingProcTypes() : [])])]
   const dead = [...new Map(first.flatMap((result) => result.statusTriggers).map((trigger) => [trigger.key, trigger])).values()]
     .filter(({ type }) => (type === 'any' ? procTypes.length === 0 : !procTypes.includes(type)))
   const others = parts.length > 1 ? first.map((_, index) => first.filter((__, other) => other !== index).flatMap(appliedTypes)) : []
@@ -504,7 +516,30 @@ function calculateOnce({
         if (!requirements.includes(label)) requirements.push(label)
       }
     }
-    if (!('isFrameArcane' in upgrade)) unparsed.push(...parsed.unparsed.map((line) => `${upgrade.name}: ${line}`))
+    // Primary Compression is handled below from the wiki table, its text doesn't parse
+    if (!('isFrameArcane' in upgrade) && upgrade.name !== 'Primary Compression') unparsed.push(...parsed.unparsed.map((line) => `${upgrade.name}: ${line}`))
+  }
+
+  // ---- Primary Compression: "+X% damage for every 1m radius lost" while aiming, from src/data/compression.ts ----
+  // the table is rank 5 (+100% per meter), lower ranks are 50% + 10% per rank. Firestorm-style "Blast Range" mods make
+  // the radius bigger, so more is lost and the bonus grows with them
+  if (arcane?.arcane.name === 'Primary Compression' && weapon.type !== 'Shotgun') {
+    const mode = compressionFor(weapon.name, attack.name)
+    if (mode) {
+      const perMeter = 0.5 + 0.1 * arcane.rank
+      const blastRange = mode.noFirestorm ? 0 : mods.reduce((total, { mod, rank }) => {
+        const line = (mod.levelStats?.[Math.min(rank, mod.levelStats.length - 1)] ?? []).join(' ')
+        const match = line.match(/([+-][\d.]+)% Blast Range/)
+        return total + (match ? Number(match[1]) / 100 : 0)
+      }, 0)
+      const scale = perMeter * (1 + blastRange)
+      if (mode.add) bonus.damage += mode.add * scale
+      if (mode.multiply) separateDamageMultiplier *= 1 + mode.multiply * scale
+      const total = [mode.add ? `+${Math.round(mode.add * scale * 100)}% added to damage mods` : '', mode.multiply ? `x${(1 + mode.multiply * scale).toFixed(2)} on its own` : ''].filter(Boolean).join(', ')
+      requirements.push(`Primary Compression: aiming (explosion radius x0.2, ${total}${mode.note ? `; ${mode.note}` : ''})`)
+    } else {
+      requirements.push('Primary Compression: no bonus on this attack (no explosion it can shrink, per the wiki table)')
+    }
   }
 
   // ---- weapon passives (hand-kept table, see src/data/passives.ts) ----
@@ -779,6 +814,18 @@ function calculateOnce({
       if (!statement.effect || !perkAppliesTo(statement.mode, isIncarnonAttack, weapon.category === 'Melee')) continue
       const times = statement.condition ? Math.min(perkStacks, statement.maxStacks) : 1
       if (times <= 0) continue
+      // status-triggered perks get the same check as mods (Latron's Riddled Target needs Puncture procs: a -100% Puncture
+      // riven used to keep its +100% multishot)
+      const perkTrigger = statement.condition ? statusTrigger(statement.condition) : null
+      if (perkTrigger) {
+        const triggerKey = `${perk.name}|${statement.condition}`
+        if (offTriggers.includes(triggerKey)) {
+          const line = `${perk.name} (Incarnon): off, this build never applies ${perkTrigger === 'any' ? 'a status effect' : `${perkTrigger[0].toUpperCase()}${perkTrigger.slice(1)} procs`} (its trigger)`
+          if (!requirements.includes(line)) requirements.push(line)
+          continue
+        }
+        statusTriggers.push({ key: triggerKey, type: perkTrigger })
+      }
       if (statement.condition) {
         const label = `${perk.name} (Incarnon): ${statement.condition.replace(/:$/, '')}${statement.maxStacks > 1 ? ` (${times}/${statement.maxStacks} stacks)` : ''}`
         if (!requirements.includes(label)) requirements.push(label)
@@ -931,8 +978,12 @@ function calculateOnce({
   const critChance = critBeforeVigilante + vigilanteChance * Math.min(1, Math.max(0, critBeforeVigilante))
   // headcrit doubles the weapon's *base* crit multiplier, so mods scale it but Cold's flat bonus doesn't
   const headcritFactor = isHeadshot && headcrit ? HEADCRIT_MULTIPLIER : 1
+  // Tenacious Bond (companion): "+1.2x Final Critical Damage Multiplier", a flat add the mods don't scale: 1 + tier x
+  // (crit multi - 1 + final) per the wiki. the headcrit doubles it too: a Vadarya headcrit through Electric Shield only
+  // matched in game (5,581,803 vs 5,589,989) with it inside the x2, and 12% off without
+  const tenaciousBond = buffs.tenaciousBond ?? 0
   const critMultiplier =
-    (attack.critMultiplier * headcritFactor * (1 + bonus.critDamage) + finalCritMultiplierBonus) * abilityCritDamageScale +
+    ((attack.critMultiplier * (1 + bonus.critDamage) + tenaciousBond) * headcritFactor + finalCritMultiplierBonus) * abilityCritDamageScale +
     (attack.isAoE ? 0 : coldCritMultiplierBonus(stacks('cold')))
   // over 100% the lowest tier is the "normal" hit and the next tier up is the "crit" (Damage/Calculation 4.3)
   const normalCritMultiplier = 1 + Math.floor(critChance) * (critMultiplier - 1)

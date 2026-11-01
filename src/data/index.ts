@@ -73,14 +73,31 @@ const namedFor = (weapon: Weapon, compatName: string) => {
   return pattern.test(name) || pattern.test(name.replace(VARIANT_PREFIX, ''))
 }
 
+// Cannonade needs the SEMI_AUTO tag, which the data doesn't have, so it's the Semi trigger plus the wiki's exceptions:
+// - launchers (Torid, Tonkor, Zarr, Kuva Ogris) are Semi but can't take it
+// - "Nagantaka and Nagantaka Prime cannot equip this mod"
+// - "Weapons with an Incarnon mode must have Semi-Auto trigger type for both firing modes": only Latron and Vectis
+//   (rifle), Strun (shotgun) and Bronco / Lato / Lex (pistol) qualify
+// - pistols with an alt-fire need both modes semi too ("Fixed the EFV-8 Mars being able to equip the Semi-Pistol Cannonade")
+const SEMI_INCARNONS = /^(latron|vectis|strun|bronco|lato|lex)(\s|$)/
+const isIncarnonAttack = (name: string) => /incarnon/i.test(name)
+function fitsCannonade(weapon: Weapon): boolean {
+  if (weapon.trigger !== 'Semi' || weapon.type === 'Launcher') return false
+  const name = weapon.name.toLowerCase().replace(VARIANT_PREFIX, '')
+  if (/^nagantaka(\s|$)/.test(name)) return false
+  if (weapon.attacks.some((attack) => isIncarnonAttack(attack.name)) && !SEMI_INCARNONS.test(name)) return false
+  if (weapon.category === 'Secondary' && weapon.attacks.some((attack) => /alt-fire/i.test(attack.name))) return false
+  return true
+}
+
 export function getCompatibleMods(weapon: Weapon): Mod[] {
   const modType = modTypeFor(weapon)
   return mods.filter((mod) => {
     // weapon augments are filed under odd types sometimes (Range Advantage for the Akjagara is a "Primary Mod", Clip Delegation for
     // the Sobek shotgun too), so a mod naming this weapon goes on it whatever its type
     if (mod.type !== modType) return mod.type !== 'Warframe Mod' && Boolean(mod.compatName) && !GENERIC_COMPAT.has(mod.compatName!) && !SUBTYPE_COMPAT[mod.compatName!] && namedFor(weapon, mod.compatName!)
-    // Semi-___ Cannonade: "Only compatible with Semi-Auto Trigger" (from the mod's description)
-    if (mod.semiOnly && weapon.trigger !== 'Semi') return false
+    // Semi-___ Cannonade: "Only compatible with Semi-Auto Trigger" (from the mod's description), see fitsCannonade
+    if (mod.semiOnly && !fitsCannonade(weapon)) return false
     // pseudo-exalted abilities can't block, heavy attack or finish (Parry, Fury, Melee Animosity...), with per-ability exceptions
     if (bannedOnExalted(weapon, mod.name)) return false
     if (allowedOnExalted(weapon, mod.name)) return true
@@ -99,5 +116,6 @@ export function getCompatibleArcanes(weapon: Weapon): Arcane[] {
       : weapon.category === 'Secondary'
         ? ['Secondary Arcane']
         : ['Melee Arcane']
-  return arcanes.filter((arcane) => allowed.includes(arcane.type))
+  // Primary Compression: "Shotguns cannot equip mod" (wiki)
+  return arcanes.filter((arcane) => allowed.includes(arcane.type) && !(weapon.type === 'Shotgun' && arcane.name === 'Primary Compression'))
 }

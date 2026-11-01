@@ -112,6 +112,17 @@ export function DebuffsPanel({ debuffs, buffs, onDebuffsChange, onBuffsChange }:
             onChange={(event) => onBuffsChange({ ...buffs, roar: Math.max(0, Number(event.target.value)) / 100 })}
           />
         </label>
+        {/* companion mod, only works while the companion has 50%+ crit chance (Kavat with Bite, Vulklok...) */}
+        <label title="Tenacious Bond on your companion: +0.2x per rank to your weapons' crit multiplier, flat, if the companion has 50%+ crit chance">
+          Tenacious Bond (companion)
+          <select
+            value={Math.round((buffs.tenaciousBond ?? 0) * 5)}
+            onChange={(event) => onBuffsChange({ ...buffs, tenaciousBond: Number(event.target.value) / 5 })}
+          >
+            <option value={0}>Off</option>
+            {[0, 1, 2, 3, 4, 5].map((rank) => <option key={rank} value={rank + 1}>Rank {rank} (+{((rank + 1) * 0.2).toFixed(1)}x)</option>)}
+          </select>
+        </label>
       </div>
       <p className="muted">
         Condition Overload / Galvanized count status types, not stacks. By default that's the damage types this build

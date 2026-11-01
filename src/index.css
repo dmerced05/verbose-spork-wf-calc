@@ -676,3 +676,5 @@ select { max-width: 100%; }
   .sg-table tr { display: block; border-top: 1px solid var(--border); padding: 6px 0; }
   .sg-table td { display: block; border: 0; padding: 3px 0; }
 }
+.cap-riven { display: grid; gap: 8px; margin-top: 10px; }
+.cap-riven .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

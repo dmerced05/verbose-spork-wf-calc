@@ -505,5 +505,779 @@
         "name": "Survivor's Edge"
       }
     ]
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Rifle/LatronPrime",
+    "attack": "Incarnon Form AoE",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/PvPMods/Rifle/MoreDamageonTripleTapRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/FireRateWhileAimingRifleMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Riddled Target"
+      },
+      {
+        "tier": "IV",
+        "name": "Critical Parallel"
+      }
+    ],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/WraithLatron/WraithLatron",
+    "attack": "Incarnon Form AoE",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/PvPMods/Rifle/MoreDamageonTripleTapRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/FireRateWhileAimingRifleMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Riddled Target"
+      },
+      {
+        "tier": "IV",
+        "name": "Critical Parallel"
+      }
+    ],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Rifle/SemiAutoRifle",
+    "attack": "Incarnon Form AoE",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/PvPMods/Rifle/MoreDamageonTripleTapRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/FireRateWhileAimingRifleMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Riddled Target"
+      },
+      {
+        "tier": "IV",
+        "name": "Critical Parallel"
+      }
+    ],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Rifle/LatronPrime",
+    "attack": "Incarnon Form AoE",
+    "board": "window3-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/PvPMods/Rifle/MoreDamageonTripleTapRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleSemiAutoFantasyMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedCritRateFireRateRifle"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Riddled Target"
+      },
+      {
+        "tier": "IV",
+        "name": "Critical Parallel"
+      }
+    ],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/WraithLatron/WraithLatron",
+    "attack": "Incarnon Form AoE",
+    "board": "window3-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/PvPMods/Rifle/MoreDamageonTripleTapRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleSemiAutoFantasyMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedCritRateFireRateRifle"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Riddled Target"
+      },
+      {
+        "tier": "IV",
+        "name": "Critical Parallel"
+      }
+    ],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/Rifle/SemiAutoRifle",
+    "attack": "Incarnon Form AoE",
+    "board": "window3-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/PvPMods/Rifle/MoreDamageonTripleTapRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleSemiAutoFantasyMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedCritRateFireRateRifle"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Riddled Target"
+      },
+      {
+        "tier": "IV",
+        "name": "Critical Parallel"
+      }
+    ],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeAfentis/PrimeAfentisWeapon",
+    "attack": "Semi + Radial Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/RifleSemiAutoFantasyMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedCritRateFireRateRifle"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeAfentis/PrimeAfentisWeapon",
+    "attack": "Radial Attack",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/RifleSemiAutoFantasyMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedCritRateFireRateRifle"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeAfentis/PrimeAfentisWeapon",
+    "attack": "Semi + Radial Attack",
+    "board": "window3-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/RifleSemiAutoFantasyMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedCritRateFireRateRifle"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeAfentis/PrimeAfentisWeapon",
+    "attack": "Radial Attack",
+    "board": "window3-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/RifleSemiAutoFantasyMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedCritRateFireRateRifle"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeAfentis/PrimeAfentisWeapon",
+    "attack": "Semi + Radial Attack",
+    "board": "attack",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/RifleSemiAutoFantasyMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedCritRateFireRateRifle"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeAfentis/PrimeAfentisWeapon",
+    "attack": "Radial Attack",
+    "board": "attack",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/RifleSemiAutoFantasyMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritDamageWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedCritRateFireRateRifle"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Infested/InfestedLich/LongGuns/CodaSporothrix",
+    "attack": "Normal Attack + AoE",
+    "board": "sustained",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": {
+      "damageType": "heat",
+      "value": 0.6
+    }
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Infested/InfestedLich/LongGuns/CodaSporothrix",
+    "attack": "Normal Attack",
+    "board": "sustained",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": {
+      "damageType": "heat",
+      "value": 0.6
+    }
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeScourge/PrimeScourgeWeapon",
+    "attack": "Projectile Impact + Explosion",
+    "board": "sustained",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeScourge/PrimeScourgeWeapon",
+    "attack": "Explosion",
+    "board": "sustained",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimePanthera/PrimePanthera",
+    "attack": "Radial Attack",
+    "board": "sustained",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeScourge/PrimeScourgeWeapon",
+    "attack": "Projectile Impact",
+    "board": "sustained-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Corpus/LongGuns/CrpBFG/Vandal/VandalCrpBFG",
+    "attack": "Quick Shot",
+    "board": "window3",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Expert/WeaponFreezeDamageModExpert",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/RadiationReloadRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/MagneticClipRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/FireRateWhileAimingRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryCritDmgAndMultishotOnColdProc",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Infested/InfestedLich/LongGuns/CodaSporothrix",
+    "attack": "Normal Attack + AoE",
+    "board": "window10",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": {
+      "damageType": "heat",
+      "value": 0.6
+    }
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Infested/InfestedLich/LongGuns/CodaSporothrix",
+    "attack": "Normal Attack",
+    "board": "window10",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": {
+      "damageType": "heat",
+      "value": 0.6
+    }
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeScourge/PrimeScourgeWeapon",
+    "attack": "Projectile Impact + Explosion",
+    "board": "window10",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeScourge/PrimeScourgeWeapon",
+    "attack": "Explosion",
+    "board": "window10",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimePanthera/PrimePanthera",
+    "attack": "Radial Attack",
+    "board": "window10",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeScourge/PrimeScourgeWeapon",
+    "attack": "Projectile Impact",
+    "board": "window10-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Infested/InfestedLich/LongGuns/CodaSporothrix",
+    "attack": "Normal Attack + AoE",
+    "board": "window30",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": {
+      "damageType": "heat",
+      "value": 0.6
+    }
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Infested/InfestedLich/LongGuns/CodaSporothrix",
+    "attack": "Normal Attack",
+    "board": "window30",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": {
+      "damageType": "heat",
+      "value": 0.6
+    }
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Grineer/LongGuns/GrnFlameSpear/GrnFlameSpear",
+    "attack": "Projectile Impact + Projectile Explosion",
+    "board": "window30",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Infested/LongGuns/InfSniperRifle/InfSniperRifle",
+    "attack": "Normal Attack + AoE",
+    "board": "window30",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/WildfireMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Infested/LongGuns/InfSniperRifle/InfSniperRifle",
+    "attack": "Normal Attack",
+    "board": "window30",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/WildfireMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/ClanTech/Bio/BioWeapon",
+    "attack": "Poison Cloud",
+    "board": "window30",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/PoisonEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponProcTimeMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Final Fusillade"
+      },
+      {
+        "tier": "IV",
+        "name": "Survivor's Edge"
+      }
+    ],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeScourge/PrimeScourgeWeapon",
+    "attack": "Explosion",
+    "board": "window30",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/CorruptedFireRateDamageRifle",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Grineer/LongGuns/GrnFlameSpear/GrnFlameSpear",
+    "attack": "Projectile Impact + Projectile Explosion",
+    "board": "window30-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/ClanTech/Bio/BioWeapon",
+    "attack": "Poison Cloud",
+    "board": "window30-nofr",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponProcTimeMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/PoisonEventRifleMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnKill",
+    "perks": [
+      {
+        "tier": "II",
+        "name": "Final Fusillade"
+      },
+      {
+        "tier": "IV",
+        "name": "Survivor's Edge"
+      }
+    ],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeScourge/PrimeScourgeWeapon",
+    "attack": "Projectile Impact + Explosion",
+    "board": "attack",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponProcTimeMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeScourge/PrimeScourgeWeapon",
+    "attack": "Projectile Impact",
+    "board": "attack",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponStatusChanceSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponProcTimeMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimeScourge/PrimeScourgeWeapon",
+    "attack": "Explosion",
+    "board": "attack",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/FireEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponProcTimeMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
+  },
+  {
+    "weaponId": "/Lotus/Weapons/Tenno/LongGuns/PrimePanthera/PrimePanthera",
+    "attack": "Radial Attack",
+    "board": "attack",
+    "mods": [
+      "/Lotus/Upgrades/Mods/Rifle/WeaponFireIterationsSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponProcTimeMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/ElectEventRifleMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponElectricityDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/RifleStatusDamageDuoMod",
+      "/Lotus/Upgrades/Mods/Rifle/Event/CritChanceWhileAimingRifleSPMod",
+      "/Lotus/Upgrades/Mods/Rifle/WeaponCritDamageMod",
+      "/Lotus/Upgrades/Mods/Rifle/DualStat/HammerShotMod"
+    ],
+    "arcane": "/Lotus/Upgrades/CosmeticEnhancers/Offensive/PrimaryDamageOnNoMelee",
+    "perks": [],
+    "bonusElement": null
   }
 ]

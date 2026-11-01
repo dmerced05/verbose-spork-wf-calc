@@ -377,7 +377,7 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
                           ))}
                         </ol>
                         <div className="row">
-                          {entry.arcane && <span className="chip">{entry.arcane[1]}</span>}
+                          {entry.arcane && <span className="chip">{entry.arcane[1]}{arcanesById.get(entry.arcane[0]) && nicheNote(arcanesById.get(entry.arcane[0])!.levelStats) && <Tip className="niche-tag" text={`Niche: ${nicheNote(arcanesById.get(entry.arcane[0])!.levelStats)}`}>Niche</Tip>}</span>}
                           {entry.perks.map((perk) => <span key={perk.name} className="chip perk-chip">{perk.tier}: {perk.name}</span>)}
                           {entry.bonusElement && <span className="chip">{entry.bonusElement.damageType} {percent(entry.bonusElement.value)}</span>}
                           {!result.usedFireRateMods && BOARDS.find((spec) => spec.key === detailBoard)?.allowFireRateMods && (

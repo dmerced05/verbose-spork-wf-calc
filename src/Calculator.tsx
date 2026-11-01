@@ -200,7 +200,7 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
     incarnonPerks: incarnonPerks.map((perk) => ({ ...perk, stacks: 0 })),
     passives: selectedPassives.map((passive) => ({ ...passive, stacks: 0 })),
     debuffs: { ...debuffs, stacks: {}, liftedOrKnockedDown: false, statusTypeSource: 'debuffs' as const },
-    buffs: { roar: 0, combo: 1, gladiatorWarframePieces: buffs.gladiatorWarframePieces },
+    buffs: { roar: 0, combo: 1, gladiatorWarframePieces: buffs.gladiatorWarframePieces, tenaciousBond: buffs.tenaciousBond }, // the arsenal shows Tenacious Bond too
     target: { ...target, headshot: false },
   }
   const arsenalResult = calculate(arsenalInput)
@@ -223,7 +223,7 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
   ].filter(Boolean).join(' · ')
   const activeDebuffs = Object.values(debuffs.stacks).filter((stacks) => stacks > 0).length +
     (debuffs.heatArmorStrip > 0 ? 1 : 0) + (debuffs.corrosiveProjections + warframeCorrosive > 0 ? 1 : 0) + (debuffs.otherArmorReduction > 0 ? 1 : 0) +
-    (debuffs.damageVulnerability > 0 ? 1 : 0) + (debuffs.liftedOrKnockedDown ? 1 : 0)
+    (debuffs.damageVulnerability > 0 ? 1 : 0) + (debuffs.liftedOrKnockedDown ? 1 : 0) + (buffs.tenaciousBond ? 1 : 0)
   const debuffSummary = activeDebuffs ? `${activeDebuffs} active` : 'none'
   const bodyKill = killFor(false)
   const headKill = killFor(true)

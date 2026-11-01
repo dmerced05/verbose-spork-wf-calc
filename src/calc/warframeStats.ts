@@ -203,7 +203,7 @@ export function warframeTotals(build: WarframeBuild): WarframeTotals {
       if (effect.selfOnly && cast.by === 'ally') continue
       if (effect.kind === 'damageReduction') {
         const cap = cast.by === 'helminth' ? effect.helminthCap ?? effect.cap : effect.cap
-        // Null Star: the particle count is the Duration stat (12 x duration), each particle's 5% is the Strength one
+        // Null Star: the particle count is the Duration stat (12 x duration), 5% each no matter the Strength
         const stacks = effect.stacksScaleWithDuration ? Math.round(effect.stacks * abilityDuration) : effect.stacks
         drSources.push({ label: `${ability.name}${effect.stacksScaleWithDuration ? ` (${stacks} ${effect.stackLabel ?? 'stacks'})` : ''}`, value: Math.min(cap, effect.perStack * stacks * strength), on: 'both' })
       } else {

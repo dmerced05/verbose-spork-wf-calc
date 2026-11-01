@@ -144,12 +144,27 @@ const BASE_DAMAGE_POOLS = {
   Stug: { 'Blob Embed': 79, 'Blob Explosion': 79, 'Incarnon Form Blob Embed': 250, 'Incarnon Form Blob Explosion': 250, 'Incarnon Form Bounce Explosion': 250 },
 }
 
+// the export gets a few weapon classes wrong, checked against the wiki's Shotgun / Sniper Rifle / Assault Rifle / Dual Pistols /
+// Thrown categories (Oct 2026). the class picks the riven type and which mods fit (Shotgun mods, Sniper and Thrown mods)
+const TYPE_FIXES = {
+  'Coda Bubonico': 'Shotgun', // export says Rifle, so it got rifle mods and a rifle riven
+  'Perigale Prime': 'Sniper', // Perigale is Sniper, the Prime came through as Rifle
+  Buzlok: 'Rifle', // export says Sniper, the wiki lists it as an assault rifle
+  'Sancti Castanas': 'Throwing', Pox: 'Throwing', 'Coda Pox': 'Throwing',
+  // dual pistols the export files as single Pistol. nothing changes in the calc for these, it's just the right label
+  ...Object.fromEntries(['Afuris Prime', 'Akarius', 'Akarius Prime', 'Akbolto Prime', 'Akjagara', 'Akjagara Prime', 'Aksomati', 'Aksomati Prime',
+    'Aksondol', 'Akstiletto', 'Akstiletto Prime', 'Akvasto Prime', 'Akzani', 'Dex Furis', 'Dual Cestra', 'Dual Coda Torxica', 'Dual Toxocyst',
+    'Prisma Twin Gremlins', 'Regulators', 'Secura Dual Cestra', 'Telos Akbolto', 'Tenet Diplos', 'Twin Vipers Wraith'].map((name) => [name, 'Dual Pistols'])),
+  // melee variants the export calls Rifle
+  'Mk1-Bo': 'Melee', 'Mk1-Furax': 'Melee', 'Prisma Skana': 'Melee', Venato: 'Melee',
+}
+
 // one weapon in the shape the calc wants. also used for the exalted weapons below
 function toWeapon(weapon) {
   return {
     uniqueName: weapon.uniqueName,
     name: weapon.name,
-    type: weapon.type,
+    type: TYPE_FIXES[weapon.name] ?? weapon.type,
     category: weapon.category,
     disposition: weapon.disposition ?? null,
     // the actual riven multiplier behind the dots (Soma Prime: 3 dots = x1.1). exalted weapons don't take rivens
@@ -288,7 +303,12 @@ const handMadeWeapons = vinquibus ? [{
 // the only one). candidates were reviewed by hand; these two aren't one shot
 const NOT_WHOLE_SHOTS = new Set(['Coda Pox|Spore Impact', 'Neutralizer|Normal Attack'])
 // pairs the name rules can't find. Bubonico's alt-fire: the Burst and its viral Radial Attack are one priming shot
-const EXTRA_WHOLE_SHOTS = { Bubonico: [['Burst', 'Radial Attack']], 'Coda Bubonico': [['Burst', 'Radial Attack']] }
+// Stug: the blob's embed tick and its explosion are one shot (all of it is AoE in the data, so the name rules miss it). the
+// Incarnon blob also bounces and explodes, I count one bounce explosion per blob
+const EXTRA_WHOLE_SHOTS = {
+  Bubonico: [['Burst', 'Radial Attack']], 'Coda Bubonico': [['Burst', 'Radial Attack']],
+  Stug: [['Blob Embed', 'Blob Explosion'], ['Incarnon Form Blob Embed', 'Incarnon Form Blob Explosion', 'Incarnon Form Bounce Explosion']],
+}
 const AREA_WORDS = /\s*(Radial Attack|Explosion|Detonation|AoE|Cloud|Pool|Field|Blast|Collapse|Merging Damage)$/i
 const HIT_WORDS = /\s*(Impact|Contact|Direct Hit|Projectile)$/i
 const stemOf = (name, words) => name.replace(words, '').trim().toLowerCase()
@@ -303,7 +323,7 @@ function wholeShots(weapon) {
     const parts = areaNames.map((name) => usable.find((attack) => attack.name === name)).filter(Boolean)
     if (!direct || parts.length !== areaNames.length) continue
     groups.set(direct.name, { direct, areas: parts })
-    areaNames.forEach((name) => taken.add(name))
+    ;[directName, ...areaNames].forEach((name) => taken.add(name))
   }
   for (const area of areas) {
     if (taken.has(area.name)) continue

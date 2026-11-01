@@ -1,9 +1,13 @@
 // fourth tab: can this weapon break the damage limit, and what does it take? a ladder of investment layers, each
 // optimized for the biggest single instance against the calculator's target, Warframe and debuffs
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { enemiesById, modsById, weapons, weaponsById } from '../data'
+import { arcanesById, enemiesById, modsById, weapons, weaponsById } from '../data'
+import { nicheNote } from '../calc/nicheMods'
+import { Tip } from './Tip'
 import { INT_LIMIT, onScreen } from '../calc/damageCap'
-import { RIVEN_MOD_ID, type RivenConfig } from '../calc/riven'
+import { RIVEN_DISPOSITION, RIVEN_MOD_ID, emptyRiven, rivenTypeFor, type RivenConfig } from '../calc/riven'
+import { RivenEditor } from './RivenEditor'
+import { compressionFor } from '../data/compression'
 import { abilitiesById } from '../data/warframeAbilities'
 import { heavyComboFor, type HeavyMode } from '../data/heavyAttacks'
 import { CAP_STEPS, CAP_TARGET, type CapPath, type CapRequest, type CapSetup, type CapStepResult } from '../optimizer/damageCap'
@@ -31,12 +35,14 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
   const [attackIndex, setAttackIndex] = useState(0)
   const [heavyMode, setHeavyMode] = useState<HeavyMode>('biggestHit')
   const [cap, setCap] = useState(INT_LIMIT)
-  const [useRiven, setUseRiven] = useState(true)
+  // optional riven, locked into every step. starts as the calculator's one when it's for this weapon
+  const [riven, setRiven] = useState<RivenConfig | null>(() => (calculatorRiven?.config.stats.length ? calculatorRiven.config : null))
   const [thorough, setThorough] = useState(false)
   const [frameMode, setFrameMode] = useState<CapRequest['frameMode']>('search')
   const [allyStrength, setAllyStrength] = useState(300)
   const [allyCount, setAllyCount] = useState(3)
   const [meleeHeadshots, setMeleeHeadshots] = useState(false)
+  const [allowCompression, setAllowCompression] = useState(false)
   const [paths, setPaths] = useState<CapPath[]>([])
   const [selectedPath, setSelectedPath] = useState(0)
   const [defaultPath, setDefaultPath] = useState(0)
@@ -52,6 +58,7 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
   const weapon = weaponsById.get(weaponId)!
   const attack = weapon.attacks[attackIndex] ?? weapon.attacks[0]
   const rivenForWeapon = calculatorRiven?.weaponId === weaponId && calculatorRiven.config.stats.length ? calculatorRiven.config : null
+  const rivenType = rivenTypeFor(weapon)
   // the calculator's Warframe panel and buffs, but always against the cap target (Steel Path Heavy Gunner, level 9,999)
   const scenario = useMemo(
     () => (calculatorScenario ? { ...calculatorScenario, target: CAP_TARGET, armor: resolveArmor(CAP_TARGET) } : null),
@@ -75,6 +82,7 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
     if (!id) return
     setWeaponId(id)
     setAttackIndex(0)
+    setRiven(null) // a riven belongs to one weapon
     setResults([])
     setRanWith(null)
   }
@@ -86,8 +94,8 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
     workerRef.current = worker
     const id = ++jobId.current
     const request: CapRequest = {
-      weaponId, attackIndex, heavyMode, scenario, riven: useRiven ? rivenForWeapon : null, thorough,
-      frameMode, allyStrength: allyStrength / 100, allyCount, meleeHeadshots,
+      weaponId, attackIndex, heavyMode, scenario, riven: rivenType && riven?.stats.length ? riven : null, thorough,
+      frameMode, allyStrength: allyStrength / 100, allyCount, meleeHeadshots, allowCompression,
     }
     const collected: CapStepResult[] = []
     setResults([])
@@ -168,10 +176,12 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
             Limit
             <input type="number" className="cap-input" value={cap} onChange={(event) => setCap(Math.max(1, Number(event.target.value) || INT_LIMIT))} />
           </label>
-          {rivenForWeapon && (
-            <label className="inline-check"><input type="checkbox" checked={useRiven} onChange={(event) => setUseRiven(event.target.checked)} /> Use the calculator's riven</label>
-          )}
           <label className="inline-check"><input type="checkbox" checked={thorough} onChange={(event) => setThorough(event.target.checked)} /> Thorough search</label>
+          {compressionFor(weapon.name, attack.name) && weapon.type !== 'Shotgun' && (
+            <label className="inline-check" title="Primary Compression shrinks the explosion to 20% while aiming, so the AoE hits far fewer enemies. Off = it's left out of the arcane pick">
+              <input type="checkbox" checked={allowCompression} onChange={(event) => setAllowCompression(event.target.checked)} /> Allow Primary Compression (Niche)
+            </label>
+          )}
           {weapon.category === 'Melee' && (
             <label className="inline-check" title="Most melee weapons can't land headshots reliably, so the headshot step is off for melee unless this is on">
               <input type="checkbox" checked={meleeHeadshots} onChange={(event) => setMeleeHeadshots(event.target.checked)} /> Count melee headshots
@@ -195,6 +205,17 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
             </>
           )}
         </div>
+        {rivenType && (
+          <div className="cap-riven">
+            <div className="row">
+              {!riven && <button onClick={() => setRiven(emptyRiven())}>+ Riven</button>}
+              {rivenForWeapon && riven !== rivenForWeapon && <button onClick={() => setRiven(rivenForWeapon)}>Use the calculator's riven</button>}
+              {riven && <button onClick={() => setRiven(null)}>Remove riven</button>}
+              <span className="muted-inline">{riven?.stats.length ? 'Locked into every step.' : 'Optional: a riven gets locked into every step.'}</span>
+            </div>
+            {riven && <RivenEditor type={rivenType} disposition={RIVEN_DISPOSITION} config={riven} onChange={setRiven} />}
+          </div>
+        )}
         {summary && (
           <ul className="cap-summary muted">
             <li><b>Target</b> {summary.target}{summary.combo ? ` · ${summary.combo}` : ''}</li>
@@ -299,7 +320,7 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
                   ))}
                 </ol>
                 <div className="row">
-                  {entry.arcane && <span className="chip">{entry.arcane[1]}</span>}
+                  {entry.arcane && <span className="chip">{entry.arcane[1]}{arcanesById.get(entry.arcane[0]) && nicheNote(arcanesById.get(entry.arcane[0])!.levelStats) && <Tip className="niche-tag" text={`Niche: ${nicheNote(arcanesById.get(entry.arcane[0])!.levelStats)}`}>Niche</Tip>}</span>}
                   {entry.perks.map((perk) => <span key={perk.name} className="chip perk-chip">{perk.tier}: {perk.name}</span>)}
                 </div>
                 {result.setup?.mods && (

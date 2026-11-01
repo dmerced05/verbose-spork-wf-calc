@@ -21,6 +21,7 @@ import { exaltedRuleFor } from '../src/data/exalted'
 import { hasBonusElement, passivesFor } from '../src/data/passives'
 import { heavyComboFor } from '../src/data/heavyAttacks'
 import { SHELL_BY_SHELL_RELOAD } from '../src/data/reloads'
+import { COMPRESSION } from '../src/data/compression'
 import { maxComboFor } from '../src/calc/constants'
 import * as constants from '../src/calc/constants'
 import * as heavyAttacks from '../src/data/heavyAttacks'
@@ -119,6 +120,8 @@ function upgradeFingerprint(upgrade: Mod | Arcane, rank: number): string {
 export function weaponFingerprint(weapon: Weapon, seeds: SeedBuild[] = []): string {
   return hash(stable({
     ...(seeds.length ? { seeds } : {}),
+    // only weapons in the Primary Compression table get the key, so the rest keep their fingerprints
+    ...(COMPRESSION[weapon.name] ? { compression: COMPRESSION[weapon.name] } : {}),
     weapon,
     maxCombo: maxComboFor(weapon.name),
     heavyCombo: heavyComboFor(weapon.name),

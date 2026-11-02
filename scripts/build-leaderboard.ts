@@ -10,6 +10,8 @@
 //   npm run leaderboard -- --only=Kronen Prime,Glaive    also rerun these (by name), changed or not
 //   npm run leaderboard -- --adopt      stamp fingerprints on the current file without rerunning anything.
 //                                       only for when you know the file already matches the code
+//   npm run leaderboard -- --boss       the Boss Damage board instead (src/optimizer/bossLeaderboard.ts), into its own
+//                                       public/boss-leaderboard.json + state file. every flag above works with it
 // scripts/leaderboard-seeds.json holds builds found in the Compare tab ("Copy seeds"). each is scored the leaderboard's
 // way and kept only if it beats the search, and adding one reruns just that weapon
 // the stale weapons get split across child processes (one per CPU core).
@@ -19,27 +21,37 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { weapons, weaponsById } from '../src/data'
-import { BOARDS } from '../src/optimizer/objectives'
+import { BOARDS as MAIN_BOARDS } from '../src/optimizer/objectives'
 import { optimizeWeapon } from '../src/optimizer/leaderboardWeapon'
+import { BOSS_BOARDS, BOSS_DESCRIPTION, optimizeWeaponBoss } from '../src/optimizer/bossLeaderboard'
 import type { SeedBuild } from '../src/optimizer/optimize'
+import type { Weapon } from '../src/types'
 import { encodeEntry, expandLeaderboard, toStored, type CompactEntry, type LeaderboardFile, type LeaderboardFileV1, type StoredEntry } from '../src/optimizer/leaderboardTypes'
 import { SCENARIO_DESCRIPTION } from '../src/optimizer/scenario'
+import { createHash } from 'node:crypto'
 import { engineFingerprint, weaponFingerprint } from './leaderboardFingerprint'
 
 // the shards run from a bundle in the cache folder (see main), so they get the project root passed in
 const ROOT = process.env.WF_ROOT ? new URL(`file://${process.env.WF_ROOT}/`) : new URL('../', import.meta.url)
-const CACHE_DIR = new URL('node_modules/.cache/leaderboard/', ROOT)
-const OUTPUT = new URL('public/leaderboard.json', ROOT)
+const flag = (name: string) => process.argv.includes(`--${name}`)
+const option = (name: string) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
+// --boss swaps the boards, the per-weapon run, the output and the bookkeeping, everything else is shared
+const BOSS = flag('boss')
+const BOARDS = BOSS ? BOSS_BOARDS : MAIN_BOARDS
+const CACHE_DIR = new URL(BOSS ? 'node_modules/.cache/boss-leaderboard/' : 'node_modules/.cache/leaderboard/', ROOT)
+const OUTPUT = new URL(BOSS ? 'public/boss-leaderboard.json' : 'public/leaderboard.json', ROOT)
 // the incremental-rebuild bookkeeping (engine hash + per-weapon fingerprints), kept out of the file the site downloads
-const STATE = new URL('scripts/leaderboard-state.json', ROOT)
+const STATE = new URL(BOSS ? 'scripts/boss-leaderboard-state.json' : 'scripts/leaderboard-state.json', ROOT)
 interface State { engine?: string; fingerprints?: Record<string, string> }
 const SEEDS = new URL('scripts/leaderboard-seeds.json', ROOT)
 const loadSeeds = (): SeedBuild[] => (existsSync(SEEDS) ? (JSON.parse(readFileSync(SEEDS, 'utf8')) as SeedBuild[]) : [])
-const seedsFor = (seeds: SeedBuild[], weaponId: string) => seeds.filter((seed) => seed.weaponId === weaponId)
+// seeds are main-board builds, the boss board doesn't take them
+const seedsFor = (seeds: SeedBuild[], weaponId: string) => (BOSS ? [] : seeds.filter((seed) => seed.weaponId === weaponId))
+const runWeapon = (weapon: Weapon, seeds: SeedBuild[]) => (BOSS ? optimizeWeaponBoss(weapon) : optimizeWeapon(weapon, seeds))
+// the boss board also depends on its own module
+const bossEngine = (engine: string) => createHash('sha256').update(engine).update(readFileSync(new URL('src/optimizer/bossLeaderboard.ts', ROOT), 'utf8')).digest('hex').slice(0, 16)
 
 type Boards = Record<string, StoredEntry[]>
-const flag = (name: string) => process.argv.includes(`--${name}`)
-const option = (name: string) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3)
 
 // one shard: its share of the stale weapons, every attack x every ranking
 function runShard(shard: number, count: number) {
@@ -48,7 +60,7 @@ function runShard(shard: number, count: number) {
   const boards: Boards = Object.fromEntries(BOARDS.map((board) => [board.key, []]))
   todo.forEach((weaponId, index) => {
     if (index % count !== shard) return
-    for (const [key, entries] of Object.entries(optimizeWeapon(weaponsById.get(weaponId)!, seedsFor(seeds, weaponId)))) boards[key].push(...entries)
+    for (const [key, entries] of Object.entries(runWeapon(weaponsById.get(weaponId)!, seedsFor(seeds, weaponId)))) boards[key].push(...entries)
     process.stdout.write('.')
   })
   writeFileSync(new URL(`shard-${shard}.json`, CACHE_DIR), JSON.stringify(boards))
@@ -94,7 +106,7 @@ function writeFile(boards: Boards, engine: string, fingerprints: Record<string, 
     version: 2,
     generatedAt: new Date().toISOString(),
     dataVersion: `@wfcd/items ${itemsPackage.version}`,
-    scenario: SCENARIO_DESCRIPTION,
+    scenario: BOSS ? BOSS_DESCRIPTION : SCENARIO_DESCRIPTION,
     upgrades,
     weapons: weaponTable,
     boards: compact,
@@ -109,7 +121,7 @@ async function main() {
   if (shardArg) return runShard(Number(shardArg), Number(option('of')))
 
   const started = Date.now()
-  const engine = engineFingerprint()
+  const engine = BOSS ? bossEngine(engineFingerprint()) : engineFingerprint()
   const seeds = loadSeeds()
   const fingerprints = Object.fromEntries(weapons.map((weapon) => [weapon.uniqueName, weaponFingerprint(weapon, seedsFor(seeds, weapon.uniqueName))]))
   const old = loadOld()
@@ -161,7 +173,7 @@ async function main() {
     await Promise.all(
       Array.from({ length: count }, (_, shard) =>
         new Promise<void>((resolve, reject) => {
-          const child = spawn(process.execPath, [runner, `--shard=${shard}`, `--of=${count}`], { stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, WF_ROOT: root } })
+          const child = spawn(process.execPath, [runner, `--shard=${shard}`, `--of=${count}`, ...(BOSS ? ['--boss'] : [])], { stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, WF_ROOT: root } })
           child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`shard ${shard} exited with ${code}`))))
         }),
       ),
@@ -173,7 +185,7 @@ async function main() {
   }
 
   writeFile(boards, engine, fingerprints)
-  console.log(`\nwrote public/leaderboard.json in ${((Date.now() - started) / 1000).toFixed(0)}s`)
+  console.log(`\nwrote ${BOSS ? 'public/boss-leaderboard.json' : 'public/leaderboard.json'} in ${((Date.now() - started) / 1000).toFixed(0)}s`)
 }
 
 main().catch((error) => {

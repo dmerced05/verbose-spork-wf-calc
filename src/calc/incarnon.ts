@@ -38,8 +38,11 @@ const TIER_ORDER = ['II', 'III', 'IV', 'V']
 const percent = (text: string) => Number(text) / 100
 
 function parsePerkBody(body: string, native: boolean): PerkEffect | null {
-  const nonCrit = body.match(/^([\d.]+)% chance for \+([\d.]+)% Damage$/)
-  if (nonCrit) return { kind: 'nonCritBonus', chance: percent(nonCrit[1]), value: percent(nonCrit[2]) }
+  // wiki Laetum and the Felarx evolution table: "50% chance to deal 2000% damage on non-critical hits", no plus, so it's
+  // x20 total, not +2000% on top (x21). Underframe matches: a plain Felarx non-crit pellet 354,562, an Attrition one
+  // 7,091,232, exactly 20x. so the bonus on top of a normal hit is the number minus one
+  const nonCrit = body.match(/^([\d.]+)% chance (?:to deal|for) \+?([\d.]+)% Damage$/)
+  if (nonCrit) return { kind: 'nonCritBonus', chance: percent(nonCrit[1]), value: percent(nonCrit[2]) - 1 }
 
   const armorStrip = body.match(/^Remove ([\d.]+)% Armor per Puncture stack$/)
   if (armorStrip) return { kind: 'armorStripPerPuncture', value: percent(armorStrip[1]) }
@@ -96,7 +99,7 @@ function parsePerkLine(effects: string, native: boolean): PerkStatement[] {
       text = text.slice(0, modeTag.index).trim()
     }
 
-    // "On Non-Critical Hit: 50% chance for +2000% Damage" is a chance roll, not something you toggle
+    // "On Non-Critical Hit: 50% chance to deal 2000% Damage" is a chance roll, not something you toggle
     const nonCrit = text.match(/^On Non-Critical Hit:\s*(.+)$/)
     if (nonCrit) {
       statements.push({ text: rawStatement, effect: parsePerkBody(nonCrit[1], native), mode, condition: null, maxStacks: 1 })
@@ -176,7 +179,7 @@ export function stackingNote(effect: PerkEffect | null): string | null {
     case 'mod':
       return 'Works like one more mod line: it adds in with mods of the same stat (a +% Damage line adds to Serration, +% Multishot to Split Chamber).'
     case 'nonCritBonus':
-      return `Multiplicative: a non-crit hit that rolls it does x${1 + effect.value} (+${Math.round(effect.value * 100)}%) on top of everything else, ` +
+      return `Multiplicative: a non-crit hit that rolls it does x${1 + effect.value} (the perk's "${Math.round((1 + effect.value) * 100)}% damage") on top of everything else, ` +
         'base damage mods like Serration, elements, faction and CO included, it doesn\'t add to Serration. ' +
         `${Math.round(effect.chance * 100)}% of non-crits roll it, and crits never do, so it fades out as crit chance goes up and does nothing at 100%+.`
     case 'armorStripPerPuncture':

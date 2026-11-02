@@ -33,12 +33,13 @@ export interface OptimizedBuild {
 
 // mods and arcanes go in at max rank with conditionals at the scenario's stacks (src/calc/parseMod.ts triggerUptime):
 // max for most, off for headshot-hit triggers (body shots), half for melee kills on a gun and armor thresholds
-export const equipMod = (mod: Mod, isMelee: boolean): EquippedMod => ({
-  mod, rank: mod.fusionLimit, conditionalStacks: defaultConditionalStacks(mod.levelStats, mod.fusionLimit, { isMelee, bodyShots: true }),
+// noKills = the boss board: kill triggers sit at 0
+export const equipMod = (mod: Mod, isMelee: boolean, noKills = false): EquippedMod => ({
+  mod, rank: mod.fusionLimit, conditionalStacks: defaultConditionalStacks(mod.levelStats, mod.fusionLimit, { isMelee, bodyShots: true, noKills }),
 })
-export const equipArcane = (arcane: Arcane, isMelee: boolean): EquippedArcane => {
+export const equipArcane = (arcane: Arcane, isMelee: boolean, noKills = false): EquippedArcane => {
   const rank = arcane.levelStats.length - 1
-  return { arcane, rank, conditionalStacks: defaultConditionalStacks(arcane.levelStats, rank, { isMelee, bodyShots: true }) }
+  return { arcane, rank, conditionalStacks: defaultConditionalStacks(arcane.levelStats, rank, { isMelee, bodyShots: true, noKills }) }
 }
 
 const isElementalMod = (equipped: EquippedMod) =>
@@ -72,6 +73,8 @@ export interface OptimizeConstraints {
   beamWidth?: number
   // skip the target's extra mods (its bane, weak point mods). set internally for the second run, see the end of optimizeAttack
   neutralPool?: boolean
+  // one target that never dies (the boss board): on-kill conditionals and kill-based passives off
+  noKills?: boolean
 }
 
 // how far a result is from the crit limits, 0 = inside them
@@ -132,13 +135,13 @@ export function optimizeAttack(
     scenarioTarget ? { faction: scenarioTarget.faction, headshot: scenarioTarget.headshot } : undefined,
   )
     .filter((mod) => !constraints || (!excludedNames.has(mod.name) && !lockedNames.has(mod.name)))
-    .map((mod) => equipMod(mod, isMelee))
+    .map((mod) => equipMod(mod, isMelee, constraints?.noKills))
   // "no fire rate mods" rankings skip fire rate arcanes too
   const excludedArcanes = new Set(constraints?.excludedArcaneIds ?? [])
   const arcaneOptions = getCompatibleArcanes(weapon)
     .filter((option) => allowFireRateMods || !raisesFireRate(option.levelStats))
     .filter((option) => !excludedArcanes.has(option.uniqueName))
-    .map((option) => equipArcane(option, isMelee))
+    .map((option) => equipArcane(option, isMelee, constraints?.noKills))
   const excludedPerks = new Set(constraints?.excludedPerkNames ?? [])
   const lockedPerks = constraints?.lockedPerks ?? {}
   const incarnonTiers = (getIncarnonTiers(weapon.name) ?? []).map((tier) => ({ ...tier, perks: tier.perks.filter((perk) => !excludedPerks.has(perk.name)) }))
@@ -155,7 +158,7 @@ export function optimizeAttack(
   })
   // passives at the scenario's stacks, Kuva/Tenet/Coda element picked below (at the max 60%)
   const passives: SelectedPassive[] = passivesFor(weapon.name).map((passive) => ({
-    passive, stacks: passive.condition ? passive.scenarioStacks ?? passive.maxStacks ?? 1 : 1,
+    passive, stacks: !passive.condition ? 1 : constraints?.noKills && /kill/i.test(passive.condition) ? 0 : passive.scenarioStacks ?? passive.maxStacks ?? 1,
   }))
   let bonusElement: BonusElement | null = null
 

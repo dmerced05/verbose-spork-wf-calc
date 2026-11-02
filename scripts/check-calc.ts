@@ -279,12 +279,12 @@ const laetumExcess = calculate({ weapon: laetum, attack: laetum.attacks[0], mods
   incarnonPerks: [{ perk: perkFor('Laetum', 'IV', 'Elemental Excess'), stacks: 0 }],
   armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' } })
 expectClose('Laetum flat crit after mods', laetumExcess.critChance, laetum.attacks[0].critChance * 2.5 - 0.1)
-// Devouring Attrition: at 0% crit, average hit = 1 + 0.5 x 20 = 11x
+// Devouring Attrition: "+2000%" lands as x20 (Underframe's combat log), so at 0% crit the average hit = 0.5 x 1 + 0.5 x 20 = 10.5x
 const attrition = run(testAttack({ slash: 100 }), {})
 const attritionHit = calculate({ weapon: testWeapon(testAttack({ slash: 100 })), attack: testAttack({ slash: 100 }), mods: [],
   incarnonPerks: [{ perk: perkFor('Laetum', 'V', 'Devouring Attrition'), stacks: 0 }], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 },
   target: { ...grineerTarget, faction: 'None' } })
-expectClose('Devouring Attrition average', attritionHit.hit.average, attrition.hit.average * 11)
+expectClose('Devouring Attrition average', attritionHit.hit.average, attrition.hit.average * 10.5)
 // Latron Flensing Spikes: 5 puncture stacks x 20% = all armor gone
 const latron = weapons.find((weapon) => weapon.name === 'Latron')!
 const flensing = calculate({ weapon: latron, attack: latron.attacks[0], mods: [], incarnonPerks: [{ perk: perkFor('Latron', 'IV', 'Flensing Spikes'), stacks: 0 }],
@@ -947,7 +947,7 @@ expectClose('beam peak = the merged tick', run(testAttack({ heat: 100 }, { conti
 // Devouring Attrition: a non-crit can roll +2000%, bigger than a 2x crit at 10% crit chance
 const phenmorPeak = calculate({ weapon: phenmor, attack: phenmor.attacks[1], mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: neutral,
   incarnonPerks: [{ perk: perkFor('Phenmor', 'V', 'Devouring Attrition'), stacks: 0 }] })
-expectClose('Devouring Attrition non-crit is the peak', phenmorPeak.peakHit / (phenmorPeak.hit.normal), 21)
+expectClose('Devouring Attrition non-crit is the peak', phenmorPeak.peakHit / (phenmorPeak.hit.normal), 20)
 
 // Furious Javelin: x(1 + 15% x Strength x enemies hit), wiki example 100 x 2.65 (Pressure Point... here Serration) x (1 + 0.15 x 1.3 x 5)
 const javelinFrame = (stacks: number, strength = 1.3): WarframeState => ({ frameName: 'Excalibur', abilityStrength: strength, teammateStrength: 1, armor: 0, casts: [{ id: 'furiousJavelin', by: 'self', stacks }] })

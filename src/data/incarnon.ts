@@ -266,7 +266,7 @@ III | Mounting Momentum | ALL | On Shell Reload: +10% Fire Rate; Stacks up to 99
 IV | Brutal Edge | ALL | +10% Critical Chance; +10% Status Chance
 IV | Incarnon Catalyst | ALL | On Weakpoint Hit: +50% Incarnon charge [Normal only]
 IV | Racking Wrath | ALL | +20% Status Chance; -10% Critical Chance
-V | Devastating Attrition | ALL | On Non-Critical Hit: 50% chance for +2000% Damage
+V | Devastating Attrition | ALL | On Non-Critical Hit: 50% chance to deal 2000% Damage
 V | Ruptured Plentitude | ALL | On Punch Through 3 enemies: +70% Ammo Efficiency
 V | Agile Executor | ALL | When Aim Gliding or Sliding: +50% Ammo Efficiency`,
   },
@@ -283,7 +283,7 @@ III | Feather of Justice | ALL | When Aim Gliding or Sliding: +60% Ammo Efficien
 IV | Caput Mortuum | ALL | On Headshot: +50% Damage
 IV | Incarnon Efficiency | ALL | On Headshot: +50% Incarnon charge
 IV | Elemental Excess | ALL | +20% Status Chance; -10% Critical Chance
-V | Devouring Attrition | ALL | On Non-Critical Hit: 50% chance for +2000% Damage
+V | Devouring Attrition | ALL | On Non-Critical Hit: 50% chance to deal 2000% Damage
 V | Reaper's Plenty | ALL | On Headshot: +40% Ammo Efficiency [Normal only]
 V | Overwhelming Attrition | ALL | On Hit that is neither Critical nor applies a Status Effect: +400% Damage; Stacks up to 3x.`,
   },
@@ -300,7 +300,7 @@ III | Executioner's Fortune | ALL | On Headshot Kill: 20% chance to instantly Re
 IV | Survivor's Edge | ALL | +10% Critical Chance; +10% Status Chance
 IV | Incarnon Efficiency | ALL | On Weakpoint Hit: +50% Incarnon charge
 IV | Elemental Excess | ALL | +20% Status Chance; -10% Critical Chance
-V | Devouring Attrition | ALL | On Non-Critical Hit: 50% chance for +2000% Damage
+V | Devouring Attrition | ALL | On Non-Critical Hit: 50% chance to deal 2000% Damage
 V | Spiteful Defilement | ALL | When target has fewer than 3 Status Effects: +100% Critical Damage
 V | Lingering Judgement | ALL | On 2 Headshots within 2 seconds: +50% Headshot Damage`,
   },

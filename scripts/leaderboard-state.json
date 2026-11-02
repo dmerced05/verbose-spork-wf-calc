@@ -1,5 +1,5 @@
 {
- "engine": "955ad1fa987eafd1",
+ "engine": "7ad092f21c42f62d",
  "fingerprints": {
   "/Lotus/Weapons/Tenno/LongGuns/SapientPrimary/SapientPrimaryWeapon": "23453325d5a74a15",
   "/Lotus/Weapons/Tenno/LongGuns/PrimeAcceltra/PrimeAcceltraWeapon": "930638afc43282f9",
@@ -190,7 +190,7 @@
   "/Lotus/Weapons/Corpus/Melee/Glaive/CrpGlaive/CrpGlaive": "1d3cbe3b8da5b762",
   "/Lotus/Weapons/Tenno/Melee/DualDagger/DualDagger": "7418803290d30c3d",
   "/Lotus/Weapons/Tenno/Melee/DualDagger/FangPrimeDagger": "9c9d224dfd086b06",
-  "/Lotus/Weapons/Tenno/Zariman/LongGuns/PumpShotgun/ZarimanPumpShotgun": "75bffb6a9ccb71f3",
+  "/Lotus/Weapons/Tenno/Zariman/LongGuns/PumpShotgun/ZarimanPumpShotgun": "02a0a3d0f0b24c28",
   "/Lotus/Weapons/Corpus/LongGuns/Spears/Railgun/CorpusRailgun": "9feaeb2c514697cf",
   "/Lotus/Weapons/ClanTech/Energy/CrpLaserRifle": "c32b0901ce770036",
   "/Lotus/Weapons/Tenno/Melee/Hammer/HammerWeapon": "1618d5b3391eff8f",
@@ -303,7 +303,7 @@
   "/Lotus/Weapons/Grineer/KuvaLich/Secondaries/Stubba/KuvaStubba": "0079728a7da78558",
   "/Lotus/Weapons/Grineer/KuvaLich/LongGuns/Zarr/KuvaZarr": "1137c00f5e2976b0",
   "/Lotus/Weapons/Tenno/Melee/Swords/StalkerMios/StalkerMios": "6ca592f8e13a6e3a",
-  "/Lotus/Weapons/Tenno/Zariman/Pistols/HeavyPistol/ZarimanHeavyPistol": "2aa8d073a1790022",
+  "/Lotus/Weapons/Tenno/Zariman/Pistols/HeavyPistol/ZarimanHeavyPistol": "6e915ed9d9106590",
   "/Lotus/Powersuits/Brawler/AtlasPunchWeapon": "a49dbb1879c65b8d",
   "/Lotus/Powersuits/Brawler/AtlasPunchWeaponPrime": "4a670e2f8e0612d8",
   "/Lotus/Weapons/ClanTech/Energy/Railgun": "0440c22a53fe8ec7",
@@ -384,7 +384,7 @@
   "/Lotus/Weapons/Infested/LongGuns/Tentacluster/InfestedShotgun": "0115792ce263854f",
   "/Lotus/Weapons/Tenno/LongGuns/RevenantShotgun/RevenantShotgun": "347917c8632117bf",
   "/Lotus/Weapons/Tenno/LongGuns/PrimePhantasma/PhantasmaPrimeShotgun": "91e6dbf8f1ae9baa",
-  "/Lotus/Weapons/Tenno/Zariman/LongGuns/SemiAutoRifle/ZarimanSemiAutoRifle": "be3f826de62835f7",
+  "/Lotus/Weapons/Tenno/Zariman/LongGuns/SemiAutoRifle/ZarimanSemiAutoRifle": "41d603cb9f9e376b",
   "/Lotus/Weapons/Tenno/Melee/Swords/PlasmaSword/PlasmaLongSword": "64d292022bb7163a",
   "/Lotus/Weapons/Corpus/Pistols/CrpSonificBlastor/CrpBlastorWeapon": "a8b7ee8e4b62d750",
   "/Lotus/Weapons/Infested/Pistols/InfProximityStars/InfProximityStars": "a2e327eefaf2e568",

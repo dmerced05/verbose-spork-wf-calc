@@ -21,13 +21,16 @@ const percent = (value: number) => `${Math.round(value * 100)}%`
 const CATEGORIES = ['All', 'Primary', 'Secondary', 'Melee']
 const PAGE_SIZE = 50
 
-type RankBy = 'sustained' | 'window' | 'single' | 'attack'
+type RankBy = 'sustained' | 'window' | 'single' | 'attack' | 'boss'
 const RANK_BY: { id: RankBy; label: string }[] = [
   { id: 'sustained', label: 'Sustained DPS' },
   { id: 'window', label: 'Damage in a time window' },
   { id: 'single', label: 'Single damage instance' },
   { id: 'attack', label: 'Whole attack (hit + procs)' },
+  { id: 'boss', label: 'Boss damage' },
 ]
+const BOSS_BOARD = 'boss' // src/optimizer/bossLeaderboard.ts (not imported: it pulls the optimizer into the page)
+const BOSS_BLURB = 'Sustained DPS on a boss: status capped at 4 stacks per type and no kills, so on-kill buffs (Deadhead, Galvanized stacks, Bladed Rounds...) never come up'
 
 interface Props {
   onLoadBuild: (entry: LeaderboardEntry) => void
@@ -36,8 +39,11 @@ interface Props {
 // one leaderboard, ranked by whatever the settings say. every setting maps to a ranking that was precomputed by
 // `npm run leaderboard` (scripts/build-leaderboard.ts) into public/leaderboard.json, so nothing is optimized here
 export function Leaderboard({ onLoadBuild }: Props) {
-  const [data, setData] = useState<LeaderboardData | null>(null)
+  const [mainData, setData] = useState<LeaderboardData | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // the Boss Damage board lives in its own file (npm run leaderboard -- --boss), fetched the first time it's picked
+  const [bossData, setBossData] = useState<LeaderboardData | null>(null)
+  const [bossError, setBossError] = useState<string | null>(null)
   const [rankBy, setRankBy] = useState<RankBy>('sustained')
   const [windowSeconds, setWindowSeconds] = useState<number>(10)
   const [includeIncarnon, setIncludeIncarnon] = useState(true)
@@ -67,10 +73,24 @@ export function Leaderboard({ onLoadBuild }: Props) {
       .catch((reason) => setError(String(reason)))
   }, [])
 
-  const objectiveId: ObjectiveId = rankBy === 'window' ? (`window${windowSeconds}` as ObjectiveId) : rankBy
+  useEffect(() => {
+    if (rankBy !== 'boss' || bossData || bossError) return
+    fetch('./boss-leaderboard.json')
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return response.json() as Promise<LeaderboardFile>
+      })
+      .then((file) => setBossData(expandLeaderboard(file)))
+      .catch((reason) => setBossError(String(reason)))
+  }, [rankBy, bossData, bossError])
+
+  const boss = rankBy === 'boss'
+  const data = boss ? bossData : mainData
+  const objectiveId: ObjectiveId = rankBy === 'window' ? (`window${windowSeconds}` as ObjectiveId) : boss ? 'sustained' : rankBy
   const objective = objectiveById(objectiveId)
-  // DPS rankings were also optimized without fire rate / attack speed mods, single hit doesn't care about fire rate
-  const key = boardKey(objectiveId, allowFireRate || !objective.usesFireRate)
+  // DPS rankings were also optimized without fire rate / attack speed mods, single hit doesn't care about fire rate.
+  // the boss board only has the fire-rate-allowed ranking
+  const key = boss ? BOSS_BOARD : boardKey(objectiveId, allowFireRate || !objective.usesFireRate)
 
   // every attack has its own entry (slam, heavy slam, heavy attack, alt-fire...). "Best attack per weapon" keeps one
   // per weapon instead. rank, then filter, so "#12" always means 12th overall
@@ -113,6 +133,15 @@ export function Leaderboard({ onLoadBuild }: Props) {
       </section>
     )
   }
+  if (boss && bossError) {
+    return (
+      <section className="panel">
+        <h2>Boss damage</h2>
+        <p className="muted">Couldn't load boss-leaderboard.json ({bossError}). Generate it with <code>npm run leaderboard -- --boss</code>, then rebuild.</p>
+        <button className="link-button" onClick={() => setRankBy('sustained')}>Back to sustained DPS</button>
+      </section>
+    )
+  }
   if (!data) return <section className="panel"><p className="muted">Loading leaderboard…</p></section>
 
   return (
@@ -150,7 +179,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
             </label>
           )}
         </div>
-        <p className="board-description">{objective.description}.</p>
+        <p className="board-description">{boss ? BOSS_BLURB : objective.description}.</p>
         <div className="row board-filters">
           <select value={category} onChange={(event) => { setCategory(event.target.value); resetPaging() }}>
             {CATEGORIES.map((option) => <option key={option}>{option}</option>)}
@@ -160,7 +189,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
             <input type="checkbox" checked={includeIncarnon} onChange={(event) => { setIncludeIncarnon(event.target.checked); resetPaging() }} />
             Include Incarnon forms
           </label>
-          {objective.usesFireRate && (
+          {objective.usesFireRate && !boss && (
             <label className="inline-check" title="Off = the builds were optimized without fire rate / attack speed mods or arcanes">
               <input type="checkbox" checked={allowFireRate} onChange={(event) => { setAllowFireRate(event.target.checked); resetPaging() }} />
               Allow fire rate mods

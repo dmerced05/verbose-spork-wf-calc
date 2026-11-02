@@ -342,14 +342,18 @@ export const isHeadshotTrigger = (trigger: string) => /headshot|weak ?point/i.te
 //    headshot *kill* triggers (Deadhead) stay on, the buff then works on every shot
 //  - melee kills on a gun (Primary/Secondary Dexterity): you have to swap and kill with melee, so half the stacks
 //  - armor thresholds (Primary Bulwark): needs a tank frame, half of the max (+250%)
-export function triggerUptime(trigger: string, { isMelee, bodyShots }: { isMelee: boolean; bodyShots: boolean }): number {
+//  - noKills (the boss board): one target that doesn't die, so every kill trigger is off (Deadhead, Galvanized stacks,
+//    Merciless, Bladed Rounds...)
+export interface TriggerContext { isMelee: boolean; bodyShots: boolean; noKills?: boolean }
+export function triggerUptime(trigger: string, { isMelee, bodyShots, noKills }: TriggerContext): number {
+  if (noKills && /kill/i.test(trigger)) return 0
   if (isHeadshotTrigger(trigger) && !/kill/i.test(trigger)) return bodyShots ? 0 : 1
   if (/melee kill/i.test(trigger) && !isMelee) return 0.5
   if (/armor past/i.test(trigger)) return 0.5
   return 1
 }
 
-export const defaultConditionalStacks = (levelStats: string[][], rank: number, context: { isMelee: boolean; bodyShots: boolean }) =>
+export const defaultConditionalStacks = (levelStats: string[][], rank: number, context: TriggerContext) =>
   Math.max(
     0,
     ...parseUpgrade(levelStats, rank).conditionals.map((conditional) =>

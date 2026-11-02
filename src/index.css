@@ -678,3 +678,4 @@ select { max-width: 100%; }
 }
 .cap-riven { display: grid; gap: 8px; margin-top: 10px; }
 .cap-riven .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cw-type { font-size: 0.78rem; color: var(--muted); text-transform: none; }

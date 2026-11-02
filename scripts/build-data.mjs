@@ -159,6 +159,39 @@ const TYPE_FIXES = {
   'Mk1-Bo': 'Melee', 'Mk1-Furax': 'Melee', 'Prisma Skana': 'Melee', Venato: 'Melee',
 }
 
+// per-attack pellet counts from the wiki (Module:Weapons/data, "Multishot" per attack, Nov 2026) wherever they differ
+// from the weapon's main count. the export only has one multishot per weapon, so alt-fires inherited the primary's
+// (Phantasma's plasma bomb fired 6, Kohm's single pellet 9) and Incarnon forms with pellets got 1 (Soma's 8).
+// found comparing builds against Underframe, which uses the per-attack counts
+const same = (names, attacks) => Object.fromEntries(names.map((name) => [name, attacks]))
+const WIKI_ATTACK_MULTISHOT = {
+  Basmu: { Held: 2 },
+  ...same(['Boltor', 'Boltor Prime', 'Telos Boltor'], { 'Incarnon Form': 3 }),
+  ...same(['Bubonico', 'Coda Bubonico'], { Burst: 1, 'Radial Attack': 1 }),
+  ...same(['Cedo', 'Cedo Prime'], { 'Alt-Fire Glaive': 1, 'Glaive Radial Attack': 1 }),
+  'Coda Bassocyst': { 'Alt-Fire': 6 },
+  ...same(['Corinth', 'Corinth Prime'], { 'Air Burst Projectile': 1, 'Air Burst Explosion': 1 }),
+  'Efv-5 Jupiter': { Buckshot: 11 },
+  ...same(['Kohm', 'Kuva Kohm'], { 'Single Pellet': 1, 'Fully Spooled': 12 }),
+  'Kuva Bramma': { 'Cluster Bomb Contact': 3, 'Cluster Bomb Explosion': 3 },
+  'Kuva Hek': { 'Alt-Fire': 28 },
+  'Kuva Zarr': { 'Cannon Mode Cluster Bomb Contact': 3, 'Cannon Mode Cluster Bomb Explosion': 3, 'Barrage Mode': 10 },
+  Zarr: { 'Cannon Mode Cluster Bomb Contact': 6, 'Cannon Mode Cluster Bomb Explosion': 6, 'Barrage Mode': 10 },
+  ...same(['Phantasma', 'Phantasma Prime'], { 'Plasma Bomb Impact': 1, 'Plasma Bomb Explosion': 1, 'Cluster Bombs Impact': 5, 'Cluster Bombs Explosion': 1 }),
+  ...same(['Quanta', 'Quanta Vandal', 'Tenet Quanta'], { 'Cube (direct hit)': 1, 'Cube Explosion': 1, 'Cube (shot by player)': 1 }),
+  ...same(['Soma', 'Soma Prime'], { 'Incarnon Form': 8 }),
+  ...same(['Bronco', 'Bronco Prime'], { 'Incarnon Form': 7 }),
+  'Coda Catabolyst': { 'Partial Reload Impact': 3, 'Partial Reload Explosion': 3, 'Reload From Empty Impact': 3, 'Reload From Empty Explosion': 3 },
+  'Euphona Prime': { Buckshot: 10 },
+  Fusilai: { 'Semi-Auto Mode': 3 },
+  ...same(['Kohmak', 'Twin Kohmak'], { 'Single Pellet': 1 }),
+  Kulstar: { 'Cluster Bombs': 3 },
+  ...same(['Kunai', 'Mk1-Kunai', 'Lato', 'Lato Prime', 'Lato Vandal'], { 'Incarnon Form': 2 }),
+  Scyotid: { Semi: 1 },
+  ...same(['Vasto', 'Vasto Prime'], { 'Incarnon Form': 6 }),
+  Zymos: { 'Homing Spore Contact': 6, 'Homing Spore Explosion': 6 },
+}
+
 // one weapon in the shape the calc wants. also used for the exalted weapons below
 function toWeapon(weapon) {
   return {
@@ -188,8 +221,9 @@ function toWeapon(weapon) {
       fireRate: attack.speed ?? weapon.fireRate ?? 1,
       chargeTime: attack.charge_time ?? null,
       // the data only has weapon-level multishot. Incarnon forms fire a single projectile even on shotguns
-      // (Strun's 12 pellets don't apply to its Incarnon form), so they get 1
-      multishot: /incarnon/i.test(attack.name) ? 1 : weapon.multishot ?? 1,
+      // (Strun's 12 pellets don't apply to its Incarnon form), so they get 1. attacks the wiki gives their own pellet
+      // count (alt-fires, cluster bombs, Soma's Incarnon...) take that instead, see WIKI_ATTACK_MULTISHOT
+      multishot: WIKI_ATTACK_MULTISHOT[weapon.name]?.[attack.name] ?? (/incarnon/i.test(attack.name) ? 1 : weapon.multishot ?? 1),
       critChance: (attack.crit_chance ?? 0) / 100,
       critMultiplier: attack.crit_mult ?? 1,
       statusChance: (attack.status_chance ?? 0) / 100,
@@ -272,6 +306,16 @@ const exaltedWeapons = readJson('Misc')
     if (item.name === 'Noctua') weapon.attacks = weapon.attacks.map((attack) => (attack.name === 'Active Attack' ? { ...attack, fireRate: 1 / 24 } : attack))
     // Artemis Bow "fires seven arrows at once" at max rank (not Concentrated Arrow), damage isn't split between them
     if (/^Artemis Bow/.test(item.name)) weapon.attacks = weapon.attacks.map((attack) => (/^Base /.test(attack.name) ? { ...attack, multishot: 7 } : attack))
+    // the export names both Concentrated Arrow explosions "Uncharged Headshot Explosion". the second one follows the
+    // Charged Shot, so it's the charged explosion. two attacks with one name broke the leaderboard's row keys
+    if (/^Artemis Bow/.test(item.name)) {
+      let seen = false
+      weapon.attacks = weapon.attacks.map((attack) => {
+        if (attack.name !== 'Concentrated Arrow Uncharged Headshot Explosion') return attack
+        if (!seen) { seen = true; return attack }
+        return { ...attack, name: 'Concentrated Arrow Charged Headshot Explosion' }
+      })
+    }
     return weapon
   })
 // Vinquibus is one weapon in both the primary and the melee slot, with a separate mod setup (and riven) for each half.
@@ -303,11 +347,13 @@ const handMadeWeapons = vinquibus ? [{
 // the only one). candidates were reviewed by hand; these two aren't one shot
 const NOT_WHOLE_SHOTS = new Set(['Coda Pox|Spore Impact', 'Neutralizer|Normal Attack'])
 // pairs the name rules can't find. Bubonico's alt-fire: the Burst and its viral Radial Attack are one priming shot
-// Stug: the blob's embed tick and its explosion are one shot (all of it is AoE in the data, so the name rules miss it). the
-// Incarnon blob also bounces and explodes, I count one bounce explosion per blob
+// Stug: one blob is its embed ticks and its explosion (all of it is AoE in the data, so the name rules miss it). the embed
+// hits "once immediately upon the blob embedding and then again every second" over its 1.5s life, so twice (wiki, and
+// Underframe models it the same way). the Incarnon bounce explosions are left out like Underframe does: they're
+// secondary projectiles that scatter, so on one target they mostly miss
 const EXTRA_WHOLE_SHOTS = {
   Bubonico: [['Burst', 'Radial Attack']], 'Coda Bubonico': [['Burst', 'Radial Attack']],
-  Stug: [['Blob Embed', 'Blob Explosion'], ['Incarnon Form Blob Embed', 'Incarnon Form Blob Explosion', 'Incarnon Form Bounce Explosion']],
+  Stug: [['Blob Embed', 'Blob Embed', 'Blob Explosion'], ['Incarnon Form Blob Embed', 'Incarnon Form Blob Embed', 'Incarnon Form Blob Explosion']],
 }
 const AREA_WORDS = /\s*(Radial Attack|Explosion|Detonation|AoE|Cloud|Pool|Field|Blast|Collapse|Merging Damage)$/i
 const HIT_WORDS = /\s*(Impact|Contact|Direct Hit|Projectile)$/i
@@ -346,7 +392,10 @@ function wholeShots(weapon) {
     for (const part of [direct, ...parts]) for (const [type, amount] of Object.entries(part.damage)) damage[type] = (damage[type] ?? 0) + amount
     // the direct part's numbers stand in for the shot on screen; damage is both parts added up (display only, the
     // calc runs each part on its own)
-    return { ...direct, name: `${direct.name} + ${parts.map((part) => part.name).join(' + ')}`, damage, parts: [direct.name, ...parts.map((part) => part.name)] }
+    // a part that lands more than once (the Stug's two embed ticks) shows as "x2" in the name
+    const names = [direct.name, ...parts.map((part) => part.name)]
+    const label = [...new Set(names)].map((name) => { const count = names.filter((other) => other === name).length; return count > 1 ? `${name} x${count}` : name }).join(' + ')
+    return { ...direct, name: label, damage, parts: names }
   })
 }
 for (const weapon of [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons]) weapon.attacks.push(...wholeShots(weapon))

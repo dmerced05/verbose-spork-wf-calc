@@ -204,7 +204,8 @@ export function Leaderboard({ onLoadBuild }: Props) {
 
       <ol className="board-list">
         {rows.slice(0, limit).map(({ entry, rank }) => (
-          <li key={`${entry.weaponId}-${entry.attack}`} className="board-row panel">
+          // rank is unique per board, so a duplicate attack name can't leave stale rows behind again
+          <li key={`${entry.weaponId}-${entry.attack}-${rank}`} className="board-row panel">
             <div className="board-rank">#{rank}</div>
             <div className="board-weapon">
               <div className="board-name">{entry.weaponName}</div>

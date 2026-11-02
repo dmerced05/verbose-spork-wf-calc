@@ -4,17 +4,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { weapons, weaponsById } from '../data'
 import { mechanicTags } from '../calc/mechanicTags'
 import {
-  LOWER_IS_BETTER, METRIC_LABELS, attackMetrics, buildPool, categorySize, categoryWord, damageSplit, isIncarnonAttack, metricText, metricsFromResult, profileLines, standing,
-  type AttackMetrics, type MetricKey, type Pool, type PoolKind,
+  LOWER_IS_BETTER, METRIC_LABELS, attackMetrics, categorySize, categoryWord, groupAttackName, groupMembers, isIncarnonAttack, subtypeOf, metricText, profileLines, rankGroup, standing,
+  type AttackMetrics, type MetricKey, type PoolKind,
 } from '../calc/weaponProfile'
 import { resolveCoBehavior } from '../calc/conditionOverload'
-import { calculate } from '../calc/damage'
-import { getIncarnonTiers, type IncarnonTier, type SelectedPerk } from '../calc/incarnon'
-import { SCENARIO_DEBUFFS, SCENARIO_TARGET } from '../optimizer/scenario'
+import { getIncarnonTiers, type IncarnonTier } from '../calc/incarnon'
+import { defaultAttackIndex, evolve, incarnonPool, leaderboardPicks, type Picks } from '../calc/evolved'
 import { rivenTypeFor } from '../calc/riven'
 import { loadLeaderboard } from '../optimizer/leaderboardLoader'
 import type { Leaderboard } from '../optimizer/leaderboardTypes'
 import type { Attack, Weapon } from '../types'
+import { EvolutionPicker } from './EvolutionPicker'
 import { SearchSelect } from './SearchSelect'
 import { Thumb } from './Thumb'
 import { Tip } from './Tip'
@@ -37,7 +37,6 @@ const short = (value: number) => {
 const pct = (value: number) => `${Math.round(value * 100)}%`
 const ratioText = (a: number, b: number) => (b > 0 && a > 0 ? (a >= b ? `${(a / b).toFixed(2)}x` : `${(b / a).toFixed(2)}x`) : '')
 
-type Picks = Record<string, string> // tier -> perk name
 interface Side {
   weapon: Weapon
   attack: Attack
@@ -49,28 +48,12 @@ interface Side {
   shares: { type: string; share: number }[] // damage split, evolutions included
 }
 
-// the attack with its evolutions on, no mods: what the arsenal shows with those perks picked. conditional parts of
-// perks stay off, same as the leaderboard. no evolutions = straight from the data
-function sideFor(weapon: Weapon, attack: Attack, userPicks: Picks | null, leaderboardPicks: Picks | null, rankIncarnon: boolean): Side {
-  const tiers = getIncarnonTiers(weapon.name)
-  const picks = userPicks ?? leaderboardPicks ?? {}
-  const selected: SelectedPerk[] = (tiers ?? []).flatMap(({ tier, perks }) => {
-    const perk = perks.find((option) => option.name === picks[tier])
-    return perk ? [{ perk, stacks: 0 }] : []
-  })
-  const result = selected.length
-    ? calculate({
-      weapon, attack, mods: [], incarnonPerks: selected, target: SCENARIO_TARGET, armor: 0,
-      debuffs: { ...SCENARIO_DEBUFFS, statusTypeSource: 'debuffs' }, buffs: { roar: 0, combo: 1 },
-    })
-    : null
-  const metrics = result ? metricsFromResult(weapon, attack, result) : attackMetrics(weapon, attack)
-  const total = result ? result.damageTypes.reduce((sum, row) => sum + row.modded, 0) : 0
-  const shares = result && total > 0
-    ? result.damageTypes.map((row) => ({ type: row.damageType, share: row.modded / total })).filter((row) => row.share > 0)
-    : damageSplit(attack).shares
+// the attack with its evolutions on (src/calc/evolved.ts), ranked in the Incarnon pool when it's a form
+function sideFor(weapon: Weapon, attack: Attack, userPicks: Picks | null, boardPicks: Picks | null, rankIncarnon: boolean): Side {
+  const picks = userPicks ?? boardPicks ?? {}
+  const { metrics, shares } = evolve(weapon, attack, picks)
   return {
-    weapon, attack, metrics, tiers, picks, shares, fromLeaderboard: !userPicks && Boolean(leaderboardPicks && Object.keys(leaderboardPicks).length),
+    weapon, attack, metrics, tiers: getIncarnonTiers(weapon.name), picks, shares, fromLeaderboard: !userPicks && Boolean(boardPicks && Object.keys(boardPicks).length),
     kind: rankIncarnon && isIncarnonAttack(attack) ? 'incarnon' : 'normal',
   }
 }
@@ -78,8 +61,8 @@ function sideFor(weapon: Weapon, attack: Attack, userPicks: Picks | null, leader
 export function CompareWeapons() {
   const [aId, setAId] = useState(byName('Phenmor') ?? weapons[0].uniqueName)
   const [bId, setBId] = useState(byName('Braton Prime') ?? weapons[1].uniqueName)
-  const [aAttack, setAAttack] = useState(0)
-  const [bAttack, setBAttack] = useState(0)
+  const [aAttack, setAAttack] = useState(() => defaultAttackIndex(weaponsById.get(byName('Phenmor') ?? weapons[0].uniqueName)!))
+  const [bAttack, setBAttack] = useState(() => defaultAttackIndex(weaponsById.get(byName('Braton Prime') ?? weapons[1].uniqueName)!))
   const [leaderboard, setLeaderboard] = useState<Leaderboard | null>(null)
   // evolutions picked by hand, per side. null = the leaderboard's picks for that attack
   const [picksA, setPicksA] = useState<Picks | null>(null)
@@ -96,7 +79,7 @@ export function CompareWeapons() {
     if (!id) return
     const next = weaponsById.get(id)!
     setAId(id)
-    setAAttack(0)
+    setAAttack(defaultAttackIndex(next))
     setPicksA(null)
     if (weaponsById.get(bId)!.category !== next.category || bId === id) {
       // closest weapon by raw DPS in the new category, so there's always something sensible to compare against
@@ -104,40 +87,33 @@ export function CompareWeapons() {
       const closest = weapons.filter((weapon) => weapon.category === next.category && weapon.uniqueName !== id && !weapon.exalted && weapon.attacks[0])
         .sort((x, y) => Math.abs(attackMetrics(x, x.attacks[0]).rawDps - target) - Math.abs(attackMetrics(y, y.attacks[0]).rawDps - target))[0]
       if (closest) setBId(closest.uniqueName)
-      setBAttack(0)
+      setBAttack(closest ? defaultAttackIndex(closest) : 0)
       setPicksB(null)
     }
   }
   const pickB = (id: string | null) => {
     if (!id) return
     setBId(id)
-    setBAttack(0)
+    setBAttack(defaultAttackIndex(weaponsById.get(id)!))
     setPicksB(null)
   }
 
   // the leaderboard's evolutions for this attack (sustained board), the starting point for the pickers
-  const leaderboardPicks = (weapon: Weapon, attack: Attack): Picks | null => {
-    const entry = leaderboard?.boards.sustained?.find((candidate) => candidate.weaponId === weapon.uniqueName && candidate.attack === attack.name)
-    return entry ? Object.fromEntries(entry.perks.map((perk) => [perk.tier, perk.name])) : null
+  const boardPicks = (weapon: Weapon, attack: Attack) => leaderboardPicks(leaderboard, weapon, attack)
+  // each side ranks in its own subtype (a shotgun against shotguns even when the other pick is a rifle)
+  // "Glaive · Melee", "Shotgun · Primary": what the pick is, so it's clear which group it's ranked in
+  const typeLabel = (weapon: Weapon) => [subtypeOf(weapon) ?? (weapon.category === 'Melee' ? 'Melee (no class listed)' : weapon.type), weapon.category].filter((part, index, all) => all.indexOf(part) === index).join(' · ')
+  const groupOf = (side: Side) => rankGroup(side.weapon, side.kind, side.attack)
+  const poolOf = (side: Side) => (side.kind === 'incarnon' ? incarnonPool(leaderboard, groupOf(side)) : undefined)
+  const rankText = (side: Side) => {
+    const group = groupOf(side)
+    const byAttack = groupAttackName(group)
+    return `${side.weapon.name} against ${categorySize(group, side.kind, poolOf(side))} ${side.kind === 'incarnon' ? 'Incarnon forms of ' : ''}${categoryWord(group)}${byAttack ? ` (their ${byAttack})` : ''}`
   }
-  // the Incarnon pool with every form evolved the leaderboard's way, so an evolved form isn't ranked against bare ones.
-  // without the leaderboard it falls back to the bare forms
-  const incarnonPool = useMemo<Pool | undefined>(() => {
-    if (!leaderboard) return undefined
-    const list = weapons.flatMap((weapon) => {
-      const attack = weapon.attacks.find(isIncarnonAttack)
-      if (weapon.category !== category || weapon.exalted || !attack) return []
-      const entry = leaderboard.boards.sustained?.find((candidate) => candidate.weaponId === weapon.uniqueName && candidate.attack === attack.name)
-      const side = sideFor(weapon, attack, null, entry ? Object.fromEntries(entry.perks.map((perk) => [perk.tier, perk.name])) : null, true)
-      return side.metrics.damage > 0 ? [side.metrics] : []
-    })
-    return list.length > 1 ? buildPool(list) : undefined
-  }, [leaderboard, category])
-  const poolOf = (side: Side) => (side.kind === 'incarnon' ? incarnonPool : undefined)
   const attackA = a.attacks[aAttack] ?? a.attacks[0]
   const attackB = b.attacks[bAttack] ?? b.attacks[0]
-  const sideA = sideFor(a, attackA, picksA, leaderboardPicks(a, attackA), rankIncarnon)
-  const sideB = sideFor(b, attackB, picksB, leaderboardPicks(b, attackB), rankIncarnon)
+  const sideA = sideFor(a, attackA, picksA, boardPicks(a, attackA), rankIncarnon)
+  const sideB = sideFor(b, attackB, picksB, boardPicks(b, attackB), rankIncarnon)
   const anyIncarnon = isIncarnonAttack(attackA) || isIncarnonAttack(attackB)
   // melee has no multishot or magazine, and rows both sides leave empty (Incarnon forms don't reload) are dropped
   const rows = ROWS.filter((key) => !(category === 'Melee' && (key === 'multishot' || key === 'hit')))
@@ -150,11 +126,14 @@ export function CompareWeapons() {
     const entry = entries.find((candidate) => candidate.weaponId === side.weapon.uniqueName && candidate.attack === side.attack.name)
     if (!entry) return null
     const bestByWeapon = new Map<string, number>()
+    const group = rankGroup(side.weapon)
+    const members = new Set(groupMembers(group).map((weapon) => weapon.uniqueName))
     for (const candidate of entries) {
-      if (candidate.category !== category) continue
+      if (!members.has(candidate.weaponId)) continue
       bestByWeapon.set(candidate.weaponId, Math.max(bestByWeapon.get(candidate.weaponId) ?? 0, candidate.score))
     }
-    const rank = [...bestByWeapon.values()].filter((score) => score > entry.score).length + 1
+    // the weapon's own best attack doesn't count against this one (it used to give "#13 of 12")
+    const rank = [...bestByWeapon].filter(([weaponId, score]) => weaponId !== side.weapon.uniqueName && score > entry.score).length + 1
     return { entry, rank, of: bestByWeapon.size }
   }
 
@@ -166,9 +145,10 @@ export function CompareWeapons() {
         <h2>Compare weapons</h2>
         <p className="muted">
           Two {categoryWord(category)} side by side. The second pick only lists {categoryWord(category)}, since comparing across categories doesn't
-          tell you much. Percentiles are against all {categorySize(category)} {categoryWord(category)}, by their normal attack.
+          tell you much. Percentiles are within each weapon's own type, by the same attack where enough of them have it: {rankText(sideA)}{a.uniqueName !== b.uniqueName && groupOf(sideA) !== groupOf(sideB) ? <>, {rankText(sideB)}</> : null}.
+          A type with fewer than 6 weapons ranks against all {categoryWord(category)} instead.
           {anyIncarnon && (rankIncarnon
-            ? <> Incarnon forms are ranked against the {categorySize(category, 'incarnon', incarnonPool)} Incarnon forms of {categoryWord(category)} instead{incarnonPool ? ', each with the leaderboard\'s evolutions' : ' (unevolved until the leaderboard loads)'}. Conditional parts of evolutions (on kill, on headshot...) aren't counted.</>
+            ? <> Incarnon forms are ranked against other Incarnon forms of their type{leaderboard ? ', each with the leaderboard\'s evolutions' : ' (unevolved until the leaderboard loads)'}. Conditional parts of evolutions (on kill, on headshot...) aren't counted.</>
             : <> Incarnon forms are ranked against normal attacks too, so they'll mostly look strong.</>)}
         </p>
         {anyIncarnon && (
@@ -186,7 +166,8 @@ export function CompareWeapons() {
                 {a.attacks.map((option, index) => <option key={option.name} value={index}>{option.name}</option>)}
               </select>
             )}
-            <EvolutionPicker side={sideA} onChange={setPicksA} />
+            <span className="cw-type">{typeLabel(a)}</span>
+            <EvolutionPicker tiers={sideA.tiers} picks={sideA.picks} fromLeaderboard={sideA.fromLeaderboard} onChange={setPicksA} />
           </div>
           <span className="cw-vs">vs</span>
           <div className="cw-picker">
@@ -197,7 +178,8 @@ export function CompareWeapons() {
                 {b.attacks.map((option, index) => <option key={option.name} value={index}>{option.name}</option>)}
               </select>
             )}
-            <EvolutionPicker side={sideB} onChange={setPicksB} />
+            <span className="cw-type">{typeLabel(b)}</span>
+            <EvolutionPicker tiers={sideB.tiers} picks={sideB.picks} fromLeaderboard={sideB.fromLeaderboard} onChange={setPicksB} />
           </div>
         </div>
       </section>
@@ -220,7 +202,7 @@ export function CompareWeapons() {
               const better = va === null || vb === null || Math.abs(va - vb) < 1e-9 ? null : (LOWER_IS_BETTER.has(key) ? va < vb : va > vb) ? 'a' : 'b'
               const cell = (value: number | null, which: 'a' | 'b') => {
                 const side = which === 'a' ? sideA : sideB
-                const item = standing(category, key, value, side.kind, poolOf(side))
+                const item = standing(groupOf(side), key, value, side.kind, poolOf(side))
                 return (
                   <td className={better === which ? 'cw-better' : ''}>
                     {metricText(key, value)}
@@ -307,27 +289,6 @@ export function CompareWeapons() {
 const evolutionNote = (side: Side) => {
   const count = Object.keys(side.picks).length
   return count ? ` · ${count} evolution${count > 1 ? 's' : ''}` : ''
-}
-
-// one dropdown per evolution tier. starts on the leaderboard's picks for this attack, conditional parts stay off
-function EvolutionPicker({ side, onChange }: { side: Side; onChange: (picks: Picks) => void }) {
-  if (!side.tiers) return null
-  return (
-    <div className="cw-evos">
-      <span className="muted-inline">Evolutions{side.fromLeaderboard ? ' (leaderboard\'s picks)' : ''}:</span>
-      {side.tiers.map(({ tier, perks }) => (
-        <select key={tier} value={side.picks[tier] ?? ''} onChange={(event) => {
-          const next = { ...side.picks }
-          if (event.target.value) next[tier] = event.target.value
-          else delete next[tier]
-          onChange(next)
-        }}>
-          <option value="">{tier}: none</option>
-          {perks.map((perk) => <option key={perk.name} value={perk.name}>{tier}: {perk.name}</option>)}
-        </select>
-      ))}
-    </div>
-  )
 }
 
 // the plain-language summary: only the gaps big enough to matter, biggest first

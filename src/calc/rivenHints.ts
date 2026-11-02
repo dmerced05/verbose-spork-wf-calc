@@ -2,20 +2,27 @@
 // these are rules of thumb from the base numbers, the search underneath is what actually measures it
 import { resolveCoBehavior } from './conditionOverload'
 import { rivenPool, type RivenType } from './riven'
-import { attackMetrics, categoryWord, damageSplit, standing } from './weaponProfile'
+import { attackMetrics, categoryWord, damageSplit, rankGroup, standing, type AttackMetrics, type Pool, type PoolKind } from './weaponProfile'
 import type { Attack, Weapon } from '../types'
+
+// the attack as evolved (src/calc/evolved.ts): an Incarnon form's numbers with its evolutions on, ranked among other
+// evolved forms. without it the hints read the raw data
+export interface HintBasis { attack: Attack; metrics: AttackMetrics; kind: PoolKind; pool?: Pool }
 
 export interface RivenHint { title: string; text: string; tone: 'good' | 'bad' | 'neutral' }
 
 const pct = (value: number) => `${Math.round(value * 100)}%`
 const baseOf = (type: RivenType, pattern: RegExp) => rivenPool(type).find((def) => pattern.test(def.tag))?.base ?? 0
 
-export function rivenHints(weapon: Weapon, attack: Attack, type: RivenType): RivenHint[] {
+export function rivenHints(weapon: Weapon, rawAttack: Attack, type: RivenType, basis?: HintBasis): RivenHint[] {
   const hints: RivenHint[] = []
-  const metrics = attackMetrics(weapon, attack)
-  const group = categoryWord(weapon.category)
-  const crit = standing(weapon.category, 'critChance', attack.critChance)
-  const status = standing(weapon.category, 'statusChance', attack.statusChance)
+  const attack = basis?.attack ?? rawAttack // numbers come from the evolved attack, identity checks from the raw one
+  const metrics = basis?.metrics ?? attackMetrics(weapon, rawAttack)
+  const kind = basis?.kind ?? 'normal'
+  const rankIn = rankGroup(weapon, kind, rawAttack)
+  const group = kind === 'incarnon' ? `Incarnon forms of ${categoryWord(rankIn)}` : categoryWord(rankIn)
+  const crit = standing(rankIn, 'critChance', attack.critChance, kind, basis?.pool)
+  const status = standing(rankIn, 'statusChance', attack.statusChance, kind, basis?.pool)
   const split = damageSplit(attack)
 
   // crit: crit chance and crit damage both scale off the base, so a high base makes both worth a lot more
@@ -33,7 +40,7 @@ export function rivenHints(weapon: Weapon, attack: Attack, type: RivenType): Riv
   }
 
   // Condition Overload that multiplies: each status type on the enemy is a separate multiplier
-  const co = resolveCoBehavior(weapon, attack)
+  const co = resolveCoBehavior(weapon, rawAttack)
   if (co.mode === 'multiply') {
     hints.push({ title: 'Multiplicative CO', tone: 'good', text: 'Galvanized / Condition Overload multiply on this attack, so every extra status type on the enemy is worth more than usual. A riven element that brings a new status type (one the build doesn\'t already make) is extra strong.' })
   }

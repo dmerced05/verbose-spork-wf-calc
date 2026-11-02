@@ -2,6 +2,7 @@
 // "is this good?" lines the Compare Weapons and Rivens pages show. all from the unmodded attack data, so it says what
 // the weapon brings to a build, not what a build does with it
 import { weapons } from '../data'
+import { SPEARGUNS, meleeClassOf } from '../data/weaponClasses'
 import { resolveCoBehavior } from './conditionOverload'
 import { PHYSICAL_TYPES } from './constants'
 import type { CalcResult } from './damage'
@@ -79,6 +80,40 @@ export function buildPool(list: AttackMetrics[]): Pool {
   for (const entry of Object.values(values)) entry.sort((a, b) => a - b)
   return { values, count: list.length }
 }
+// ranking groups: a weapon is ranked against its own subtype (shotguns vs shotguns, glaives vs glaives), keyed
+// "Primary/Shotgun", "Melee/Glaive". a subtype with too few weapons in it falls back to the whole category
+// ("Primary"), percentiles out of 3 weapons don't mean much
+const MIN_GROUP = 6
+export function subtypeOf(weapon: Weapon): string | null {
+  if (weapon.category === 'Melee') return meleeClassOf(weapon.name)
+  if (weapon.category === 'Primary') return SPEARGUNS.includes(weapon.name) ? 'Speargun' : weapon.isBow ? 'Bow' : weapon.type
+  return weapon.type // Pistol, Dual Pistols, Throwing
+}
+// a group can also name one attack ("Melee/Glaive#Charged Throw"): then each member is counted by its attack of that name,
+// so a glaive's throw is ranked against other glaive throws, not against their normal swings
+const splitGroup = (group: string) => { const [base, attackName] = group.split('#'); return { base, attackName: attackName ?? null } }
+const inGroup = (weapon: Weapon, group: string) => {
+  const [category, subtype] = splitGroup(group).base.split('/')
+  return weapon.category === category && (!subtype || subtypeOf(weapon) === subtype)
+}
+// the group a weapon is ranked in, for its normal attack or its Incarnon form
+export function rankGroup(weapon: Weapon, kind: PoolKind = 'normal', attack?: Attack): string {
+  const subtype = subtypeOf(weapon)
+  const group = subtype ? `${weapon.category}/${subtype}` : weapon.category
+  const base = group !== weapon.category && poolFor(group, kind).count < MIN_GROUP ? weapon.category : group
+  // a non-first attack (throw, heavy, alt-fire) goes against the same attack of its type, then of its category, and
+  // only falls back to normal attacks when too few weapons have one
+  if (kind === 'normal' && attack && attack !== weapon.attacks[0]) {
+    for (const candidate of [`${group}#${attack.name}`, `${weapon.category}#${attack.name}`]) {
+      if (poolFor(candidate, kind).count >= MIN_GROUP) return candidate
+    }
+  }
+  return base
+}
+// what a group's members are counted by, for the "ranked against" text
+export const groupAttackName = (group: string) => splitGroup(group).attackName
+export const groupMembers = (group: string) => weapons.filter((weapon) => inGroup(weapon, group))
+
 const pools = new Map<string, Pool>()
 function poolFor(category: string, kind: PoolKind = 'normal'): Pool {
   const cached = pools.get(`${category}|${kind}`)
@@ -86,8 +121,9 @@ function poolFor(category: string, kind: PoolKind = 'normal'): Pool {
   const values = Object.fromEntries((Object.keys(METRIC_LABELS) as MetricKey[]).map((key) => [key, [] as number[]])) as Record<MetricKey, number[]>
   let count = 0
   for (const weapon of weapons) {
-    const attack = kind === 'incarnon' ? weapon.attacks.find(isIncarnonAttack) : weapon.attacks[0]
-    if (weapon.category !== category || weapon.exalted || !attack) continue
+    const { attackName } = splitGroup(category)
+    const attack = kind === 'incarnon' ? weapon.attacks.find(isIncarnonAttack) : attackName ? weapon.attacks.find((other) => other.name === attackName) : weapon.attacks[0]
+    if (!inGroup(weapon, category) || weapon.exalted || !attack) continue
     const metrics = attackMetrics(weapon, attack)
     if (metrics.damage <= 0) continue
     count++
@@ -136,7 +172,18 @@ export function standingWords(key: MetricKey, item: Standing): string {
   return item.best ? 'the highest' : item.worst ? 'the lowest' : item.label
 }
 
-export const categoryWord = (category: string) => (category === 'Melee' ? 'melee weapons' : category === 'Secondary' ? 'secondaries' : 'primaries')
+// plural name of a group: "primaries", "shotguns", "glaives", "dual pistols"
+const SUBTYPE_WORDS: Record<string, string> = {
+  Rifle: 'rifles', Shotgun: 'shotguns', Sniper: 'snipers', Launcher: 'launchers', Bow: 'bows', Speargun: 'spearguns',
+  Pistol: 'single pistols', 'Dual Pistols': 'dual pistols', Throwing: 'thrown secondaries',
+  'Blade and Whip': 'blade and whips', 'Sword and Shield': 'sword and shields', Staff: 'staves', 'Assault Saw': 'assault saws',
+  Fist: 'fists', Claws: 'claws', 'Dual Daggers': 'dual daggers', 'Dual Swords': 'dual swords', 'Dual Nikanas': 'dual nikanas',
+}
+export const categoryWord = (group: string) => {
+  const [category, subtype] = splitGroup(group).base.split('/')
+  if (subtype) return SUBTYPE_WORDS[subtype] ?? `${subtype.toLowerCase()}s`
+  return category === 'Melee' ? 'melee weapons' : category === 'Secondary' ? 'secondaries' : 'primaries'
+}
 export const categorySize = (category: string, kind: PoolKind = 'normal', pool?: Pool) => (pool ?? poolFor(category, kind)).count
 
 const pct = (value: number) => `${Math.round(value * 1000) / 10}%`
@@ -165,16 +212,18 @@ export function damageSplit(attack: Attack) {
 export interface ProfileLine { text: string; tone: 'good' | 'bad' | 'neutral' }
 // `metrics` / `kind`: Compare Weapons passes evolved Incarnon numbers and which pool to rank them in
 export function profileLines(weapon: Weapon, attack: Attack, metrics: AttackMetrics = attackMetrics(weapon, attack), kind: PoolKind = 'normal', pool?: Pool): ProfileLine[] {
-  const group = kind === 'incarnon' ? `Incarnon forms of ${categoryWord(weapon.category)}` : categoryWord(weapon.category)
+  const rankIn = rankGroup(weapon, kind, attack)
+  const byAttack = groupAttackName(rankIn)
+  const group = kind === 'incarnon' ? `Incarnon forms of ${categoryWord(rankIn)}` : byAttack ? `${categoryWord(rankIn)} (their ${byAttack})` : categoryWord(rankIn)
   const lines: ProfileLine[] = []
   const keys: MetricKey[] = ['rawDps', 'hit', 'critChance', 'critMultiplier', 'statusChance', 'fireRate', 'multishot', 'magazine', 'reload']
   for (const key of keys) {
     if (weapon.category === 'Melee' && (key === 'multishot' || key === 'hit')) continue
-    const item = standing(weapon.category, key, metrics[key], kind, pool)
+    const item = standing(rankIn, key, metrics[key], kind, pool)
     if (!item || item.label === 'average') continue
     const label = key === 'fireRate' && weapon.category === 'Melee' ? 'Attack speed' : METRIC_LABELS[key]
     const words = standingWords(key, item)
-    const where = item.best || item.worst ? `of all ${categorySize(weapon.category, kind, pool)} ${group}` : `for ${group} (better than ${Math.round(item.percentile * 100)}%)`
+    const where = item.best || item.worst ? `of all ${categorySize(rankIn, kind, pool)} ${group}` : `for ${group} (better than ${Math.min(99, Math.round(item.percentile * 100))}%)`
     lines.push({
       text: `${label} ${metricText(key, metrics[key])}: ${words} ${where}.`,
       tone: item.percentile >= 0.6 ? 'good' : item.percentile <= 0.4 ? 'bad' : 'neutral',

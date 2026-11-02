@@ -4,12 +4,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { weapons, weaponsById } from '../data'
 import { RIVEN_DISPOSITION, fmt, isSpliced, rivenPool, rivenRange, rivenTypeFor, spliceRecipes, statName, type RivenConfig, type RivenStat } from '../calc/riven'
 import { rivenHints } from '../calc/rivenHints'
-import { profileLines } from '../calc/weaponProfile'
+import { isIncarnonAttack, profileLines, rankGroup } from '../calc/weaponProfile'
+import { defaultAttackIndex, evolve, incarnonPool, leaderboardPicks, type Picks } from '../calc/evolved'
+import { getIncarnonTiers } from '../calc/incarnon'
+import { loadLeaderboard } from '../optimizer/leaderboardLoader'
 import { BOARDS } from '../optimizer/objectives'
 import type { CompareScenario } from '../optimizer/compare'
 import type { RivenCandidate, RivenSearchRequest, RivenSearchResult } from '../optimizer/rivenSearch'
 import type { RivenMessage } from '../optimizer/rivenWorker'
-import type { LeaderboardEntry } from '../optimizer/leaderboardTypes'
+import type { Leaderboard, LeaderboardEntry } from '../optimizer/leaderboardTypes'
+import { EvolutionPicker } from './EvolutionPicker'
 import { SearchSelect } from './SearchSelect'
 import { Thumb } from './Thumb'
 
@@ -41,7 +45,11 @@ const unitOf = (text: string) => (text.startsWith('%') || text.includes('Damage 
 
 export function RivenPage({ calculatorScenario, onLoadBuild }: Props) {
   const [weaponId, setWeaponId] = useState(defaultWeaponId)
-  const [attackIndex, setAttackIndex] = useState(0)
+  // a weapon with an Incarnon form opens on the form: its evolutions change the weapon, so that's what the riven is for
+  const [attackIndex, setAttackIndex] = useState(() => defaultAttackIndex(weaponsById.get(defaultWeaponId)!))
+  const [picks, setPicks] = useState<Picks | null>(null) // evolutions picked by hand. null = the leaderboard's for this goal
+  const [leaderboard, setLeaderboard] = useState<Leaderboard | null>(null)
+  useEffect(() => { void loadLeaderboard().then(setLeaderboard) }, [])
   const [layout, setLayout] = useState<LayoutId>('3p1n')
   const [goal, setGoal] = useState('sustained')
   const [roll, setRoll] = useState<'max' | 'average'>('max')
@@ -58,9 +66,19 @@ export function RivenPage({ calculatorScenario, onLoadBuild }: Props) {
   const type = rivenTypeFor(weapon)!
   const pool = rivenPool(type)
   const layoutSpec = LAYOUTS.find((option) => option.id === layout)!
-  const hints = useMemo(() => rivenHints(weapon, attack, type), [weapon, attack, type])
-  const lines = useMemo(() => profileLines(weapon, attack), [weapon, attack])
-  const searchKey = `${weaponId}|${attackIndex}|${goal}|${roll}|${useCalculator}`
+  // the stats the hints and percentiles read: the attack with its evolutions on, an Incarnon form ranked among other
+  // evolved forms. the search holds the same evolutions fixed, so the hints and the results talk about the same weapon
+  const tiers = getIncarnonTiers(weapon.name)
+  const boardPicks = useMemo(() => leaderboardPicks(leaderboard, weapon, attack, goal), [leaderboard, weapon, attack, goal])
+  const usedPicks = useMemo(() => picks ?? boardPicks ?? {}, [picks, boardPicks])
+  const evolved = useMemo(() => evolve(weapon, attack, usedPicks), [weapon, attack, usedPicks])
+  const kind = isIncarnonAttack(attack) ? 'incarnon' as const : 'normal' as const
+  const rankPool = kind === 'incarnon' ? incarnonPool(leaderboard, rankGroup(weapon, kind, attack)) : undefined
+  const hints = useMemo(() => rivenHints(weapon, attack, type, { attack: evolved.attack, metrics: evolved.metrics, kind, pool: rankPool }), [weapon, attack, type, evolved, kind, rankPool])
+  const lines = useMemo(() => profileLines(weapon, attack, evolved.metrics, kind, rankPool), [weapon, attack, evolved, kind, rankPool])
+  // no picks and no leaderboard yet = let the optimizer choose rather than lock in "no evolutions"
+  const lockedPerks = tiers && (picks || boardPicks) ? Object.fromEntries(tiers.map(({ tier }) => [tier, usedPicks[tier] ?? null])) : null
+  const searchKey = `${weaponId}|${attackIndex}|${goal}|${roll}|${useCalculator}|${JSON.stringify(lockedPerks)}`
   const shown = result?.key === searchKey ? result : null
 
   // a riven with this layout's slot counts, so rivenRange weights it right
@@ -81,7 +99,8 @@ export function RivenPage({ calculatorScenario, onLoadBuild }: Props) {
   const pickWeapon = (id: string | null) => {
     if (!id) return
     setWeaponId(id)
-    setAttackIndex(0)
+    setAttackIndex(defaultAttackIndex(weaponsById.get(id)!))
+    setPicks(null)
   }
 
   const run = () => {
@@ -89,7 +108,7 @@ export function RivenPage({ calculatorScenario, onLoadBuild }: Props) {
     const worker = new Worker(new URL('../optimizer/rivenWorker.ts', import.meta.url), { type: 'module' })
     workerRef.current = worker
     const id = ++jobId.current
-    const request: RivenSearchRequest = { weaponId, attackIndex, board: goal, scenario: useCalculator ? calculatorScenario : null, roll }
+    const request: RivenSearchRequest = { weaponId, attackIndex, board: goal, scenario: useCalculator ? calculatorScenario : null, roll, perks: lockedPerks }
     const key = searchKey
     setError(null)
     setProgress({ done: 0, total: 1, label: 'Starting' })
@@ -132,12 +151,13 @@ export function RivenPage({ calculatorScenario, onLoadBuild }: Props) {
             <Thumb imageName={weapon.imageName} wikiImage={weapon.wikiImage} alt={weapon.name} wide />
             <SearchSelect options={weaponOptions} selectedId={weaponId} onSelect={pickWeapon} placeholder="Search weapons" />
             {weapon.attacks.length > 1 && (
-              <select value={attackIndex} onChange={(event) => setAttackIndex(Number(event.target.value))}>
+              <select value={attackIndex} onChange={(event) => { setAttackIndex(Number(event.target.value)); setPicks(null) }}>
                 {weapon.attacks.map((option, index) => <option key={option.name} value={index}>{option.name}</option>)}
               </select>
             )}
           </div>
         </div>
+        {tiers && <EvolutionPicker tiers={tiers} picks={usedPicks} fromLeaderboard={!picks && Boolean(boardPicks && Object.keys(boardPicks).length)} onChange={setPicks} />}
         <p className="muted">
           {type} riven. Every weapon rolls with the same x{RIVEN_DISPOSITION} disposition since Hotfix 44.1.3. Values are at rank 8: base × {RIVEN_DISPOSITION} ×
           the layout's weight × a 90–110% roll (wiki Riven Mods).
@@ -188,7 +208,10 @@ export function RivenPage({ calculatorScenario, onLoadBuild }: Props) {
                 <li key={hint.title} className={`tone-${hint.tone}`}><b>{hint.title}:</b> {hint.text}</li>
               ))}
             </ul>
-            <h3>Base stats vs other {weapon.category === 'Melee' ? 'melee' : weapon.category.toLowerCase()} weapons</h3>
+            <h3>
+              Base stats vs other {kind === 'incarnon' ? 'Incarnon forms' : `${weapon.category === 'Melee' ? 'melee' : weapon.category.toLowerCase()} weapons`}
+              {evolved.evolved && <span className="muted-inline"> (evolutions on)</span>}
+            </h3>
             <ul className="hint-list">
               {lines.map((line) => <li key={line.text} className={`tone-${line.tone}`}>{line.text}</li>)}
             </ul>

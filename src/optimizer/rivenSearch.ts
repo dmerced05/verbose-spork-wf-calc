@@ -22,6 +22,8 @@ export interface RivenSearchRequest {
   board: string // leaderboard board key: 'sustained', 'window3', 'single'...
   scenario: CompareScenario | null // null = the leaderboard's neutral scenario
   roll: 'max' | 'average'
+  // Incarnon evolutions to hold fixed, tier -> perk name (null = nothing in that tier). left out = the optimizer picks
+  perks?: Record<string, string | null> | null
 }
 
 export interface RivenStatScore {
@@ -93,6 +95,7 @@ export function searchRivens(request: RivenSearchRequest, onProgress: (progress:
     const riven = stats ? rivenMod(weapon, { stats, polarity: 'madurai', drain: 18 }) : null
     return optimizeAttack(weapon, attack, spec.objective, spec.allowFireRateMods, spec.heavyMode ?? 'biggestHit', {
       lockedMods: riven ? [{ mod: riven, rank: riven.fusionLimit, conditionalStacks: 0 }] : [],
+      lockedPerks: request.perks ?? undefined,
       scenario: request.scenario,
     })
   }

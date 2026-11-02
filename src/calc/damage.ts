@@ -27,6 +27,7 @@ import { expectedDamage, simulateDamage, type DamageRange, type ShotModel } from
 // after the fight ends don't (so long Status Duration tails stop inflating it)
 export const SUSTAINED_FIGHT_SECONDS = 10 // about how long one tough enemy lives; Heat stacks die with it
 // the DoTs a beam's merged tick feeds twice (wiki Multishot)
+const GAS_MAX_INSTANCES = 10
 const BEAM_MERGED_DOTS = ['slash', 'heat', 'toxin', 'electricity', 'blast', 'gas'] // wiki Multishot's list, Blast included
 import type { Attack, Buffs, Debuffs, EquippedArcane, EquippedMod, TargetSettings, Weapon } from '../types'
 
@@ -489,6 +490,8 @@ function calculateOnce({
     parsed.effects.forEach((effect) => apply(effect, 1))
     for (const conditional of parsed.conditionals) {
       if (!scopeApplies(conditional.scope, weapon)) continue
+      // Double Tap on the Latron Incarnon: "Only the AoE benefits, not the direct damage" (wiki Bugs)
+      if (upgrade.name === 'Double Tap' && attack.name === 'Incarnon Form') continue
       const triggerType = statusTrigger(conditional.trigger)
       const triggerKey = `${upgrade.name}|${conditional.trigger}`
       if (triggerType && offTriggers.includes(triggerKey)) {
@@ -1159,6 +1162,10 @@ function calculateOnce({
       // a status-capped target only holds 4 stacks: past procs/s x duration = 4, extra procs replace running ones, so
       // the DoT can't go above 4 running at once
       if (statusMode === 'capped' && ticks > 1) procRates[damageType] = Math.min(procRates[damageType], CAPPED_STATUS_STACKS / ticks)
+      // Gas: "Up to 10 instances of the effect can stack on the same target, with each instance having its own timer. Any
+      // instances after the 10th will replace the oldest instance" (wiki Gas). so at most 10 clouds tick at once, and procs past
+      // 10 per cloud lifetime only cut older clouds short. high-status Gas builds hit this fast (Boar Incarnon, 30+ procs/s)
+      if (damageType === 'gas' && ticks > 1) procRates[damageType] = Math.min(procRates[damageType], GAS_MAX_INSTANCES / ticks)
 
       let aoe: DotRow['aoe'] = null
       if (damageType === 'blast') {

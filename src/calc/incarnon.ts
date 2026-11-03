@@ -38,11 +38,11 @@ const TIER_ORDER = ['II', 'III', 'IV', 'V']
 const percent = (text: string) => Number(text) / 100
 
 function parsePerkBody(body: string, native: boolean): PerkEffect | null {
-  // wiki Laetum and the Felarx evolution table: "50% chance to deal 2000% damage on non-critical hits", no plus, so it's
-  // x20 total, not +2000% on top (x21). Underframe matches: a plain Felarx non-crit pellet 354,562, an Attrition one
-  // 7,091,232, exactly 20x. so the bonus on top of a normal hit is the number minus one
+  // Attrition perks (Devouring on Laetum/Phenmor, Devastating on Felarx): the hit deals its normal damage plus 2000% on
+  // top, so x21 total. wiki Phenmor's Evolution V section words it "+2000% damage" (the overview table drops the plus).
+  // Underframe uses x20, I'm going with x21
   const nonCrit = body.match(/^([\d.]+)% chance (?:to deal|for) \+?([\d.]+)% Damage$/)
-  if (nonCrit) return { kind: 'nonCritBonus', chance: percent(nonCrit[1]), value: percent(nonCrit[2]) - 1 }
+  if (nonCrit) return { kind: 'nonCritBonus', chance: percent(nonCrit[1]), value: percent(nonCrit[2]) }
 
   const armorStrip = body.match(/^Remove ([\d.]+)% Armor per Puncture stack$/)
   if (armorStrip) return { kind: 'armorStripPerPuncture', value: percent(armorStrip[1]) }

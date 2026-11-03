@@ -84,6 +84,16 @@ export const spliceRecipes = (type: RivenType) => [...(type === 'Melee' ? MELEE_
 const splicedTags = (type: RivenType) => new Set(spliceRecipes(type).map(([result]) => result))
 export const isSpliced = (type: RivenType, tag: string) => splicedTags(type).has(tag)
 
+// wiki Riven_Mods base values notes: "Positive values only (i.e. these attributes will never be a negative trait)" and
+// "Negative values only (i.e. these attributes will never be a positive trait)". spliced stats are always positive too
+const POSITIVE_ONLY = new Set([
+  'WeaponDamageAmountMod', 'WeaponMeleeDamageMod', 'WeaponFreezeDamageMod', 'WeaponElectricityDamageMod', 'WeaponFireDamageMod',
+  'WeaponToxinDamageMod', 'WeaponPunctureDepthMod', 'WeaponMeleeComboBonusOnHitMod',
+])
+const NEGATIVE_ONLY = new Set(['WeaponMeleeComboPointsOnHitMod'])
+export const canBeNegative = (type: RivenType, tag: string) => !POSITIVE_ONLY.has(tag) && !isSpliced(type, tag)
+export const canBePositive = (tag: string) => !NEGATIVE_ONLY.has(tag)
+
 // "% Critical Chance (x2 for Heavy Attacks)" -> "Critical Chance (x2 for Heavy Attacks)", for dropdowns
 export const statName = (def: RivenStatDef) => def.text.replace(/^(%|s)?\s*/, '')
 const statDef = (type: RivenType, tag: string) => POOLS[type].find((def) => def.tag === tag)
@@ -145,6 +155,11 @@ export function rivenIssues(type: RivenType, disposition: number, config: RivenC
   const spliced = filled.filter((stat) => isSpliced(type, stat.tag))
   if (spliced.length > 1) issues.push('Only one spliced stat per riven')
   if (spliced.some((stat) => stat.negative)) issues.push('Spliced stats are always positive')
+  for (const stat of filled) {
+    const name = statDef(type, stat.tag) ? statName(statDef(type, stat.tag)!) : stat.tag
+    if (stat.negative && !isSpliced(type, stat.tag) && !canBeNegative(type, stat.tag)) issues.push(`${name} never rolls as a negative`)
+    if (!stat.negative && !canBePositive(stat.tag)) issues.push(`${name} only rolls as a negative`)
+  }
   if (config.stats.some((stat) => !stat.tag)) issues.push('Pick the stat the game rolled into the freed slot')
   for (const stat of filled) {
     const range = rivenRange(type, disposition, config.stats, stat)

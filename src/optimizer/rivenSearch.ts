@@ -9,7 +9,7 @@
 import { weaponsById } from '../data'
 import { calculate } from '../calc/damage'
 import { resolveCoBehavior } from '../calc/conditionOverload'
-import { RIVEN_DISPOSITION, RIVEN_MOD_ID, isSpliced, rivenMod, rivenPool, rivenRange, rivenTypeFor, statName, type RivenStat, type RivenType } from '../calc/riven'
+import { RIVEN_DISPOSITION, RIVEN_MOD_ID, canBeNegative, canBePositive, isSpliced, rivenMod, rivenPool, rivenRange, rivenTypeFor, statName, type RivenStat, type RivenType } from '../calc/riven'
 import { optimizeAttack, type OptimizedBuild } from './optimize'
 import { BOARDS } from './objectives'
 import { toEntry, type WeaponEntry } from './leaderboardWeapon'
@@ -136,7 +136,7 @@ export function searchRivens(request: RivenSearchRequest, onProgress: (progress:
     return best
   }
 
-  const pool = rivenPool(type).filter((def) => !NO_DAMAGE.test(def.tag))
+  const pool = rivenPool(type).filter((def) => !NO_DAMAGE.test(def.tag) && canBePositive(def.tag))
     .filter((def) => !isFaction(def.tag) || (scenario.target.faction !== 'None' && def.text.includes(scenario.target.faction)))
     .filter((def) => !isWeakPoint(def.tag) || scenario.target.headshot)
     .filter((def) => !(weapon.category === 'Melee' && /FireIterations/.test(def.tag)))
@@ -193,7 +193,7 @@ export function searchRivens(request: RivenSearchRequest, onProgress: (progress:
     const score = (rolled: RivenStat[]) => scoreIn({ ...bestBuild, mods: bestBuild.mods }, rolled).score
     const reference = score(best.stats)
     for (const def of rivenPool(type)) {
-      if (isSpliced(type, def.tag) || positiveTags.includes(def.tag)) continue
+      if (!canBeNegative(type, def.tag) || positiveTags.includes(def.tag)) continue
       const curseRoll = rollRiven(type, positiveTags, def.tag, 'average').at(-1)!
       const rolled = [...positives, curseRoll]
       curses.push({ tag: def.tag, name: statName(def), value: curseRoll.value, change: score(rolled) / reference - 1 })

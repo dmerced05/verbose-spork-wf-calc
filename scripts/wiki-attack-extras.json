@@ -1,0 +1,1680 @@
+{
+"_source": "wiki.warframe.com Module:Weapons/data/primary + /secondary, 2026-11-02. [AttackName, BurstCount, BurstDelay, AmmoCost, IncarnonCharges]",
+"Aeolak": [
+[
+"Alt-Fire",
+null,
+null,
+10,
+null
+]
+],
+"Alternox": [
+[
+"Alt-Fire Contact",
+null,
+null,
+4,
+null
+]
+],
+"Alternox Prime": [
+[
+"Alt-Fire Contact",
+null,
+null,
+4,
+null
+]
+],
+"Ambassador": [
+[
+"Charge",
+null,
+null,
+16,
+null
+]
+],
+"Amprex": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Artemis Bow": [
+[
+"Base Uncharged Shot",
+null,
+null,
+15,
+null
+],
+[
+"Base Charged Shot",
+null,
+null,
+15,
+null
+],
+[
+"Concentrated Arrow Uncharged Shot",
+null,
+null,
+15,
+null
+],
+[
+"Concentrated Arrow Charged Shot",
+null,
+null,
+15,
+null
+]
+],
+"Artemis Bow Prime": [
+[
+"Base Uncharged Shot",
+null,
+null,
+15,
+null
+],
+[
+"Base Charged Shot",
+null,
+null,
+15,
+null
+],
+[
+"Concentrated Arrow Uncharged Shot",
+null,
+null,
+15,
+null
+],
+[
+"Concentrated Arrow Charged Shot",
+null,
+null,
+15,
+null
+]
+],
+"Battacor": [
+[
+"Normal Attack",
+2,
+0.08,
+1,
+null
+]
+],
+"Boar": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+150
+]
+],
+"Boar Prime": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+150
+]
+],
+"Boltor": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+160
+]
+],
+"Boltor Prime": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+160
+]
+],
+"Braton": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+200
+]
+],
+"Braton Prime": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+200
+]
+],
+"Braton Vandal": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+200
+]
+],
+"Bubonico": [
+[
+"Burst",
+3,
+0.23,
+3,
+null
+],
+[
+"Radial Attack",
+null,
+null,
+3,
+null
+]
+],
+"Burston": [
+[
+"Normal Attack",
+3,
+0.061,
+1,
+null
+],
+[
+"Incarnon Form",
+null,
+null,
+1,
+600
+]
+],
+"Burston Prime": [
+[
+"Normal Attack",
+3,
+0.04,
+1,
+null
+],
+[
+"Incarnon Form",
+null,
+null,
+1,
+600
+]
+],
+"Coda Bubonico": [
+[
+"Burst",
+3,
+0.23,
+3,
+null
+],
+[
+"Radial Attack",
+null,
+null,
+3,
+null
+]
+],
+"Coda Hema": [
+[
+"Normal Attack",
+3,
+0.1,
+1,
+null
+]
+],
+"Coda Synapse": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Convectrix": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+],
+[
+"Alt-Fire",
+null,
+null,
+0.5,
+null
+]
+],
+"Corinth Prime": [
+[
+"Air Burst Projectile",
+null,
+null,
+4,
+null
+],
+[
+"Air Burst Explosion",
+null,
+null,
+4,
+null
+]
+],
+"Dera": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+50
+]
+],
+"Dera Vandal": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+50
+]
+],
+"Dex Sybaris": [
+[
+"Normal Attack",
+2,
+0.09,
+1,
+null
+],
+[
+"Incarnon Form",
+4,
+0.09,
+1,
+200
+]
+],
+"Dread": [
+[
+"Incarnon Form Charged Shot",
+null,
+null,
+null,
+20
+]
+],
+"EFV-5 Jupiter": [
+[
+"Buckshot",
+null,
+null,
+15,
+null
+]
+],
+"Felarx": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+60
+]
+],
+"Flux Rifle": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Fulmin": [
+[
+"Semi-Auto Mode",
+null,
+null,
+10,
+null
+]
+],
+"Fulmin Prime": [
+[
+"Semi-Auto Mode",
+null,
+null,
+10,
+null
+]
+],
+"Glaxion": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Glaxion Vandal": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Gorgon": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+20
+]
+],
+"Gorgon Wraith": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+20
+]
+],
+"Haalvu": [
+[
+"Alt-Fire",
+2,
+0.05,
+1.5,
+null
+]
+],
+"Harpak": [
+[
+"Normal Attack",
+3,
+0.1,
+1,
+null
+]
+],
+"Hema": [
+[
+"Normal Attack",
+3,
+0.1,
+1,
+null
+]
+],
+"Higasa": [
+[
+"Auto",
+5,
+0.1,
+1,
+null
+]
+],
+"Hind": [
+[
+"Burst Mode",
+5,
+0.12,
+1,
+null
+]
+],
+"Ignis": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Ignis Wraith": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Kohm": [
+[
+"Fully Spooled",
+null,
+null,
+4,
+null
+]
+],
+"Kuva Hek": [
+[
+"Alt-Fire",
+null,
+null,
+4,
+null
+]
+],
+"Kuva Hind": [
+[
+"Burst",
+5,
+0.07,
+1,
+null
+],
+[
+"Semi-Auto",
+null,
+null,
+3,
+null
+]
+],
+"Kuva Kohm": [
+[
+"Fully Spooled",
+null,
+null,
+4,
+null
+]
+],
+"Kuva Quartakk": [
+[
+"Burst-Fire While Aiming",
+4,
+0,
+1,
+null
+]
+],
+"Latron": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+40
+]
+],
+"Latron Prime": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+40
+]
+],
+"Latron Wraith": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+40
+]
+],
+"Lizzie": [
+[
+"Viral Wave",
+null,
+null,
+2,
+null
+],
+[
+"Magnetic Wave",
+null,
+null,
+2,
+null
+],
+[
+"Cold Wave",
+null,
+null,
+2,
+null
+],
+[
+"Corrosive Wave",
+null,
+null,
+2,
+null
+]
+],
+"Mk1-Braton": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+200
+]
+],
+"Mk1-Paris": [
+[
+"Incarnon Form Charged Shot",
+null,
+null,
+null,
+20
+]
+],
+"Mk1-Strun": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+40
+]
+],
+"Mutalist Quanta": [
+[
+"Infested Orb",
+null,
+null,
+5,
+null
+]
+],
+"Nagantaka": [
+[
+"Burst Shot",
+9,
+0.15,
+1,
+null
+]
+],
+"Nagantaka Prime": [
+[
+"Burst Shot",
+11,
+0.11,
+1,
+null
+]
+],
+"Neutralizer": [
+[
+"Cryo Grenade",
+null,
+null,
+3,
+null
+]
+],
+"Panthera": [
+[
+"Normal Attack",
+null,
+null,
+2,
+null
+]
+],
+"Panthera Prime": [
+[
+"Normal Attack",
+null,
+null,
+2,
+null
+]
+],
+"Paracyst": [
+[
+"Normal Attack",
+3,
+0.05,
+1,
+null
+]
+],
+"Paris": [
+[
+"Incarnon Form Charged Shot",
+null,
+null,
+null,
+20
+]
+],
+"Paris Prime": [
+[
+"Incarnon Form Charged Shot",
+null,
+null,
+null,
+20
+]
+],
+"Perigale": [
+[
+"Normal Attack",
+4,
+0.04,
+1,
+null
+]
+],
+"Perigale Prime": [
+[
+"Normal Attack",
+4,
+0.04,
+1,
+null
+]
+],
+"Phage": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Phantasma": [
+[
+"Beam",
+null,
+null,
+0.5,
+null
+],
+[
+"Plasma Bomb Impact",
+null,
+null,
+2,
+null
+]
+],
+"Phantasma Prime": [
+[
+"Beam",
+null,
+null,
+0.5,
+null
+],
+[
+"Plasma Bomb Impact",
+null,
+null,
+2,
+null
+]
+],
+"Phenmor": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+408
+]
+],
+"Prisma Gorgon": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+20
+]
+],
+"Quanta": [
+[
+"Beam",
+null,
+null,
+0.5,
+null
+],
+[
+"Cube (direct hit)",
+null,
+null,
+10,
+null
+]
+],
+"Quanta Vandal": [
+[
+"Beam",
+null,
+null,
+0.5,
+null
+],
+[
+"Cube (direct hit)",
+null,
+null,
+10,
+null
+]
+],
+"Quartakk": [
+[
+"Burst-Fire",
+4,
+0,
+1,
+null
+]
+],
+"Quellor": [
+[
+"Alt-Fire",
+null,
+null,
+50,
+null
+]
+],
+"Soma": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+200
+]
+],
+"Soma Prime": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+200
+]
+],
+"Stahlta": [
+[
+"Alt-Fire",
+null,
+null,
+20,
+null
+]
+],
+"Stradavar Prime": [
+[
+"Semi-Auto Mode",
+null,
+null,
+2,
+null
+]
+],
+"Strun": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+40
+]
+],
+"Strun Prime": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+40
+]
+],
+"Strun Wraith": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+40
+]
+],
+"Sybaris": [
+[
+"Normal Attack",
+2,
+0.101,
+1,
+null
+],
+[
+"Incarnon Form",
+4,
+0.101,
+1,
+200
+]
+],
+"Sybaris Prime": [
+[
+"Normal Attack",
+2,
+0.062,
+1,
+null
+],
+[
+"Incarnon Form",
+4,
+0.062,
+1,
+200
+]
+],
+"Synapse": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Telos Boltor": [
+[
+"Incarnon Form",
+null,
+null,
+null,
+160
+]
+],
+"Tenet Glaxion": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Tenet Quanta": [
+[
+"Beam",
+null,
+null,
+0.5,
+null
+],
+[
+"Cube (direct hit)",
+null,
+null,
+10,
+null
+]
+],
+"Tenet Tetra": [
+[
+"Grenade Impact",
+null,
+null,
+80,
+null
+],
+[
+"Grenade AoE",
+null,
+null,
+80,
+null
+]
+],
+"Tenora": [
+[
+"Charged Attack",
+null,
+null,
+10,
+null
+]
+],
+"Tenora Prime": [
+[
+"Charged Attack",
+null,
+null,
+10,
+null
+]
+],
+"Thornbak": [
+[
+"Normal Attack",
+4,
+0.066,
+1,
+null
+]
+],
+"Tiberon": [
+[
+"Normal Attack",
+3,
+0.06,
+1,
+null
+]
+],
+"Tiberon Prime": [
+[
+"Burst",
+3,
+0.08,
+1,
+null
+]
+],
+"Torid": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+170
+]
+],
+"Vectis": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+45
+]
+],
+"Vectis Prime": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+45
+]
+],
+"Zenith": [
+[
+"Semi-Auto Mode",
+null,
+null,
+3,
+null
+]
+],
+"Akarius": [
+[
+"Rocket Impact",
+2,
+0.12,
+1,
+null
+],
+[
+"Rocket Detonation",
+2,
+0.12,
+null,
+null
+]
+],
+"Akarius Prime": [
+[
+"Rocket Impact",
+2,
+0.12,
+1,
+null
+],
+[
+"Rocket Detonation",
+2,
+0.12,
+null,
+null
+]
+],
+"Akjagara": [
+[
+"Normal Attack",
+2,
+0,
+1,
+null
+]
+],
+"Akjagara Prime": [
+[
+"Normal Attack",
+2,
+0,
+1,
+null
+]
+],
+"Angstrum": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+120
+]
+],
+"Atomos": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+21
+]
+],
+"Azima": [
+[
+"Turret Expiry",
+null,
+null,
+75,
+null
+]
+],
+"Balefire Charger": [
+[
+"Uncharged Shot",
+null,
+null,
+100,
+null
+],
+[
+"Alt Fire Shot",
+4,
+0.4,
+100,
+null
+]
+],
+"Balefire Charger Prime": [
+[
+"Uncharged Shot",
+null,
+null,
+100,
+null
+],
+[
+"Alt Fire Shot",
+4,
+0.4,
+100,
+null
+]
+],
+"Ballistica": [
+[
+"Burst Shot",
+4,
+0.05,
+1,
+null
+],
+[
+"Incarnon Form",
+null,
+null,
+1,
+18
+]
+],
+"Ballistica Prime": [
+[
+"Normal Shot",
+null,
+null,
+4,
+null
+],
+[
+"Charged Shot",
+null,
+null,
+4,
+null
+],
+[
+"Incarnon Form",
+null,
+null,
+1,
+18
+]
+],
+"Bronco": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+20
+]
+],
+"Bronco Prime": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+20
+]
+],
+"Catabolyst": [
+[
+"Primary",
+null,
+null,
+0.5,
+null
+]
+],
+"Cestra": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+150
+]
+],
+"Coda Catabolyst": [
+[
+"Primary",
+null,
+null,
+0.5,
+null
+]
+],
+"Cycron": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Despair": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+20
+]
+],
+"Dual Toxocyst": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+270
+]
+],
+"EFV-8 Mars": [
+[
+"Alt-Fire",
+null,
+null,
+3,
+null
+]
+],
+"Embolist": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Furis": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+280
+]
+],
+"Fusilai": [
+[
+"Semi-Auto Mode",
+null,
+null,
+3,
+null
+]
+],
+"Gammacor": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+],
+[
+"Incarnon Form",
+null,
+null,
+1,
+15
+]
+],
+"Kohmak": [
+[
+"Fully Spooled",
+null,
+null,
+1.67,
+null
+]
+],
+"Kraken": [
+[
+"Normal Attack",
+2,
+0.05,
+1,
+null
+]
+],
+"Kunai": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+20
+]
+],
+"Kuva Kraken": [
+[
+"Normal Attack",
+3,
+0.03,
+1,
+null
+]
+],
+"Laetum": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+216
+]
+],
+"Lato": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+24
+]
+],
+"Lato Prime": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+24
+]
+],
+"Lato Vandal": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+24
+]
+],
+"Lex": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+20
+]
+],
+"Lex Prime": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+20
+]
+],
+"Mk1-Furis": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+280
+]
+],
+"Mk1-Kunai": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+20
+]
+],
+"Nukor": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Ocucor": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Onos": [
+[
+"Incarnon Form Held Damage",
+null,
+null,
+1,
+350
+],
+[
+"Incarnon Form Charge Attack",
+null,
+null,
+50,
+null
+]
+],
+"Prisma Angstrum": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+120
+]
+],
+"Quatz": [
+[
+"Burst",
+4,
+0,
+1,
+null
+]
+],
+"Rakta Ballistica": [
+[
+"Burst Shot",
+4,
+0.05,
+1,
+null
+],
+[
+"Incarnon Form",
+null,
+null,
+1,
+18
+]
+],
+"Sepulcrum": [
+[
+"Primary-Fire",
+2,
+0,
+1,
+null
+],
+[
+"Radial Attack",
+2,
+0,
+null,
+null
+]
+],
+"Sicarus": [
+[
+"Normal Attack",
+3,
+0.04,
+1,
+null
+],
+[
+"Incarnon Form",
+3,
+0.04,
+1,
+120
+]
+],
+"Sicarus Prime": [
+[
+"Normal Attack",
+3,
+0.04,
+1,
+null
+],
+[
+"Incarnon Form",
+3,
+0.04,
+1,
+120
+]
+],
+"Spectra": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Spectra Vandal": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Staticor": [
+[
+"Fully Charged Projectile",
+null,
+null,
+5,
+null
+]
+],
+"Synoid Gammacor": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+],
+[
+"Incarnon Form",
+null,
+null,
+1,
+15
+]
+],
+"Tenet Cycron": [
+[
+"Normal Attack",
+null,
+null,
+0.5,
+null
+]
+],
+"Tenet Diplos": [
+[
+"Lock-on Mode",
+null,
+0.06,
+2,
+null
+]
+],
+"Tenet Plinx": [
+[
+"Alt-Fire",
+null,
+null,
+10,
+null
+]
+],
+"Twin Grakatas": [
+[
+"Normal Attack",
+null,
+null,
+2,
+null
+]
+],
+"Twin Kohmak": [
+[
+"Fully Spooled",
+null,
+null,
+1.67,
+null
+]
+],
+"Vasto": [
+[
+"Incarnon Form",
+6,
+0.1,
+1,
+24
+]
+],
+"Vasto Prime": [
+[
+"Incarnon Form",
+6,
+0.1,
+1,
+24
+]
+],
+"Zylok": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+12
+]
+],
+"Zylok Prime": [
+[
+"Incarnon Form",
+null,
+null,
+1,
+12
+]
+]
+}

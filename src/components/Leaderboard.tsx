@@ -185,7 +185,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
             {CATEGORIES.map((option) => <option key={option}>{option}</option>)}
           </select>
           <input placeholder="Search weapons or attacks (e.g. heavy slam)" value={search} onChange={(event) => { setSearch(event.target.value); resetPaging() }} />
-          <label className="inline-check" title="Incarnon forms run on Incarnon charge, which isn't modeled, so they never reload here">
+          <label className="inline-check" title="Incarnon forms fire their wiki Incarnon Charges, then reload like a magazine (forms the wiki has no charge count for never reload)">
             <input type="checkbox" checked={includeIncarnon} onChange={(event) => { setIncludeIncarnon(event.target.checked); resetPaging() }} />
             Include Incarnon forms
           </label>
@@ -226,7 +226,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
         </div>
         <p className="muted">
           Every weapon attack, each optimized on its own, in one fixed scenario: {data.scenario}
-          Incarnon forms don't reload here (their charge isn't in the data). Shell-by-shell weapons (Felarx, Struns, Corinth, Zarr)
+          Incarnon forms fire their wiki Incarnon Charges, then reload like a magazine. Burst weapons fire their wiki burst, and ammo costs come from the wiki (Tenet Tetra's grenade uses the whole magazine). Shell-by-shell weapons (Felarx, Struns, Corinth, Zarr)
           reload longer with magazine mods. Precomputed {new Date(data.generatedAt).toLocaleDateString()} from {data.dataVersion}.
         </p>
       </section>

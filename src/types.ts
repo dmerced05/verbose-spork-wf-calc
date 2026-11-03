@@ -24,6 +24,16 @@ export interface Attack {
   parts?: string[] // a whole shot: the attacks (by name) that one trigger pull does, scored together (damage.ts)
   headshotOnly?: boolean // a part that only happens on a headshot (Vectis Incarnon's orb explosion)
   bodyShotOnly?: boolean // a part that only happens on a body shot (the orb's embedded ticks)
+  // from the wiki's weapon data (scripts/wiki-attack-extras.json)
+  burstCount?: number // rounds per trigger pull, fireRate is bursts per second
+  burstDelay?: number // seconds between rounds inside a burst, before fire rate mods
+  ammoCost?: number // ammo per round when it isn't 1 (Tenet Tetra's grenade takes all 80, beams 0.5)
+  incarnonCharges?: number // the Incarnon form's ammo, it reloads like a magazine once spent
+  // an alt-fire that has to be earned before it can fire (Trumna's grenade needs 5 primary kills). it's one volley, not
+  // something you hold down, so it only ranks as a single hit / whole attack
+  altGate?: { source: 'kills' | 'hits'; text: string }
+  reloadsAfterShot?: boolean // speargun throws: "Throwing the spear consumes 1 ammo, then reloads the weapon"
+  damagePerMagazineRound?: number // Javlok's throw: "Explosion deals 20% additional damage per round in the magazine"
 }
 
 export interface Weapon {

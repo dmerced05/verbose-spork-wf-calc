@@ -193,6 +193,45 @@ const WIKI_ATTACK_MULTISHOT = {
 }
 
 // one weapon in the shape the calc wants. also used for the exalted weapons below
+// per-attack ammo cost, burst fire and Incarnon charges, from the wiki's weapon data modules (Module:Weapons/data/primary and
+// /secondary, saved by hand into scripts/wiki-attack-extras.json). Tenet Tetra's grenade "consumes all ammo" (AmmoCost 80),
+// Vasto Incarnon fires bursts of 6 ("Burst Count 6", "Burst Delay 0.1000 s") off 24 "Incarnon Charges", beams cost 0.5
+const WIKI_ATTACK_EXTRAS = JSON.parse(readFileSync(new URL('./wiki-attack-extras.json', import.meta.url), 'utf8'))
+// alt-fires that need a gauge filled first, quoted from each weapon's wiki page (checked 2026-11-02). they're one volley
+// (the grenade and its bounces, the missile barrage) whenever the gauge is full, never a fire rate you can hold
+const KILLS_5 = { source: 'kills', text: 'Requires 5 primary fire kills to charge a gauge and cannot fire without a full gauge' }
+const ALT_GATES = {
+  Trumna: { 'Grenade Impact': KILLS_5, 'Grenade Bounce AoE': KILLS_5 },
+  'Trumna Prime': { 'Grenade Impact': KILLS_5, 'Grenade Bounce AoE': KILLS_5 },
+  Sepulcrum: { 'Lock-On Mode': KILLS_5, 'Lock-On Radial Attack': KILLS_5 },
+  Higasa: { 'Charged Shot': { source: 'kills', text: 'builds charges on kills to allow use of the Alternate Fire' } },
+  Grimoire: {
+    'Active Attack': { source: 'hits', text: 'Alt-Fire requires a fully filled meter beneath the reticle in order to fire' },
+    'Active Radial Attack': { source: 'hits', text: 'Alt-Fire requires a fully filled meter beneath the reticle in order to fire' },
+  },
+  Nunchasa: { 'Alt-Fire': { source: 'hits', text: '5 charges are needed to fully charge the alt-fire, with direct hits generating half a charge and weak point hits one charge' } },
+}
+
+// ammo costs the wiki's data table leaves at 1 but its page text spells out (checked 2026-11-02)
+const WIKI_TEXT_AMMO = {
+  Enkaus: { 'Alt-Fire': 15, 'Alt-Fire Radial Attack': 15 }, // "consumes 15 ammo to launch an ink projectile"
+  'Coda Bassocyst': { 'Alt-Fire': 4 }, // the mite: "Consumes 4 ammo per shot"
+  Scyotid: { Semi: 4 }, // the webbed snare alt-fire: "Consumes 4 ammo per shot"
+  'Kuva Nukor': { 'Normal Attack': 0.5 }, // "Consumes 0.5 ammo per tick of damage"
+}
+function wikiExtras(weaponName, attackName) {
+  const textAmmo = WIKI_TEXT_AMMO[weaponName]?.[attackName]
+  if (textAmmo) return { ammoCost: textAmmo }
+  const row = WIKI_ATTACK_EXTRAS[weaponName]?.find(([name]) => name === attackName)
+  if (!row) return {}
+  const [, burstCount, burstDelay, ammoCost, incarnonCharges] = row
+  return {
+    ...(burstCount > 1 ? { burstCount, burstDelay: burstDelay ?? 0 } : {}),
+    ...(ammoCost !== null && ammoCost !== 1 ? { ammoCost } : {}),
+    ...(incarnonCharges ? { incarnonCharges } : {}),
+  }
+}
+
 function toWeapon(weapon) {
   return {
     uniqueName: weapon.uniqueName,
@@ -234,6 +273,13 @@ function toWeapon(weapon) {
       ...glaiveDetonation(weapon, attack),
       ...(isContinuous(weapon, attack) ? { continuous: true } : {}),
       ...multishotRule(weapon, attack),
+      ...wikiExtras(weapon.name, attack.name),
+      ...(ALT_GATES[weapon.name]?.[attack.name] ? { altGate: ALT_GATES[weapon.name][attack.name] } : {}),
+      // speargun throws reload after every throw (wiki: "Throwing the spear consumes 1 ammo, then reloads the weapon";
+      // Tenet Ferrox: "a reload cycle must complete before it can fire or be thrown again")
+      ...(weapon.category !== 'Melee' && /^Spear (Throw|Explosion)/.test(attack.name) ? { reloadsAfterShot: true } : {}),
+      // Javlok: "Throwing the spear consumes the entire magazine ... Explosion deals 20% additional damage per round in the magazine"
+      ...(weapon.name === 'Javlok' && attack.name === 'Spear Throw Explosion' ? { damagePerMagazineRound: 0.2 } : {}),
     }))),
   }
 }
@@ -399,6 +445,12 @@ function wholeShots(weapon) {
   })
 }
 for (const weapon of [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons]) weapon.attacks.push(...wholeShots(weapon))
+// the wiki lists Incarnon Charges on the form's main attack only, but the radial / AoE parts fire off the same charges
+// (Despair's Radial Attack was scored as never reloading next to a direct hit that did)
+for (const weapon of [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons]) {
+  const charges = weapon.attacks.find((attack) => attack.incarnonCharges)?.incarnonCharges
+  if (charges) for (const attack of weapon.attacks) if (/incarnon/i.test(attack.name) && !attack.incarnonCharges) attack.incarnonCharges = charges
+}
 
 const weapons = [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons]
 weapons.sort((a, b) => a.name.localeCompare(b.name))

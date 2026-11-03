@@ -474,6 +474,8 @@ function calculateOnce({
   ]
   // everything the build's numbers assume is happening in the fight (shown in red under the results)
   const requirements: string[] = []
+  // gauge-gated alt-fire: DPS numbers assume you can hold it down, which you can't
+  if (attack.altGate) requirements.push(`${attack.name}: a full gauge every shot (wiki: "${attack.altGate.text}"). Treat it as one volley, the DPS figures assume you could fire it nonstop`)
   const statusTriggers: CalcResult['statusTriggers'] = []
   let frameArcaneFlatCrit = 0 // Arcane Avenger: "adds 45 percentage points to a weapon's critical chance after other bonuses"
   for (const upgrade of upgrades) {
@@ -797,6 +799,13 @@ function calculateOnce({
     requirements.push(exalted.finalMultiplier.requirement)
   }
 
+  // Javlok's thrown spear: +20% per round in the magazine it dumps, so magazine mods raise it
+  if (attack.damagePerMagazineRound && weapon.magazineSize) {
+    const rounds = Math.max(1, Math.round(weapon.magazineSize * (1 + bonus.magazineCapacity) * magazineMultiplier))
+    separateDamageMultiplier *= 1 + attack.damagePerMagazineRound * rounds
+    requirements.push(`${attack.name}: +${Math.round(attack.damagePerMagazineRound * 100)}% per round in a full ${rounds}-round magazine (x${(1 + attack.damagePerMagazineRound * rounds).toFixed(1)})`)
+  }
+
   // ---- Kuva / Tenet / Coda bonus element: an innate element worth X% of base damage ----
   if (bonusElement && bonusElement.value > 0 && hasBonusElement(weapon.name)) {
     const extra = sum(Object.values(attack.damage)) * bonusElement.value
@@ -1022,11 +1031,18 @@ function calculateOnce({
   // (wiki Attack_Speed). I treat one heavy as wind-up + one swing at the attack speed, an estimate since the
   // data doesn't have per-weapon swing lengths
   const windUp = isHeavy && attack.windUp ? attack.windUp / Math.max(0.01, 1 + bonus.heavyWindUpSpeed) : null
-  const fireRate = windUp !== null
+  const triggerRate = windUp !== null
     ? 1 / (windUp + 1 / moddedFireRate)
     : attack.chargeTime
       ? 1 / (attack.chargeTime / Math.max(0.01, 1 + fireRateBonus) + 1 / moddedFireRate)
       : moddedFireRate
+  // burst weapons (wiki Burst Count / Burst Delay): a pull fires burstCount rounds burstDelay apart, the delay shrinks
+  // with fire rate mods, and the next burst comes 1 / fire rate after the last round. so it's rounds per second from
+  // here on (Vasto Incarnon: 6 rounds 0.04 s apart then 0.16 s at +150% fire rate, same timing as Underframe's log)
+  const burstCount = attack.burstCount && attack.burstCount > 1 ? attack.burstCount : 1
+  const fireRate = burstCount > 1
+    ? burstCount / (1 / triggerRate + (burstCount - 1) * (attack.burstDelay ?? 0) / Math.max(0.01, (1 + fireRateBonus) * fireRateMultiplier))
+    : triggerRate
 
   // ---- 4. target modifiers ----
   // Latron's Flensing Spikes: each Puncture stack strips another 20% of armor
@@ -1241,12 +1257,16 @@ function calculateOnce({
   const peakDotTick = peakDot ? { damageType: peakDot.damageType, value: peakDot.tick.crit } : null
 
   // ---- 6. magazine + reload (wiki Damage/Calculation, Reload_Speed) ----
-  // melee has no magazine, and Incarnon forms run on Incarnon charge which the data doesn't have, so neither reloads here
-  const reloads = weapon.category !== 'Melee' && !isIncarnonAttack && Boolean(weapon.magazineSize) && Boolean(weapon.reloadTime)
-  const magazineSize = reloads ? Math.max(1, Math.round(weapon.magazineSize! * (1 + bonus.magazineCapacity) * magazineMultiplier)) : null
+  // melee has no magazine. Incarnon forms run on their "Incarnon Charges" (wiki): spent charges count as a magazine with
+  // the weapon's reload, like Underframe does (in game the form ends and you charge it back up). forms the wiki has no
+  // charge count for still don't reload
+  const incarnonCharges = isIncarnonAttack ? attack.incarnonCharges ?? null : null
+  const reloads = weapon.category !== 'Melee' && (!isIncarnonAttack || Boolean(incarnonCharges)) && Boolean(incarnonCharges ?? weapon.magazineSize) && Boolean(weapon.reloadTime)
+  // magazine mods don't touch the charges (Underframe: Vasto Prime's 24 stay 24 with Slip Magazine)
+  const magazineSize = !reloads ? null : incarnonCharges ?? Math.max(1, Math.round(weapon.magazineSize! * (1 + bonus.magazineCapacity) * magazineMultiplier))
   // shell-by-shell weapons (Felarx, Strun, Corinth...): (start/end delay + per shell x magazine) / (1 + reload speed),
   // so magazine mods make the reload longer
-  const shellReload = SHELL_BY_SHELL_RELOAD[weapon.name]
+  const shellReload = incarnonCharges ? undefined : SHELL_BY_SHELL_RELOAD[weapon.name]
   const reloadSpeedScale = Math.max(0.01, 1 + bonus.reloadSpeed)
   const reloadTime = !reloads
     ? null
@@ -1254,7 +1274,11 @@ function calculateOnce({
   // Ammo Efficiency: that share of shots is free, so a magazine fires magazine / (1 - efficiency) shots. capped at 75% in
   // total since Hotfix 44.1.3 ("only 1 in 4 shots uses ammo"); what used to be 100% is now "Infinite Ammo", which ignores it
   const ammoEfficiency = (infiniteAmmo as boolean) ? 0.99 : Math.min(AMMO_EFFICIENCY_CAP, bonus.ammoEfficiency)
-  const shotsPerMagazine = magazineSize ? magazineSize / Math.max(0.01, 1 - ammoEfficiency) : null
+  // rounds per magazine: ammo per round from the wiki (Tenet Tetra's grenade "consumes all ammo", 80 of 80), at least 1
+  // a cost of the whole base magazine means it always takes everything that's left, so bigger magazines still give one
+  const takesWholeMagazine = Boolean(attack.ammoCost && weapon.magazineSize && attack.ammoCost >= weapon.magazineSize)
+  const roundsPerMagazine = magazineSize ? (takesWholeMagazine || attack.reloadsAfterShot ? 1 : Math.max(1, Math.floor(magazineSize / (attack.ammoCost ?? 1) + 1e-9))) : null
+  const shotsPerMagazine = roundsPerMagazine ? roundsPerMagazine / Math.max(0.01, 1 - ammoEfficiency) : null
   const uptime = shotsPerMagazine && reloadTime ? shotsPerMagazine / (fireRate * reloadTime + shotsPerMagazine) : 1
   const steadyStateDps = (burstDps + dotDps) * uptime
 

@@ -66,8 +66,9 @@ export function optimizeWeapon(weapon: Weapon, seeds: SeedBuild[] = []): Record<
     const builds = new Map<string, OptimizedBuild>()
     found.set(attack.name, builds)
     for (const { key, objective, allowFireRateMods, heavyMode, heavyOnly } of BOARDS) {
-      // heavies use up the combo, so spamming them at max combo isn't real DPS. they only compete for single hits
-      if (attack.heavy && objective.usesFireRate) continue
+      // heavies use up the combo, so spamming them at max combo isn't real DPS. they only compete for single hits.
+      // same for alt-fires that need a gauge filled first (Trumna's grenade: 5 kills each): one volley, not a fire rate
+      if ((attack.heavy || attack.altGate) && objective.usesFireRate) continue
       // the full-heavy board only holds multi-hit Heavy Attacks
       if (heavyOnly && !(attack.heavyMultiplier && heavyComboFor(weapon.name))) continue
       builds.set(key, optimizeAttack(weapon, attack, objective, allowFireRateMods, heavyMode))

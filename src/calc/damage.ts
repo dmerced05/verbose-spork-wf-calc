@@ -22,6 +22,7 @@ import { compressionFor } from '../data/compression'
 import { abilitiesById, abilityApplies, castStacks, effectsFor, scaledValue, strengthFor, type AbilityCast } from '../data/warframeAbilities'
 import { biggestHit, comboTotal, heavyComboFor, type HeavyCombo, type HeavyMode } from '../data/heavyAttacks'
 import { expectedDamage, simulateDamage, type DamageRange, type ShotModel } from './simulate'
+import { STANCES, applyStance, bestCombo, comboLabel, usesStance, type StanceChoice } from '../data/stances'
 
 // "sustained" = average DPS over a fight this long: reloads, DoT ramp-up and Heat stacking count, and DoT ticks
 // after the fight ends don't (so long Status Duration tails stop inflating it)
@@ -41,6 +42,7 @@ export interface CalcInput {
   passives?: SelectedPassive[] // weapon passives (src/data/passives.ts)
   bonusElement?: BonusElement | null // Kuva/Tenet/Coda bonus element
   heavyMode?: HeavyMode // multi-hit heavies: score the biggest hit (default) or every hit added up
+  stance?: StanceChoice | 'none' | null // melee Normal Attack: which stance combo (null = the best one, 'none' = one plain swing per attack speed)
   target: TargetSettings
   armor: number // target armor before debuffs (already level scaled)
   debuffs: Debuffs
@@ -213,7 +215,8 @@ export function statusTrigger(trigger: string): string | null {
 // status-triggered buffs only count when the build actually lands that status. Primary Blight on a pure Electricity
 // Alternox never gets a stack, so the optimizer was picking it for free crit damage. I run the calc, and if a status
 // trigger's type never procs, run it again with that trigger off (turning it off can't add a status, so once is enough)
-export function calculate(input: CalcInput): CalcResult {
+export function calculate(rawInput: CalcInput): CalcResult {
+  const input = withStance(rawInput)
   // a whole shot: every part with the same build, each on its own rules, then added up per shot
   const parts = partsOf(input)
   // a whole shot's parts all hit the same enemy, so each part's CO / Galvanized count includes the status types the
@@ -241,6 +244,20 @@ export function calculate(input: CalcInput): CalcResult {
   const others = parts.length > 1 ? first.map((_, index) => first.filter((__, other) => other !== index).flatMap(appliedTypes)) : []
   const results = dead.length || others.some((list) => list.length) ? run(dead.map(({ key }) => key), others) : first
   return results.length === 1 ? results[0] : combineParts(results, parts.map((part) => part.attack.name))
+}
+
+// melee Normal Attack through a stance combo (src/data/stances.ts): average combo hit, combo hits per second
+function withStance(input: CalcInput): CalcInput {
+  if (input.stance === 'none' || !usesStance(input.weapon, input.attack)) return input
+  const choice = input.stance ?? bestCombo(input.weapon)
+  const combo = choice ? STANCES[choice.stance]?.combos[choice.combo] : null
+  if (!choice || !combo) return input
+  const { attack, forcedSlashPerHit } = applyStance(input.attack, combo)
+  const rate = (combo.hits / combo.duration).toFixed(2)
+  return { ...input, attack: { ...attack,
+    ...(forcedSlashPerHit > 0 ? { forcedProcChance: { ...attack.forcedProcChance, slash: forcedSlashPerHit } } : {}),
+    stanceNote: `Stance combo ${comboLabel(choice)} on repeat: ${combo.hits} hits for ${combo.multiplier}x damage in ${combo.duration} s at 1.0 attack speed (${rate} hits/s before attack speed)${combo.bleeds ? `, ${combo.bleeds} forced Slash` : ''} (wiki Module:Stances)`,
+  } }
 }
 
 // the attacks a whole shot is made of. each part gets its own CO rule (the radial part of a hitscan shot doesn't get
@@ -399,6 +416,7 @@ function calculateOnce({
   const forcedProcsPerPellet: Record<string, number> = {} // guaranteed procs on every hit (Reconifex's Heat rounds)
   // the attack's own forced procs (glaive detonations, from build-data)
   for (const damageType of attack.forcedProcs ?? []) forcedProcsPerPellet[damageType] = (forcedProcsPerPellet[damageType] ?? 0) + 1
+  for (const [damageType, share] of Object.entries(attack.forcedProcChance ?? {})) forcedProcsPerPellet[damageType] = (forcedProcsPerPellet[damageType] ?? 0) + share
 
   const applyEffect = (effect: ModEffect, times: number) => {
     switch (effect.kind) {
@@ -475,6 +493,7 @@ function calculateOnce({
   // everything the build's numbers assume is happening in the fight (shown in red under the results)
   const requirements: string[] = []
   // gauge-gated alt-fire: DPS numbers assume you can hold it down, which you can't
+  if (attack.stanceNote) requirements.push(attack.stanceNote)
   if (attack.altGate) requirements.push(`${attack.name}: a full gauge every shot (wiki: "${attack.altGate.text}"). Treat it as one volley, the DPS figures assume you could fire it nonstop`)
   const statusTriggers: CalcResult['statusTriggers'] = []
   let frameArcaneFlatCrit = 0 // Arcane Avenger: "adds 45 percentage points to a weapon's critical chance after other bonuses"
@@ -977,7 +996,7 @@ function calculateOnce({
     attack = { ...attack, critChance: attack.critChance + Math.min(conversion.max, conversion.ratio * moddedStatus(attack.statusChance)) }
   }
   const critBeforeEnervate =
-    attack.critChance * (1 + bonus.critChance + weakpointCritBonus + critFromCombo + (isHeavy ? bonus.heavyCritChance : 0)) +
+    attack.critChance * (1 + bonus.critChance + weakpointCritBonus + critFromCombo + (isHeavy || (isMelee && attack.heavyCrit) ? bonus.heavyCritChance : 0)) +
     perkFlat.critChance + passiveFlat.critChance + modFlat.critChance + frameArcaneFlatCrit + critPerStatusType * activeStatusTypes + abilityFlatCritChance +
     (attack.isAoE ? 0 : punctureCritChanceBonus(stacks('puncture')))
   // Enervate's stacks are flat on top of everything, taken as their average over a build-up-and-reset cycle

@@ -426,13 +426,22 @@ const harmony = named('Harmony')
 const harmonyStacks = { ...noDebuffs(), stacks: { ...noDebuffs().stacks, slash: 2 } }
 const harmonyHeavy = calculate({ weapon: harmony, attack: harmony.attacks.find((attack) => attack.name === 'Heavy Attack')!, mods: [], passives: passivesOn('Harmony', 0),
   armor: 0, debuffs: harmonyStacks, buffs: { roar: 0, combo: 1 }, target: neutral })
-const harmonySwingBleed = calculate({ weapon: harmony, attack: harmony.attacks[0], mods: [], armor: 0, debuffs: harmonyStacks, buffs: { roar: 0 }, target: neutral })
+const harmonySwingBleed = calculate({ weapon: harmony, attack: harmony.attacks[0], stance: 'none', mods: [], armor: 0, debuffs: harmonyStacks, buffs: { roar: 0 }, target: neutral })
   .dots.find((dot) => dot.damageType === 'slash')!.perProc.average
 expectClose('Harmony detonates 2 bleed stacks', harmonyHeavy.detonation!.existingStacks, 2 * harmonySwingBleed)
 expectClose('Harmony detonation only on heavies', runWeapon('Harmony', { passives: passivesOn('Harmony') }).detonation === null ? 1 : 0, 1)
+// stance combos (wiki Module:Stances/data): Gleaming Talon's Forward combo "Ruin" is 5 hits for 600% total in 2 s at 1.0
+// attack speed, physical hits at 1.042x on average. Glaive Prime's 1.25 attack speed: 5 / 2 x 1.25 = 3.125 hits/s
+const gpStance = named('Glaive Prime')
+const ruin = runWeapon('Glaive Prime', { stance: { stance: 'Gleaming Talon', combo: 'Forward' } })
+const plainSwing = runWeapon('Glaive Prime', { stance: 'none' })
+expectClose('stance combo hits per second', ruin.fireRate, gpStance.attacks[0].fireRate * 5 / 2)
+expectClose('stance combo average hit (all physical)', ruin.hit.normal, plainSwing.hit.normal * 6 / 5 * 1.042)
+// best damage per second at 1.0 speed among the class's stances: Astral Twilight's Neutral (22x in 4.25 s, 10 hits)
+expectClose('best combo picked when none is set', runWeapon('Glaive Prime').fireRate, gpStance.attacks[0].fireRate * 10 / 4.25)
 // Lesion: +15% attack speed multiplies with Fury
 const fury = meleeMod('Fury')
-expectClose('Lesion Frenzy multiplies attack speed', runWeapon('Lesion', { mods: [fury], passives: passivesOn('Lesion') }).fireRate, named('Lesion').attacks[0].fireRate * 1.3 * 1.15)
+expectClose('Lesion Frenzy multiplies attack speed', runWeapon('Lesion', { mods: [fury], passives: passivesOn('Lesion'), stance: 'none' }).fireRate, named('Lesion').attacks[0].fireRate * 1.3 * 1.15)
 // Kuva/Tenet/Coda bonus element: 60% Toxin on Kuva Hek = 0.6 x base damage of Toxin
 const kuvaHekBase = Object.values(named('Kuva Hek').attacks[0].damage).reduce((a, b) => a + b, 0)
 expectClose('Kuva bonus element', runWeapon('Kuva Hek', { bonusElement: { damageType: 'toxin', value: 0.6 } }).damageTypes.find((row) => row.damageType === 'toxin')!.modded,
@@ -1161,5 +1170,25 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
   expectClose('Melee Doughty half Heat', withDoughty({ puncture: 50, heat: 50 }).hit.average, 212.5)
 }
 
+// ability damage (src/data/abilityDamage.ts), the wiki's own worked examples
+{
+  const { ABILITY_DAMAGE } = await import('../src/data/abilityDamage')
+  const { runAbility, neutralAbilityContext } = await import('../src/calc/abilityDamage')
+  const abilityDef = (id: string) => ABILITY_DAMAGE.find((def) => def.id === id)!
+  const at = (strength: number) => neutralAbilityContext({ strength })
+  // Gaseous Quake: "up to a cap of 24,736x after 10 seconds", "maximum base damage of 4,947,171 per second"
+  expectClose('Gaseous Quake capped pulse', abilityDef('gaseous-quake').build(at(1), { channel: 12, procs: 1 }).events[11].raw, 200 * 2.75 ** 10)
+  // Thermal Sunder combine with Redline at 100% battery, cast right away: (12000 x Duration + 750) x Strength. mine recasts
+  // 1 s later, so 7 s of the 8 s Heat proc are left
+  expectClose('Thermal Sunder Blast combine', abilityDef('thermal-sunder').build(at(1), { mode: 2, battery: 100, redline: 1, casts: 1 }).events.at(-1)!.raw, 1500 * 7 + 750)
+  // Crush in Magnetize with a maxed Intensify: "((1500 + 1500) / 3) x (1 + 0.30) x 2 x (1 + 0.30)" a tick, "3380 x 3"
+  expectClose('Crush in Magnetize', runAbility(abilityDef('crush').build(at(1.3), { magnetize: 1 }), at(1.3)).total, 3380 * 3)
+  // Virulence: "200 x (1 + 0.15 + 0.3) x (1 + 100)" for the growth hit
+  expectClose('Virulence growth hit', abilityDef('virulence').build(at(1.45), { stacks: 100 }).events[0].raw, 200 * 1.45 * 101)
+  // Reckoning after Smite: 7,500 + 10 x 750, no armor on the neutral target
+  expectClose('Reckoning with 10 Radiation', runAbility(abilityDef('reckoning').build(at(1), { radiation: 10 }), at(1)).biggestHit, 15000)
+  // Miasma: the cast's Viral proc doubles the ticks after it: 150 + 5 x 300 at 100%
+  expectClose('Miasma own Viral', runAbility(abilityDef('miasma').build(at(1), { spored: 0 }), at(1)).direct, 150 + 5 * 300)
+}
 if (failures) throw new Error(`${failures} check(s) failed`)
 console.log('\nall checks passed')

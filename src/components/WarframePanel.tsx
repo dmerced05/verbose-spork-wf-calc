@@ -17,6 +17,9 @@ import { Thumb } from './Thumb'
 import type { FrameLoad } from '../optimizer/damageCap'
 import { defaultConditionalStacks, maxConditionalStacks } from '../calc/parseMod'
 import { SHARD_BUFFS, SHARD_COLORS, SHARD_SLOTS, VIOLET_ENERGY_THRESHOLD, shardBuffsById, type ShardSlot } from '../data/archonShards'
+import { abilityDamageFor } from '../data/abilityDamage'
+import type { AbilityContext } from '../calc/abilityDamage'
+import { AbilityDamageCard } from './AbilityDamageCard'
 
 interface Props {
   isMelee: boolean
@@ -24,6 +27,8 @@ interface Props {
   onWarframeChange: (state: WarframeState, corrosiveProjections: number) => void
   // a setup to load (Damage Cap tab), or 'clear' to switch every ability, ally and arcane off (leaderboard builds)
   loadRequest?: { nonce: number; load: FrameLoad | 'clear' } | null
+  // the Calculator's target, for the damaging abilities' numbers
+  abilityTarget?: AbilityContext['target'] | null
 }
 
 const percent = (fraction: number) => `${Math.round(fraction * 1000) / 10}%`
@@ -116,7 +121,7 @@ const subsumeByKey = new Map(SUBSUME_OPTIONS.map((option) => [option.key, option
 // abilities an ally can bring (passives can't be shared)
 const ALLY_OPTIONS = WARFRAME_ABILITIES.filter(helpsAllies)
 
-export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest }: Props) {
+export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, abilityTarget }: Props) {
   const [frameId, setFrameId] = useState(defaultFrameId)
   const frame = warframesById.get(frameId)!
   const baseName = warframeBaseName(frame.name)
@@ -182,6 +187,24 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest }
   }
   const totals = warframeTotals(build)
   const state = warframeStateFor(build, totals)
+  // what damaging abilities run on: the frame's stats, Roar from any active cast ("bonus damage to all weapons and abilities"),
+  // the shards' "Ability Damage on enemies affected by X", and the Calculator's target
+  const roar = casts.reduce((sum, cast) => {
+    const ability = abilitiesById.get(cast.id)
+    if (!ability) return sum
+    const strength = cast.by === 'ally' ? teammateStrength : totals.abilityStrength
+    return sum + effectsFor(ability, cast.by).reduce((total, effect) => total + (effect.kind === 'factionDamage' ? scaledValue(ability, effect.value, strength) : 0), 0)
+  }, 0)
+  const shardVsStatus = { electricity: 0, radiation: 0, corrosive: 0 }
+  for (const slot of shards) {
+    const shard = slot && shardBuffsById.get(slot.buffId)
+    const key = shard && ({ 'violet-ability-electricity': 'electricity', 'topaz-ability-radiation': 'radiation', 'emerald-ability-corrosion': 'corrosive' } as const)[shard.id as 'violet-ability-electricity']
+    if (shard && key) shardVsStatus[key] += slot.tauforged ? shard.tauforged : shard.normal
+  }
+  const abilityContext = (subsumed: boolean): AbilityContext => ({
+    strength: totals.abilityStrength, duration: totals.abilityDuration, range: totals.abilityRange, roar, shardVsStatus, subsumed,
+    target: abilityTarget ?? { faction: 'None', armor: 0, health: 0, shield: 0, debuffs: { stacks: {}, heatArmorStrip: 0, corrosiveProjections: 0, otherArmorReduction: 0, damageVulnerability: 0, liftedOrKnockedDown: false, statusTypeSource: 'build' } },
+  })
 
   // push the derived numbers up to the calculator whenever they change
   const stateKey = JSON.stringify([state, totals.corrosiveProjections])
@@ -325,6 +348,11 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest }
           </label>
         ) : null}
         {!modeled && <div className="kit-effect inactive">No weapon buff modeled</div>}
+        {(() => {
+          // an equipped augment version replaces the plain one (Gaseous Quake turns Sound Quake into its channeled form)
+          const defs = abilityDamageFor(entry.by === 'helminth' ? subsumed?.from ?? '' : baseName, entry.info.name).filter((def) => !def.augment || equippedNames.has(def.augment))
+          return defs.some((def) => def.augment) ? defs.filter((def) => def.augment) : defs
+        })().map((def) => <AbilityDamageCard key={`${frame.name}:${def.id}`} def={def} ctx={abilityContext(entry.by === 'helminth')} />)}
       </div>
     )
   }

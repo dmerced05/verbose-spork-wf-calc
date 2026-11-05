@@ -67,10 +67,23 @@ const GLAIVE_DETONATION_PROCS = {
   Kestrel: ['impact'],
   'Kestrel Prime': ['impact'],
 }
-const glaiveDetonation = (weapon, attack) =>
-  weapon.name in GLAIVE_DETONATION_PROCS && /Recall Explosion$/.test(attack.name)
-    ? { heavy: true, windUp: null, forcedProcs: GLAIVE_DETONATION_PROCS[weapon.name] }
-    : {}
+// the throw itself, from each wiki page's "Thrown glaive has a guaranteed {{D|Impact}} and {{D|Slash}} proc." line
+// (Glaive Prime). only these five pages say it, the rest only list the explosion's procs
+const GLAIVE_THROW_PROCS = {
+  Glaive: ['impact'],
+  'Glaive Prime': ['impact', 'slash'],
+  Xoris: ['impact'],
+  Halikar: ['impact'],
+  'Halikar Wraith': ['impact'],
+}
+const glaiveDetonation = (weapon, attack) => {
+  if (weapon.name in GLAIVE_DETONATION_PROCS && /Recall Explosion$/.test(attack.name)) return { heavy: true, windUp: null, forcedProcs: GLAIVE_DETONATION_PROCS[weapon.name] }
+  if (weapon.name in GLAIVE_THROW_PROCS && /^(Charged )?Throw$/.test(attack.name)) return { forcedProcs: GLAIVE_THROW_PROCS[weapon.name] }
+  // wiki Glaive (Weapon Type), Bugs: "standing throw explosions through volatile mods seem to always apply Heavy Attack's
+  // double critical chance bonus". Underframe's own Bounce Explosion mode does it too. still not a heavy (no combo)
+  if (weapon.name in GLAIVE_DETONATION_PROCS && /Throw Bounce Explosion$/.test(attack.name)) return { heavyCrit: true }
+  return {}
+}
 
 // beams (wiki Multishot): "additional beams that hit the same target instead merge into a singular damage tick".
 // the data has no beam flag, so a beam is a hit-scan attack on a Held-trigger weapon, or one named Held/Beam
@@ -581,6 +594,24 @@ writeFileSync(new URL('modSets.json', outDir), JSON.stringify(modSets))
 writeFileSync(new URL('helminth.json', outDir), JSON.stringify(helminthAbilities))
 writeFileSync(new URL('arcanes.json', outDir), JSON.stringify(arcanes))
 writeFileSync(new URL('weapons.json', outDir), JSON.stringify(weapons))
+
+// stance combos, summed per combo from the wiki (scripts/wiki-stances.txt has the format). the calc uses them for
+// melee Normal Attack DPS: hits per second and damage multipliers from the combo instead of one plain swing
+const stanceSource = readFileSync(new URL('./wiki-stances.txt', import.meta.url), 'utf8').split('\n#\n')[0]
+const stances = Object.fromEntries(stanceSource.split('\n').filter((line) => line && !line.startsWith('#')).map((line) => {
+  const [name, weaponType, flags, ...combos] = line.split('~')
+  return [name, {
+    weaponType,
+    ...(flags.includes('U') ? { uniqueToWeapon: true } : {}),
+    ...(flags.includes('S') ? { stanceless: true } : {}),
+    combos: Object.fromEntries(combos.map((combo) => {
+      const [key, comboName, ...numbers] = combo.split('|')
+      const [duration, hits, multiplier, slash, impact, puncture, status, bleeds] = numbers.map(Number)
+      return [key, { name: comboName, duration, hits, multiplier, slash, impact, puncture, status, bleeds }]
+    })),
+  }]
+}))
+writeFileSync(new URL('stances.json', outDir), JSON.stringify(stances))
 writeFileSync(new URL('mods.json', outDir), JSON.stringify(mods))
 writeFileSync(new URL('enemies.json', outDir), JSON.stringify(enemies))
 

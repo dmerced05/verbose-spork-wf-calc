@@ -13,6 +13,9 @@ export interface Attack {
   statusChance: number // fraction
   damage: DamageMap
   heavy?: boolean // Heavy Attack / Heavy Slam: x combo multiplier, uses up the combo
+  heavyCrit?: boolean // not a heavy, but gets the heavy-only crit chance (True Steel's x2): glaive bounce explosions
+  forcedProcChance?: Record<string, number> // guaranteed procs on a share of hits (a stance combo's Bleeds), set by the calc
+  stanceNote?: string // which stance combo the Normal Attack was scored with, set by the calc
   windUp?: number | null // heavy attack wind-up in seconds
   heavyMultiplier?: number // Heavy Attack only: how much bigger than the normal attack it is
   forcedProcs?: string[] // guaranteed procs on every hit (glaive detonations: "Explosion inflicts a guaranteed Impact and Slash proc")

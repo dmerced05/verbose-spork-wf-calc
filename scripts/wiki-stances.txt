@@ -1,0 +1,113 @@
+# wiki Module:Stances/data (combo hits, damage multipliers, forced procs, "Length @ 1.0 Attack Speed") summed per combo,
+# and Module:Weapons/data/melee (Class). pulled 2026-11-04. conclave-only stances and combos without a length are left out
+# stance~weapon type~flags (U unique to weapon, S stanceless)~combo|name|length s|hits|total damage multiplier|slash x|impact x|puncture x|status x|bleed procs
+# the x columns are damage-weighted averages over the combo's hits (SlashMultiplier etc. in the wiki data)
+Assault Saw~Assault Saw~S~Forward|Ghoul Rush|2.83|4|4|1.25|1|1|1|0~Block|Ghoul Rush|2.83|4|4|1.25|1|1|1|0~Forward Block|Ghoul Rush|2.83|4|4|1.25|1|1|1|0
+Astral Twilight~Glaive~~Neutral|Morning Sun|4.25|10|22|1.136|1.136|1.136|1|0~Forward|Midnight Cloud|3.4|5|6|1.25|1.25|1.25|1|0~Block|Rising Moon|3.5|7|16|1.063|1.063|1.063|1|2~Forward Block|Falling Star|3.2|8|12|1.25|1.25|1.25|1|0
+Atlantis Vulcan~Nunchaku~~Neutral|Molten Whirlpool|3.45|16|10.5|1|1|1|1|0~Forward|Searing Undertow|3.25|10|7.5|1|1|1|1|0~Block|Infernal Maelstrom|3.35|18|15.5|1|1|1|1|0~Forward Block|Blazing Vortex|4.1|18|15.5|1|1|1|1|0
+Azothane~Two-Handed Nikana~U~Block|Azothane Block (unofficial)|3.1|1|0.5|1|1|1|1|0
+Blade and Whip~Blade and Whip~S~Neutral|Claws of the Drake|4.25|10|23|1|1|1|1|2~Forward|Claws of the Drake|4.25|10|23|1|1|1|1|2~Block|Claws of the Drake|4.25|10|23|1|1|1|1|2~Forward Block|Claws of the Drake|4.25|10|23|1|1|1|1|2
+Bleeding Willow~Polearm~~Neutral|Lethal Gust|0.95|4|5|1|1|1|1|0~Forward|Lethal Gust|0.95|4|5|1|1|1|1|0~Block|Lethal Gust|0.95|4|5|1|1|1|1|0~Forward Block|Drifting Steel|3.5|8|16|1.063|1|1|1|1
+Blind Justice~Nikana~~Neutral|Guiding Light|2.6|8|19|1.263|1|1|1|1~Forward|Zatōs Creed|3.05|7|13|1|1|1|1.143|0~Block|Destined Path|1.7|6|12|1.333|1|1|1|1~Forward Block|Heeding Call|2.45|9|15|1.2|1|1|1|0
+Brutal Tide~Sparring~~Neutral|Inferno|2.15|8|14|1|1|1|1|0~Forward|Inferno|2.15|8|14|1|1|1|1|0~Block|Inferno|2.15|8|14|1|1|1|1|0~Forward Block|Rushing Fire|3.85|9|18|1|1|1|1|0
+Bullet Dance~Gunblade~~Neutral|Automatic Rhumba|4.5|11|19|1.197|1.197|1.197|1|2~Forward|Magnum Mambo|3|6|10|1.2|1.2|1.2|1|0~Block|Samba Slash|3|6|8|1.156|1.156|1.156|1|1~Forward Block|Lead Tango|2.8|7|13|1.192|1.192|1.192|1|2
+Burning Wasp~Whip~~Neutral|Sparking Torture|1.9|2|6|1|1|1|1|0~Forward|Buzzing Sting|3|4|5|1|1|1|1|0~Block|Sparking Torture|1.9|2|6|1|1|1|1|0~Forward Block|Guided Claw|1.8|2|6|1|1|1|1|0
+Butcher's Revelry~Assault Saw~~Neutral|Rictus' Wrath|4.93|4|11|1.25|1|1|1|2~Forward|Ghoul Rush|2.83|4|4|1.25|1|1|1|0~Block|Reciprocator|5.75|10|17|1|1|1|1|3~Forward Block|Rip 'N Ride|3.8|4|7|1|1|1|1|0
+Carving Mantis~Dual Swords~~Neutral|Rapid Incisions|3.9|8|19|1.171|1|1|1|3~Forward|Ambush Predator|2.35|8|11|1.182|1|1|1|0~Block|Biting Mandibles|2.45|7|12|1.167|1|1|1|1~Forward Block|Dire Courtship|1.2|4|8|1|1|1|1|0
+Clashing Forest~Staff~~Neutral|Resolute Flurry|1.95|8|13.5|1|1|1|1|0~Forward|Skyward Limb|2.05|4|5|1|1|1|1|0~Block|Resolute Flurry|1.95|8|13.5|1|1|1|1|0~Forward Block|Battering Roots|2.1|4|10|1|1|1|1|0
+Cleaving Whirlwind~Heavy Blade~~Neutral|Crowd Fall|2.25|4|13|1|1|1|1|0~Forward|Broken Bull|5.7|11|15|1|1|1|1|0~Block|Drifting Stampede|1.9|3|10|1.225|1|1|1|0~Forward Block|Sundered Tusk|2.7|9|19|1.197|1|1|1|0
+Coiling Viper~Whip~~Neutral|Whistling Wind|2.7|5|10|1|1|1|1|0~Forward|Whistling Wind|2.7|5|10|1|1|1|1|0~Block|Whistling Wind|2.7|5|10|1|1|1|1|0~Forward Block|Tumbling King|2.3|2|5|1|1.1|1|1|0
+Crimson Dervish~Sword~~Neutral|Twisting Flurry|2|5|14|1.143|1|1|1|0~Forward|Crimson Orbit|2|4|6|1|1|1|1|0~Block|Twisting Flurry|2|5|14|1.143|1|1|1|0~Forward Block|Coiling Impale|1.5|3|8|1|1|1|1|1
+Crossing Snakes~Dual Swords~~Neutral|East to West|1.35|5|9|1|1|1|1|1~Forward|Lacerating Leap|1.85|7|9|1|1|1|1|0~Block|Twin Fang|2.4|6|8|1|1|1|1|2~Forward Block|Northern Coil|2.2|6|10|1|1|1|1|0
+Crushing Ruin~Hammer~~Neutral|Raging Whirlwind|3|5|15|1|1.3|1|1|0~Forward|Tidal Force|2.6|5|8|1|1|1|1|0~Block|Winding Temper|2.25|4|10|1|1|1|1|0~Forward Block|Shattered Village|4.25|9|18|1|1.111|1|1|0
+Cyclone Kraken~Machete~~Neutral|Gale Triton|4.1|7|17|1.206|1.206|1.206|1|0~Forward|Leviathan Rain|1.95|5|5|1.2|1.2|1.2|1|0~Block|Thunder Hydra|2.3|4|11|1.318|1.318|1.318|1|0~Forward Block|Lightning Siren|2.3|5|11|1|1|1|1|1
+Decisive Judgement~Nikana~~Neutral|Swift Retribution|2.65|5|14|1|1|1|1.1|1~Forward|Windless Cuts|0.9|2|3|1|1|1|1|0~Block|Silent Acumen|1.55|2|8|1|1|1|1|0~Forward Block|Consent Decree|1.65|4|10|1.4|1|1|1.5|0
+Defiled Snapdragon~Blade and Whip~~Neutral|Claws of the Drake|4.25|10|23|1|1|1|1|2~Forward|Soul of the Leviathan|4.1|16|20|1|1|1|1|0~Block|Fangs of the Lindwurm|1.35|1|5|1|1|1|1|0~Forward Block|Heart of the Naga|4.35|8|13|1|1|1|1|2
+Dual Nikanas~Dual Nikanas~S~Neutral||2.37|6|11|1|1|1.045|1|1~Forward||2.37|6|9.25|1|1|1|1|0~Block||2.37|6|11|1|1|1.045|1|1~Forward Block||2.37|6|11|1|1|1.045|1|1
+Dual Swords~Dual Swords~S~Neutral||2.37|6|12|1|1|1.125|1|0~Forward||2.37|6|7|1|1|1.143|1|0~Block||2.37|6|12|1|1|1.125|1|0~Forward Block||2.37|6|12|1|1|1.125|1|0
+Eleventh Storm~Sword and Shield~~Neutral|Striking Thunder|3.5|7|19|1.053|1.158|1|1|1~Forward|Devouring Beast|1.15|3|5|1|1|1|1|0~Block|Diamond Deus|2|6|10|1|1|1|1|0~Forward Block|Bide and Bleed|1.8|5|9|1|1|1|1|0
+Exalted Blade~Sword~~Neutral|Cutting Poise|3.2|10|21|1|1|1|1|0~Forward|Lancing Justice|1.4|8|8|1|1|1|1|0~Block|Equal Laceration|2.8|6|16|1|1|1|1|0~Forward Block|Virtuous Slash|2.4|8|12|1|1|1|1|0
+Final Harbinger~Sword and Shield~~Neutral|Null Warning|3.05|11|21|1|1|1|1|2~Forward|Impending Battery|2.65|10|15|1|1|1|1|0~Block|Systemic Shred|1.8|5|10|1|1|1|1|0~Forward Block|Dark Light|4.05|14|20|1|1|1|1|0
+Flailing Branch~Staff~~Neutral|Rising Falls|2.35|3|9|1|1|1|1|0~Forward|Battered Thread|1.85|4|10|1.03|1.03|1|1|0~Block|Rising Falls|2.35|3|9|1|1|1|1|0~Forward Block|Autumn Leaf|2.05|4|9|1|1|1|1|0
+Four Riders~Claws~~Neutral|Aggravated Swarm|2.3|5|13|1|1|1|1|1~Forward|Hungering Encroachment|1.7|5|7|1|1|1|1|0~Block|Eternal Fall|2.1|5|16|1|1|1|1|0~Forward Block|Raging Conflict|3|8|15|1|1|1|1|1
+Fracturing Wind~Fist~~Neutral|Rolling Gale|1.55|3|9|1|1|1|1|0~Forward|Gaining Humility|1.8|4|7|1|1|1|1|0~Block|Rising Wind|1.45|4|10|1|1|1|1|0~Forward Block|Trailing Doom|1.9|6|12|1|1|1|1|0
+Gaia's Tragedy~Fist~~Neutral|River's Grief|3.65|6|18|1.444|1|1|1|0~Forward|Ocean's Contempt|1.65|6|7|1.429|1|1|1|0~Block|Forest's Remorse|3.8|8|15|1.533|1|1|1|0~Forward Block|Mountain's Rage|2.3|7|15|1.867|1|1|1|0
+Galeforce Dawn~Heavy Scythe~~Neutral|Stormreaper|3.06|3|9|1|1|1|1|1~Forward|Bleak Winnowing|2.66|6|6|1|1|1|1|0~Block|Stormreaper|3.06|3|9|1|1|1|1|1~Forward Block|Thundering Peaks|4.86|8|14|1|1|1|1|2
+Gemini Cross~Tonfa~~Neutral|Vagrant Blight|4.6|18|21.5|1|1|1|1|2~Forward|Cold Vendetta|1.2|3|4|1|1|1|1|0~Block|Blind Tormentor|2.85|11|17|1|1|1|1|2~Forward Block|Baleful Sin|2.3|7|13|1|1|1|1|0
+Gleaming Talon~Glaive~~Neutral|Mercury Vortex|4.3|8|21|1.019|1.019|1.019|1|0~Forward|Ruin|2|5|6|1.042|1.042|1.042|1|0~Forward Block|Silver Reach|2.6|7|13|1|1|1|1|1
+Gnashing Payara~Dual Daggers~~Neutral|Pincer Strike|2.5|5|14|1|1|1|1|2~Forward|Cheetah's Guile|1.15|4|5|1|1|1|1|0~Block|Pincer Strike|2.5|5|14|1|1|1|1|2~Forward Block|Flash Flurry|1.55|4|11|1.545|1|1|1|0
+Grim Fury~Sparring~~Neutral|Fanning Flame|1.9|5|13|1|1|1|1|0~Forward|Bright Blaze|1.75|6|10|1|1.05|1|1|0~Block|Fanning Flame|1.9|5|13|1|1|1|1|0~Forward Block|Burning Desire|1.4|2|6|1|2|1|1|0
+Gunblade~Gunblade~S~Neutral|Vagabond Blitz|2.5|5|7|1|1|1|1|0~Forward|Vagabond Blitz|2.5|5|7|1|1|1|1|0~Block|Vagabond Blitz|2.5|5|7|1|1|1|1|0~Forward Block|Vagabond Blitz|2.5|5|7|1|1|1|1|0
+Harrowing Spire~Bayonet~~Neutral|Rennen|2.1|4|7|1|1|1|1|0~Forward|Piercing Advance|2.27|5|8|1|1|1|1|0~Block|Vamplate Levée|1.55|2|6|1|1|1|1|0~Forward Block|Relentless Onset|3.03|5|13|1|1|1|1|0
+Heavy Blade~Heavy Blade~S~Neutral|Crowd Fall|2.25|3|12|1|1|1|1|0~Forward|Crowd Fall|2.25|3|12|1|1|1|1|0~Block|Crowd Fall|2.25|3|12|1|1|1|1|0~Forward Block|Crowd Fall|2.25|3|12|1|1|1|1|0
+Heavy Scythe~Heavy Scythe~S~Neutral|Combo 1 (unofficial)|1.905|2|7|1|1|1|1|0~Forward|Combo 2 (unofficial)|1.437|3|3|1|1|1|1|0~Block|Combo 1 (unofficial)|1.905|2|7|1|1|1|1|0~Forward Block|Combo 1 (unofficial)|1.905|2|7|1|1|1|1|0
+High Noon~Gunblade~~Neutral|Final Showdown|3.25|8|13|1.173|1.173|1.173|1|2~Forward|Vagabond Blitz|2.5|6|8|1|1|1|1|0~Block|Tomahawk Double-Tap|1.75|5|16|1.234|1.234|1.234|1|0~Forward Block|Desperado Zeal|1.85|6|6|1|1|1|1|2
+Homing Fang~Dagger~~Neutral|Cutting Arches|2.8|7|17|1.176|1|1|1|1~Forward|Life Eater|1.4|4|4|1|1|1.25|1|0~Block|Cutting Arches|2.8|7|17|1.176|1|1|1|1~Forward Block|Lashing Forward|1.7|5|8|1|1|1|1|1
+Hysteria~Valkyr Talons~~Neutral|Fervor|2.85|9|19|1|1|1|1|0~Forward|Rage|1.7|4|8|1|1|1|1|0~Block|Delirium|2.4|9|25.5|1|1|1|1|0~Forward Block|Madness|3.6|14|29|1|1|1|1|0
+Iron Phoenix~Sword~~Neutral|Wings and Beak|1.35|3|7|0.614|0.614|1|1|1~Forward|Double Slash|0.65|2|3|1|1|1|1|0~Block|Wings and Beak|1.35|3|7|0.614|0.614|1|1|1~Forward Block|Taking Flight|1.8|4|9|1|1|1|1|0
+Korumm~Polearm~U~Block|Korumm Block (unofficial)|4.15|3|9|1|1|1|1|1
+Malicious Raptor~Claws~~Neutral|Jagged Gash|3.35|11|19|1|1|1|1|2~Forward|Wicked Slash|1.8|6|9|1|1|1|1|0~Block|Venging Thrash|2.95|5|12|1|1|1|1|1~Forward Block|Lethal Clash|3.7|8|13|1|1|1|1|1
+Mountain's Edge~Dual Nikanas~~Neutral|Rise and Fall|2.8|7|21|1|1|1|1|0~Forward|Loyal Blades|2.7|9|10|1|1|1|1|0~Block|Rise and Fall|2.8|7|21|1|1|1|1|0~Forward Block|Steel Eclipse|3.9|10|22|1|1|1|1|0
+Nepheri~Dual Daggers~U~Neutral|Nepheri Neutral (unofficial)|2.87|8|10|1|1|1|1|2
+Nunchaku~Nunchaku~S~Neutral|Searing Undertow|3.25|10|7.5|1|1|1|1|0~Forward|Searing Undertow|3.25|10|7.5|1|1|1|1|0~Block|Searing Undertow|3.25|10|7.5|1|1|1|1|0~Forward Block|Searing Undertow|3.25|10|7.5|1|1|1|1|0
+Pointed Wind~Dagger~~Neutral|Parting Edge|1.55|5|12|1|1|1|1|1~Forward|Viper's Bite|1.25|4|7|1.5|1|1.143|1|0~Block|Parting Edge|1.55|5|12|1|1|1|1|1~Forward Block|Viper's Bite|1.25|4|7|1.5|1|1.143|1|0
+Primal Fury~Iron Staff~~Neutral|Falling Oak Buster|3.2|11|16|1|1|1|1|0~Forward|Spinning Crash Technique|2.8|7|10|1|1|1|1|0~Block|Rolling Boulder Rush|3.95|11|18|1|1|1|1|0~Forward Block|Cyclone Lightning Strike|1.9|2|5|1|1|1|1|0
+Ravenous Wraith~Shadow Claws~~Neutral|Cleaving Claws|2.8|7|15|1|1|1|1|3~Forward|Soul Thresher|2.3|6|6|1|1|1|1|0~Block|Reaping Cyclone|2.4|12|20|1|1|1|1|3~Forward Block|Void Torrent|3.1|10|14|1|1|1|1|0
+Reaping Spiral~Scythe~~Neutral|Eternal Nocturne|2.9|5|16|1|1|1.078|1|1~Forward|Reclaimation|1.85|3|6|1.133|1.05|1|1|0~Block|Eternal Nocturne|2.9|5|16|1|1|1.078|1|1~Forward Block|Abyssal Automaton|2.1|4|9|1|1|1|1|1
+Rending Crane~Heavy Blade~~Neutral|Skull Splitter|1.85|4|11|1|1|1|1|0~Forward|Lashing Tempest|2.35|5|10|1.15|1|1|1|0~Block|Landing Dragon|1.05|1|5|1|1|1|1|0~Forward Block|Rampaging Boar|2.3|6|12|1|1|1|1|0
+Scythe~Scythe~S~Neutral|Reclamation|1.85|3|6|1.133|1.05|1|1|0~Forward|Reclamation|1.85|3|6|1.133|1.05|1|1|0~Block|Reclamation|1.85|3|6|1.133|1.05|1|1|0~Forward Block|Reclamation|1.85|3|6|1.133|1.05|1|1|0
+Seismic Palm~Fist~~Neutral|Quaking Touch|1.55|5|13|1|1|1|1|0~Forward|Erupting Vulcan|1.35|4|7|1|1|1|1|0~Block|Echoing Hands|2.05|6|13|1|1|1|1|0~Forward Block|Sudden Rockfall|1.7|5|11|1|1|1|1|0
+Serene Storm~Desert Wind~~Neutral|Trespass Denied|3.5|10|10|1|1|1|1|0~Forward|Father's Lesson|2.5|6|6|1|1|1|1|0~Block|Patience Shattered|4.1|13|13|1|1|1|1|0~Forward Block|Final Sunrise|3.15|9|9|1|1|1|1|0
+Shattering Storm~Hammer~~Neutral|Falling Rock|4.9|10|25|1|1.08|1|1|0~Forward|Pounding Smite|2.6|4|9|1|1.278|1|1|0~Block|Rising Thunder|3.3|4|12|1|1|1|1|0~Forward Block|Smashing Fury|3.55|7|19|1|1.184|1|1|0
+Shimmering Blight~Polearm~~Neutral|Slashing Wind|0.95|4|5|1|1|1|1|0~Forward|Slashing Wind|0.95|4|5|1|1|1|1|0~Block|Slashing Wind|0.95|4|5|1|1|1|1|0~Forward Block|Howling Gale|2.55|9|13|1|1|1|1|1
+Sinking Talon~Dual Daggers~~Neutral|Lashing Panther|1.15|4|4|1|1|1|1|0~Forward|Lashing Panther|1.15|4|4|1|1|1|1|0~Block|Lashing Panther|1.15|4|4|1|1|1|1|0~Forward Block|Rising Lion|3.05|10|16|1.063|1|1|1|1
+Slicing Feathers~Warfan~~Neutral|Scathing Plume|3.6|8|19|1|1|1|1|1~Forward|Razor Fin|1.65|7|10|1|1|1|1|0~Block|Cutting Fringe|2.15|3|8|1|1|1|1|0~Forward Block|Serrated Crest|3.55|13|18|1|1|1|1|2
+Sovereign Outcast~Tonfa~~Neutral|Rogue Edict|2.85|15|22|1|1|1|1|4~Forward|Vagrant Behest|1.75|9|9|1|1|1|1|0~Block|Scout Command|1.25|3|9|1|1|1|1|0~Forward Block|Villain Rule|3|12|15|1.05|1|1|1|0
+Spinning Needle~Dual Daggers~~Neutral|True Kiss|1.85|4|11|1|1|1|1|2~Forward|Accursed Whispers|2.15|10|13|1|1|1|1|0~Block|Fey Intervention|1.1|3|7|1|1|1|1|0~Forward Block|Fey Intervention|2.5|8|14|1|1|1|1|1
+Stalking Fan~Scythe~~Neutral|Shadow Wing|4.9|5|15|1.083|1.083|1.083|1|0~Forward|Many Tears|1.25|2|4|1.075|1.075|1|1|0~Block|Shadow Wing|4.9|5|15|1.083|1.083|1.083|1|0~Forward Block|Dying Light|2.4|5|10|1.03|1|1|1|1
+Stinging Thorn~Dagger~~Neutral|Carving Spike|3.95|10|22|1|1|1|1|3~Forward|Piercing Horn|1.8|5|8|1|1|1|1|0~Block|Impaling Quill|2.35|5|12|1|1|1|1|1~Forward Block|Lacerating Spine|2.7|6|12|1|1|1|1|1
+Sundering Weave~Machete~~Neutral|Rapid Current|1.7|3|9|1.278|1.278|1.278|1|0~Forward|Cresting Surf|2|3|5|1|1|1|1|0~Block|Coming Tide|1.2|1|5|1.5|1.5|1.5|1|0~Forward Block|Flash Flood|2.4|5|9|1.222|1.222|1.222|1|1
+Swirling Tiger~Dual Swords~~Neutral|Winding Claws|2.05|9|11|1|1|1|1|1~Forward|Raking Flesh|1.6|8|9|1|1|1|1|0~Block|Winding Claws|2.05|9|11|1|1|1|1|1~Forward Block|Dancing Hunter|2.3|10|14|1|1|1|1|0
+Swooping Falcon~Sword~~Neutral|Diving Kestrel|2|5|12|1|1|1|1|1~Forward|Swift Pursuit|1.95|4|6|1|1|1|1|0~Block|Keen Broadwing|2.75|4|12|1|1|1|1|0~Forward Block|Slicing Talon|2.05|4|10|1|1|1|1|1
+Sword and Shield~Sword and Shield~S~Neutral|Devouring Beast|1.15|3|5|1|1|1|1|0~Forward|Devouring Beast|1.15|3|5|1|1|1|1|0~Block|Devouring Beast|1.15|3|5|1|1|1|1|0~Forward Block|Devouring Beast|1.15|3|5|1|1|1|1|0
+Tempo Royale~Heavy Blade~~Neutral|August Mesto|4.65|9|21|1.083|1|1|1|0~Forward|Majestic Abandon|3.4|6|8|1.063|1|1|1|0~Block|Bold Reprise|1.8|2|7|1.214|1|1|1|0~Forward Block|Resplendent Calma|2.1|4|11|1.068|1|1|1|0
+Tranquil Cleave~Nikana~~Neutral|Breathless Lunge|3.8|6|13|1.308|1|1.192|1.292|1~Forward|Windless Cut|1.9|4|7|1.143|1|1|1|0~Block|Hook and Eye|1.2|2|8|1|1|1|1|0~Forward Block|Beyond Reproach|2.6|3|9|1.067|1|1|1|0
+Twirling Spire~Polearm~~Neutral|Cresting Peak|3.3|5|14|1|1|1|1|1~Forward|Spiraling Pinnacle|2.5|9|11|1|1|1|1|0~Block|Summit Plunge|2|8|12|1|1|1|1|0~Forward Block|Vaulting Apex|1.75|3|8|1|1|1|1|0
+Two-Handed Nikana~Two-Handed Nikana~S~Neutral|Cutting Thrice|2.55|3|8|1|1|1|1|0~Forward|Cutting Thrice|2.55|3|8|1|1|1|1|0~Block|Cutting Thrice|2.55|3|8|1|1|1|1|0~Forward Block|Cutting Thrice|2.55|3|8|1|1|1|1|0
+Vengeful Revenant~Sword~~Neutral|Impending Dread|3.15|5|14|1|1|1|1|0~Forward|Lone Vengeance|1.55|4|6|1|1|1|1|1~Block|Rising Hate|3|5|11|1|1|1|1|1~Forward Block|Drowning Despair|2.3|6|11|1|1|1|1|0
+Verdilac~Whip~U~Block|Verdilac Block (unofficial)|4|8|28|1|1|1|1|2
+Vermillion Storm~Claws~~Neutral|Flurry Rose|3.95|12|26|1|1|1|1|2~Forward|Crimson Hurricane|1.9|7|9|1|1|1|1|0~Block|Ruby Wind|2.5|7|13|1|1|1|1|0~Forward Block|Cardinal Breeze|3.4|20|16|1|1|1|1|0
+Votive Onslaught~Warfan~~Neutral|Purging Drive|2.57|10|20|1|1|1|1|1~Forward|Clarion Rush|1.84|10|10|1|1|1|1|0~Block|Penitent Offering|2.67|8|16|1|1|1|1|0~Forward Block|Rending Lamentation|2.78|10|19|1|1|1|1|0
+Vulpine Mask~Rapier~~Neutral|Assailant Guise|3|7|16|1|1|1|1|2~Forward|Duel Secrets|3|7|8|1|1|1|1|0~Block|Deceptive Lunge|1.45|3|9|1|1|1|1|0~Forward Block|Hidden Flourish|2.5|7|14|1|1|1|1|1
+Whip~Whip~S~Neutral|Sparking Torture|1.9|2|6|1|1|1|1|0~Forward|Buzzing Sting|3|4|5|1|1|1|1|0~Block|Sparking Torture|1.9|2|6|1|1|1|1|0~Forward Block|Sparking Torture|1.9|2|6|1|1|1|1|0
+Wise Razor~Two-Handed Nikana~~Neutral|Threshing Grain|4.4|6|17|1|1|1.176|1|1~Forward|Cutting Thrice|2.55|3|8|1|1|1|1|0~Forward Block|Calling Thunder|3.5|6|15|1|1|1|1|1
+#
+Sword and Shield=Ack & Brunt,Argo & Vel,Cobra & Crane,Cobra & Crane Prime,Sigma & Octantis,Silva & Aegis,Silva & Aegis Prime,Tak & Lug,Tenet Agendus
+Polearm=Amanata,Cassowar,Edun,Guandao,Guandao Prime,Kesheg,Korumm,Lesion,Orthos,Orthos Prime,Pupacyst,Serro,Sydon,Tonbo,Vaykor Sydon
+Staff=Amphis,Bo,Bo Prime,Broken Scepter,Cadus,Mk1-Bo,Tipedo,Tipedo Prime
+Scythe=Anku,Caustacyst,Coda Caustacyst,Ether Reaper,Galariak Prime,Harmony,Hate,Reaper Prime,Tenet Grigori,Venato,Venato Prime
+Fist=Ankyros,Ankyros Prime,Furax,Furax Wraith,Mk1-Furax,Ruvox,Tekko,Tekko Prime
+Hammer=Arca Titron,Coda Motovore,Ekhein,Fragor,Fragor Prime,Heliocor,Jat Kittag,Kuva Shildeg,Magistar,Sampotes,Sancti Magistar,Sibear,Synoid Heliocor,Volnus,Volnus Prime,Wolf Sledge
+Warfan=Arum Spinosa,Gunsen,Gunsen Prime,Quassus,Quassus Prime,Vericres
+Whip=Atterax,Galvacord,Lecta,Scoliac,Secura Lecta,Spinnerex,Verdilac
+Two-Handed Nikana=Azothane,Pennant,Tatsu,Tatsu Prime,Tenet Livia
+Tonfa=Boltace,Kronen,Kronen Prime,Ohma,Praedos,Prisma Ohma,Telos Boltace,Tonkkatt
+Sword=Broken War,Coda Mire,Cronus,Dakra Prime,Dark Sword,Ether Sword,Heat Sword,Jaw Sword,Krohkur,Mire,Pangolin Prime,Pangolin Sword,Plasma Sword,Prisma Skana,Skana,Skana Prime
+Dagger=Ceramic Dagger,Dark Dagger,Heat Dagger,Innodem,Karyst,Karyst Prime,Rakta Dark Dagger,Rumblejack,Sheev
+Glaive=Cerata,Coda Pathocyst,Falcor,Glaive,Glaive Prime,Halikar,Halikar Wraith,Kestrel,Kestrel Prime,Orvius,Pathocyst,Xoris
+Blade and Whip=Ceti Lacera,Dorrclave,Jat Kusar,Lacera,Mios
+Sparring=Coda Hirudo,Hirudo,Kogake,Kogake Prime,Korrudo,Obex,Prisma Obex
+Heavy Scythe=Corufell,Corufell Prime,Hespar,Pride,Thalys,Wrath
+Dual Swords=Dark Split-Sword (Dual Swords),Dex Dakra,Dual Cleavers,Dual Ether,Dual Heat Swords,Dual Ichor,Dual Kamas,Dual Kamas Prime,Dual Keres,Dual Keres Prime,Dual Raza,Dual Skana,Dual Viciss,Dual Zoren,Dual Zoren Prime,Nami Skyla,Nami Skyla Prime,Prisma Dual Cleavers,Twin Basolk,Twin Krohkur
+Heavy Blade=Dark Split-Sword (Heavy Blade),Galatine,Galatine Prime,Gram,Gram Prime,Masseter,Masseter Prime,Paracesis,Sarofang,Sarofang Prime,Scindo,Scindo Prime,Tenet Exec,Vitrica,War,War Prime,Zenistar
+Exalted Weapon=Desert Wind,Desert Wind Prime,Diwata,Diwata Prime,Exalted Blade,Exalted Prime Blade,Exalted Umbra Blade,Iron Staff,Iron Staff Prime,Landslide Fists,Landslide Fists Prime,Shadow Claws,Shadow Claws Prime,Shadow Clones,Shadow Clones Prime,Shattered Lash,Shattered Lash Prime,Valkyr Prime Talons,Valkyr Talons,Whipclaw,Whipclaw Prime
+Rapier=Destreza,Destreza Prime,Endura
+Nikana=Dex Nikana,Dragon Nikana,Nikana,Nikana Prime,Skiajati,Syam
+Dual Daggers=Ether Daggers,Fang,Fang Prime,Nepheri,Okina,Okina Prime
+Claws=Garuda Prime Talons,Garuda Talons,Keratinos,Ripkas,Venka,Venka Prime
+Machete=Gazal Machete,Kama,Kreska,Machete,Machete Wraith,Nami Solo,Prisma Machete,Prova,Prova Vandal,Slaytra
+Assault Saw=Ghoulsaw,Kuva Ghoulsaw
+Nunchaku=Ninkondi,Ninkondi Prime,Pulmonars,Shaku
+Gunblade=Redeemer,Redeemer Prime,Sarpa,Stropha,Vastilok
+Dual Nikanas=Sun & Moon
+Bayonet=Vinquibus (Melee)

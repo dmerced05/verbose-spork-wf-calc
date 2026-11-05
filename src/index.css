@@ -679,3 +679,18 @@ select { max-width: 100%; }
 .cap-riven { display: grid; gap: 8px; margin-top: 10px; }
 .cap-riven .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cw-type { font-size: 0.78rem; color: var(--muted); text-transform: none; }
+
+/* ability damage cards (Warframe panel) and the Ability damage board */
+.ability-damage { margin-top: 6px; padding: 6px 8px; border-top: 1px dashed var(--border); display: grid; gap: 4px; }
+.ability-damage-numbers { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.ability-damage-lines { margin: 0; padding-left: 16px; font-size: 0.78rem; }
+.ability-damage details { font-size: 0.78rem; }
+.ability-damage details ul { margin: 4px 0 0; padding-left: 16px; }
+.ability-board { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.ability-board th, .ability-board td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ability-board td:nth-child(3), .ability-board td:nth-child(4), .ability-board td:nth-child(5) { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ability-board { table-layout: fixed; }
+.ability-board th:nth-child(1) { width: 32px; }
+.ability-board th:nth-child(2) { width: 22%; }
+.ability-board th:nth-child(3), .ability-board th:nth-child(4), .ability-board th:nth-child(5) { width: 120px; }
+.ability-board td:last-child { white-space: normal; overflow-wrap: anywhere; }

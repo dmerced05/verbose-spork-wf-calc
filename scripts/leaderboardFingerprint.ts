@@ -48,6 +48,10 @@ const ENGINE_FILES = [
   'src/optimizer/leaderboardWeapon.ts',
   'src/optimizer/leaderboardTypes.ts',
   'src/types.ts',
+  // stance combos: the class's stances decide melee Normal Attack DPS
+  'src/data/stances.ts',
+  'src/data/stances.json',
+  'src/data/weaponClasses.ts',
 ]
 
 // modules that mix generic helpers with per-weapon tables. their exports go into the engine hash *minus* the

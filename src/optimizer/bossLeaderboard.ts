@@ -17,7 +17,7 @@ export const BOSS_BOARD = 'boss'
 export const BOSS_BOARDS: BoardSpec[] = [{ key: BOSS_BOARD, objective: objectiveById('sustained'), allowFireRateMods: true }]
 export const BOSS_SCENARIO = { target: { ...SCENARIO_TARGET, statusMode: 'capped' as const }, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS }
 export const BOSS_DESCRIPTION =
-  'Boss target: status capped at 4 stacks of each type, no kills (every on-kill conditional off: Deadhead, Merciless, Galvanized stacks, Bladed Rounds, kill-based passives), Devouring Attrition off (bosses ignore it), weapons that don\'t work on bosses left off (Shadow Clones, Shattered Lash), no faction, no armor, body shots, sustained DPS over a 10 s fight, melee at max combo, rank 30 with enough Forma, no rivens.'
+  'Boss target: status capped at 4 stacks of each type, no kills (every on-kill conditional off: Deadhead, Merciless, Galvanized stacks, Bladed Rounds, kill-based passives), Devouring Attrition off (bosses ignore it), weapons that don\'t work on bosses left off (Shadow Clones, Shattered Lash), no faction, no armor, body shots, sustained DPS over a 10 s fight, melee Normal Attacks as the best stance combo, melee at max combo, rank 30 with enough Forma, no rivens.'
 
 // perks bosses ignore. wiki Laetum, Devouring Attrition: "Multiplicative to base damage sources such as Hornet Strike.
 // Bosses ignore this perk." Phenmor has the same perk, so it's out there too. Felarx's Devastating Attrition has no

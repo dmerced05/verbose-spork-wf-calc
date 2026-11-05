@@ -31,6 +31,7 @@ import { TargetPanel, resolveArmor, resolveEnemy } from './components/TargetPane
 import type { Buffs, Debuffs, EquippedMod, TargetSettings } from './types'
 import type { LeaderboardEntry } from './optimizer/leaderboardTypes'
 import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from './optimizer/scenario'
+import { STANCES, bestCombo, comboLabel, stancesFor, usesStance } from './data/stances'
 
 // a leaderboard build to load into the calculator. the nonce lets the same entry be loaded twice in a row
 export interface BuildToLoad {
@@ -101,6 +102,8 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
   const [passiveStacks, setPassiveStacks] = useState<Record<string, number>>(() => defaultPassiveStacks(weaponsById.get(defaultWeaponId)!.name))
   const [bonusElement, setBonusElement] = useState<BonusElement | null>(null)
   const [heavyMode, setHeavyMode] = useState<HeavyMode>('biggestHit')
+  // melee Normal Attack stance combo: 'auto' = the best one, 'none' = one plain swing per attack speed
+  const [stancePick, setStancePick] = useState<string>('auto')
   // from the Warframe panel: strength/armor/abilities/auras, and how many Corrosive Projections your auras bring
   const [warframeState, setWarframeState] = useState<WarframeState | null>(null)
   const [warframeCorrosive, setWarframeCorrosive] = useState(0)
@@ -183,7 +186,10 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
     : null
   const wikiCo = resolveCoBehavior(weapon, attack)
   const coBehavior = coOverride === 'auto' ? wikiCo : { mode: coOverride, scale: 1, source: 'override' as const }
-  const calcInput = { weapon, attack, mods: equippedMods, arcane: equippedArcane, coBehavior, incarnonPerks, passives: selectedPassives, bonusElement, heavyMode, armor: resolveArmor(target),
+  const weaponStances = stancesFor(weapon)
+  const stance = stancePick === 'auto' ? null : stancePick === 'none' ? 'none' as const
+    : weaponStances.some((name) => stancePick.startsWith(`${name}|`)) ? { stance: stancePick.split('|')[0], combo: stancePick.split('|')[1] } : null
+  const calcInput = { weapon, attack, mods: equippedMods, arcane: equippedArcane, coBehavior, incarnonPerks, passives: selectedPassives, bonusElement, heavyMode, stance, armor: resolveArmor(target),
     debuffs: { ...debuffs, corrosiveProjections: Math.min(4, debuffs.corrosiveProjections + warframeCorrosive) },
     buffs: { ...buffs, warframe: warframeState ?? undefined } }
   // body and head are always both calculated so the results can show them side by side,
@@ -339,6 +345,20 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
                   id="combo" type="range" min={1} max={maxCombo} step={1} value={combo}
                   onChange={(event) => setBuffs({ ...buffs, combo: Number(event.target.value) })}
                 />
+                {usesStance(weapon, attack) && weaponStances.length > 0 && (
+                  <label title="Normal Attack DPS follows a stance combo on repeat: its hits per second and damage multipliers (wiki stance tables, length at 1.0 attack speed)">
+                    Stance combo
+                    <select value={stancePick} onChange={(event) => setStancePick(event.target.value)}>
+                      <option value="auto">Best combo ({(() => { const best = bestCombo(weapon); return best ? comboLabel(best) : 'none' })()})</option>
+                      {weaponStances.flatMap((name) => Object.entries(STANCES[name].combos).map(([combo, data]) => (
+                        <option key={`${name}|${combo}`} value={`${name}|${combo}`}>
+                          {comboLabel({ stance: name, combo })}: {data.hits} hits, {data.multiplier}x in {data.duration} s
+                        </option>
+                      )))}
+                      <option value="none">No stance math (one 100% swing per attack speed)</option>
+                    </select>
+                  </label>
+                )}
                 {attack.heavy && attack.heavyMultiplier && heavyComboFor(weapon.name) && (
                   <label title="This heavy hits more than once. Biggest hit = one damage instance, full heavy = every hit added up">
                     Heavy attack
@@ -441,6 +461,11 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
             isMelee={isMelee} weapon={weapon}
             onWarframeChange={(state, corrosive) => { setWarframeState(state); setWarframeCorrosive(corrosive) }}
             loadRequest={frameLoad}
+            abilityTarget={{
+              faction: target.faction, armor: resolveArmor(target),
+              debuffs: { ...debuffs, corrosiveProjections: Math.min(4, debuffs.corrosiveProjections + warframeCorrosive) },
+              health: scaledEnemy?.health ?? 0, shield: scaledEnemy?.shield ?? 0,
+            }}
           />
           </div>
         </div>

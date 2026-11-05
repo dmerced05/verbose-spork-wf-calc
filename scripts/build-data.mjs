@@ -232,6 +232,16 @@ const WIKI_TEXT_AMMO = {
   Scyotid: { Semi: 4 }, // the webbed snare alt-fire: "Consumes 4 ammo per shot"
   'Kuva Nukor': { 'Normal Attack': 0.5 }, // "Consumes 0.5 ammo per tick of damage"
 }
+// base numbers and innate headshot bonuses from the wiki's weapon modules (scripts/pull-wiki-data.py). the damage numbers
+// match the export everywhere I checked (scripts/compare-wiki-data.mjs), the headshot field is the part the export lacks
+const WIKI_WEAPONS = JSON.parse(readFileSync(new URL('./wiki-weapons.json', import.meta.url), 'utf8')).weapons
+function wikiHeadshot(weaponName, attackName) {
+  // merged attacks ("Normal Attack + Explosion") are worked out part by part, so only the exact names get it
+  const row = WIKI_WEAPONS[weaponName]?.attacks.find((attack) => attack.name === attackName)
+  const extra = row?.extraHeadshot
+  if (extra === undefined || extra === null) return {}
+  return { extraHeadshot: extra <= -1 ? null : extra }
+}
 function wikiExtras(weaponName, attackName) {
   const textAmmo = WIKI_TEXT_AMMO[weaponName]?.[attackName]
   if (textAmmo) return { ammoCost: textAmmo }
@@ -287,6 +297,7 @@ function toWeapon(weapon) {
       ...(isContinuous(weapon, attack) ? { continuous: true } : {}),
       ...multishotRule(weapon, attack),
       ...wikiExtras(weapon.name, attack.name),
+      ...wikiHeadshot(weapon.name, attack.name),
       ...(ALT_GATES[weapon.name]?.[attack.name] ? { altGate: ALT_GATES[weapon.name][attack.name] } : {}),
       // speargun throws reload after every throw (wiki: "Throwing the spear consumes 1 ammo, then reloads the weapon";
       // Tenet Ferrox: "a reload cycle must complete before it can fire or be thrown again")
@@ -360,6 +371,18 @@ const exaltedWeapons = readJson('Misc')
       weapon.rivenDisposition = null // the export gives them 1, but exalted weapons have no riven slot
     }
     if (/^Shadow Clones/.test(item.name)) weapon.attacks = weapon.attacks.map((attack) => ({ ...attack, forcedProcs: ['slash'], finisher: true }))
+    // Exalted Blade's energy waves (wiki Exalted_Blade): "Normal, slide, and aerial attacks will emit a 3 meter-wide energy wave
+    // ... Energy waves have the same base damage as the attacks that release them", "The energy waves and Exalted Blade itself
+    // are considered separate entities and will both deal damage separately". "Heavy attacks will emit 2 energy waves in a
+    // cross pattern", "Energy wave's damage does not scale off combo counter". waves fall off "linearly with distance from 100%
+    // to 0% between 0 and 70m", so these are point blank. the swing wave follows the stance like the swing that throws it
+    if (/^Exalted (Prime |Umbra )?Blade$/.test(item.name)) {
+      const swing = weapon.attacks.find((attack) => attack.name === 'Normal Attack')
+      const heavy = weapon.attacks.find((attack) => attack.name === 'Heavy Attack')
+      if (swing) weapon.attacks.push({ ...swing, name: 'Energy Wave', followsStance: true, wave: true })
+      // the heavy's wave: thrown on the heavy's wind-up (still a heavy for its rate and heavy mods), minus the combo
+      if (heavy) weapon.attacks.push({ ...heavy, name: 'Heavy Attack Energy Wave', wave: true, noCombo: true })
+    }
     // Noctua's Active Attack "needs a full meter, which takes 60 seconds to recharge. Primary hits reduce recharge by 1 second each".
     // firing the primary (1.5/s) the whole time, 60 - 1.5t = t gives one every 24 s
     if (item.name === 'Noctua') weapon.attacks = weapon.attacks.map((attack) => (attack.name === 'Active Attack' ? { ...attack, fireRate: 1 / 24 } : attack))
@@ -412,6 +435,8 @@ const NOT_WHOLE_SHOTS = new Set(['Coda Pox|Spore Impact', 'Neutralizer|Normal At
 // secondary projectiles that scatter, so on one target they mostly miss
 const EXTRA_WHOLE_SHOTS = {
   Bubonico: [['Burst', 'Radial Attack']], 'Coda Bubonico': [['Burst', 'Radial Attack']],
+  // a swing and the wave it throws hit the same target (point blank) as two separate hits
+  'Exalted Blade': [['Normal Attack', 'Energy Wave']], 'Exalted Prime Blade': [['Normal Attack', 'Energy Wave']], 'Exalted Umbra Blade': [['Normal Attack', 'Energy Wave']],
   Stug: [['Blob Embed', 'Blob Embed', 'Blob Explosion'], ['Incarnon Form Blob Embed', 'Incarnon Form Blob Embed', 'Incarnon Form Blob Explosion']],
 }
 const AREA_WORDS = /\s*(Radial Attack|Explosion|Detonation|AoE|Cloud|Pool|Field|Blast|Collapse|Merging Damage)$/i
@@ -517,22 +542,47 @@ const mods = weaponMods
   }))
   .sort((a, b) => a.name.localeCompare(b.name))
 
-// enemy presets for the target panel. the export's old health/armor types (Ferrite etc.)
-// are pre-Update 36, so I only keep the base numbers and the faction.
-const enemies = readJson('Enemy')
-  .filter((enemy) => enemy.health > 0)
-  .map((enemy) => ({
-    uniqueName: enemy.uniqueName,
-    name: enemy.name,
-    faction: enemy.type ?? 'Unknown',
-    health: enemy.health ?? 0,
-    shield: enemy.shield ?? 0,
-    armor: enemy.armor ?? 0,
-  }))
-  // enemies the export doesn't have, from their wiki pages. Techrot Babau: "Increased the Techrot Babau's Base Health* from
-  // 1,500 to 10,000" (Hotfix 40.0.3, *health at level 1). the page lists no shields or armor, so those are 0
-  .concat([{ uniqueName: 'wiki:TechrotBabau', name: 'Techrot Babau', faction: 'Techrot', health: 10000, shield: 0, armor: 0 }])
-  .sort((a, b) => a.name.localeCompare(b.name))
+// enemy presets for the target panel. the export's enemy list is pre-Update 36 (old health types, old numbers: a Crewman is
+// 60 health / 150 shields there, 90 / 120 on the wiki) and some have a weapon class as their faction (Lancer is "Rifle").
+// so the wiki's Module:Enemies/data (scripts/wiki-enemies.json, from scripts/pull-wiki-data.py) wins: health, shields, armor,
+// faction, base level and head multiplier. export entries keep their ids (saved setups point at them) and get the wiki numbers
+// by name, wiki-only enemies are added with the wiki's internal name as the id
+const WIKI_ENEMIES = Object.entries(JSON.parse(readFileSync(new URL('./wiki-enemies.json', import.meta.url), 'utf8')).enemies)
+  .filter(([, enemy]) => enemy.health > 0 || enemy.shield > 0)
+// the factions the calc knows (FACTION_DAMAGE_MODIFIERS), everything else (Predator, Prey, Tenno, Duviri...) is no faction
+const CALC_FACTIONS = new Set(['Grineer', 'Kuva Grineer', 'Scaldra', 'Corpus', 'Corpus Amalgam', 'Infested', 'Infested Deimos', 'Orokin', 'Sentient',
+  'Narmer', 'The Murmur', 'Techrot', 'Anarchs'])
+const EXPORT_FACTION = { Infestation: 'Infested' }
+// the faction's own head multiplier (constants.ts headMultiplierFor): 1.5 on Murmur / Techrot, 3 elsewhere
+const factionHead = (faction) => (faction === 'The Murmur' || faction === 'Techrot' ? 1.5 : 3)
+const wikiEnemy = ([id, enemy]) => {
+  const faction = CALC_FACTIONS.has(enemy.faction) ? enemy.faction : 'None'
+  return {
+    faction,
+    health: enemy.health ?? 0, shield: enemy.shield ?? 0, armor: enemy.armor ?? 0,
+    ...(enemy.baseLevel ? { baseLevel: enemy.baseLevel } : {}),
+    ...(enemy.headMultiplier !== null && enemy.headMultiplier !== factionHead(faction) ? { headMultiplier: enemy.headMultiplier } : {}),
+  }
+}
+const wikiByName = new Map()
+for (const entry of WIKI_ENEMIES) wikiByName.set(entry[1].name, [...(wikiByName.get(entry[1].name) ?? []), entry])
+const exportEnemies = readJson('Enemy').filter((enemy) => enemy.health > 0)
+const exportNames = new Set(exportEnemies.map((enemy) => enemy.name))
+const enemies = exportEnemies
+  .map((enemy) => {
+    const exportFaction = EXPORT_FACTION[enemy.type] ?? enemy.type ?? 'Unknown'
+    const candidates = wikiByName.get(enemy.name) ?? []
+    // a name on more than one faction page (Crewman: Corpus and Corpus Amalgam): the one on the export's faction
+    const wiki = candidates.find(([, candidate]) => candidate.faction === exportFaction) ?? candidates[0]
+    return {
+      uniqueName: enemy.uniqueName,
+      name: enemy.name,
+      ...(wiki ? wikiEnemy(wiki) : { faction: CALC_FACTIONS.has(exportFaction) ? exportFaction : 'None', health: enemy.health ?? 0, shield: enemy.shield ?? 0, armor: enemy.armor ?? 0 }),
+      source: wiki ? 'wiki' : 'export',
+    }
+  })
+  .concat(WIKI_ENEMIES.filter(([, enemy]) => !exportNames.has(enemy.name)).map((entry) => ({ uniqueName: entry[0], name: entry[1].name, ...wikiEnemy(entry), source: 'wiki' })))
+  .sort((a, b) => a.name.localeCompare(b.name) || a.faction.localeCompare(b.faction))
 
 // weapon arcanes (the arcane slot on primaries/secondaries/melee) and Warframe arcanes (the frame's two slots; the plain
 // "Arcane" type is the old revive/bleedout ones, they go on Warframes too). the export lists some Warframe arcanes several

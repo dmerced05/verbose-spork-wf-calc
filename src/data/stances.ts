@@ -73,7 +73,7 @@ export function bestCombo(weapon: Weapon): StanceChoice | null {
 
 // only the plain Normal Attack follows a stance. heavies, slams, slides and throws have their own numbers
 export const usesStance = (weapon: Weapon, attack: Attack) =>
-  weapon.category === 'Melee' && attack.name === 'Normal Attack' && !attack.heavy
+  weapon.category === 'Melee' && (attack.name === 'Normal Attack' || Boolean(attack.followsStance)) && !attack.heavy
 
 // the Normal Attack as one "average combo hit": damage x average multiplier (with the physical type multipliers),
 // hits per second from the combo length, status x the combo's status multiplier, bleeds as a forced Slash share

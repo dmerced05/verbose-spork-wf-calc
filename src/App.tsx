@@ -6,13 +6,14 @@ import { DamageCap } from './components/DamageCap'
 import { CompareWeapons } from './components/CompareWeapons'
 import { RivenPage } from './components/RivenPage'
 import { StatusGuide } from './components/StatusGuide'
+import { DataAnalysis } from './components/DataAnalysis'
 import type { CompareScenario } from './optimizer/compare'
 import type { RivenConfig } from './calc/riven'
 
-type Tab = 'calculator' | 'leaderboard' | 'compare' | 'weapons' | 'rivens' | 'cap' | 'status'
-const TABS: Tab[] = ['calculator', 'leaderboard', 'compare', 'weapons', 'rivens', 'cap', 'status']
+type Tab = 'calculator' | 'leaderboard' | 'compare' | 'weapons' | 'rivens' | 'cap' | 'analysis' | 'status'
+const TABS: Tab[] = ['calculator', 'leaderboard', 'compare', 'weapons', 'rivens', 'cap', 'analysis', 'status']
 const TAB_LABELS: Record<Tab, string> = {
-  calculator: 'Calculator', leaderboard: 'Leaderboard', compare: 'Compare Build Paths', weapons: 'Compare Weapons', rivens: 'Rivens', cap: 'Damage Cap', status: 'Status Guide',
+  calculator: 'Calculator', leaderboard: 'Leaderboard', compare: 'Compare Build Paths', weapons: 'Compare Weapons', rivens: 'Rivens', cap: 'Damage Cap', analysis: 'Data Analysis', status: 'Status Guide',
 }
 const tabFromHash = (): Tab => {
   if (typeof window === 'undefined') return 'calculator'
@@ -27,6 +28,7 @@ export default function App() {
   const [capOpened, setCapOpened] = useState(tab === 'cap')
   const [weaponsOpened, setWeaponsOpened] = useState(tab === 'weapons')
   const [rivensOpened, setRivensOpened] = useState(tab === 'rivens')
+  const [analysisOpened, setAnalysisOpened] = useState(tab === 'analysis')
   const [buildToLoad, setBuildToLoad] = useState<BuildToLoad | null>(null)
   // the calculator's setup, so Compare can run against it and reuse its riven
   const [calculatorScenario, setCalculatorScenario] = useState<CompareScenario | null>(null)
@@ -42,6 +44,7 @@ export default function App() {
       if (next === 'cap') setCapOpened(true)
       if (next === 'weapons') setWeaponsOpened(true)
       if (next === 'rivens') setRivensOpened(true)
+      if (next === 'analysis') setAnalysisOpened(true)
       setTab(next)
     }
     window.addEventListener('hashchange', onHashChange)
@@ -54,6 +57,7 @@ export default function App() {
     if (next === 'cap') setCapOpened(true)
     if (next === 'weapons') setWeaponsOpened(true)
     if (next === 'rivens') setRivensOpened(true)
+    if (next === 'analysis') setAnalysisOpened(true)
     setTab(next)
     window.history.replaceState(null, '', next === 'calculator' ? '#' : `#${next}`)
   }
@@ -114,6 +118,11 @@ export default function App() {
               window.scrollTo({ top: 0 })
             }}
           />
+        </div>
+      )}
+      {analysisOpened && (
+        <div hidden={tab !== 'analysis'}>
+          <DataAnalysis />
         </div>
       )}
       {capOpened && (

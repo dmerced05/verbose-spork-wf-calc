@@ -38,16 +38,16 @@ const AUTO_HEAD = { headshotMultiplier: null, headcrit: null }
 export const resolveArmor = (target: TargetSettings): number => resolveEnemy(target)?.armor ?? target.manualArmor
 
 // one-click endgame targets. Steel Path adds 100 levels, so the level field is 100 under what they spawn at.
-// Heavy Gunner: armor (500 base, past the 2,700 clamp at the cap). Techrot Babau: health (10,000 at level 1, wiki). Juggernaut:
+// Heavy Gunner: armor (500 base, past the 2,700 clamp at the cap). Techrot Babau: health (10,000 + 500 shields at level 1, wiki). Juggernaut (base level 15):
 // armor + status immune on its armored body (wiki: "immune to all status effects that hit its heavily armored outer body")
 interface TargetPreset { label: string; title: string; target: Partial<TargetSettings> }
 const presetsAt = (spawnLevel: number): TargetPreset[] => ([
   { label: `Heavy Gunner ${spawnLevel}`, title: 'Steel Path Heavy Gunner: armor check',
     target: { enemyId: '/Lotus/Types/Enemies/Grineer/AIWeek/Avatars/HeavyFemaleGrineerAvatar', faction: 'Grineer', baseLevel: 8, statusMode: 'normal' as StatusMode } },
   { label: `Babau ${spawnLevel}`, title: 'Steel Path Techrot Babau: health check (immune to Viral, not modeled)',
-    target: { enemyId: 'wiki:TechrotBabau', faction: 'Techrot', baseLevel: 1, statusMode: 'normal' as StatusMode } },
+    target: { enemyId: '/Lotus/Types/Enemies/WF1999Infested/InfestedBabau/InfestedBabau1999Agent', faction: 'Techrot', baseLevel: 1, statusMode: 'normal' as StatusMode } },
   { label: `Juggernaut ${spawnLevel}`, title: 'Steel Path Juggernaut: armor, and status immune',
-    target: { enemyId: '/Lotus/Types/Enemies/Infested/AiWeek/Quadrupeds/JuggernautAvatar', faction: 'Infested', baseLevel: 1, statusMode: 'immune' as StatusMode } },
+    target: { enemyId: '/Lotus/Types/Enemies/Infested/AiWeek/Quadrupeds/JuggernautAvatar', faction: 'Infested', baseLevel: 15, statusMode: 'immune' as StatusMode } },
 ] as TargetPreset[]).map((preset) => ({ ...preset, target: { ...preset.target, level: spawnLevel - STEEL_PATH_LEVEL_BONUS, steelPath: true, layer: 'health' as const, ...AUTO_HEAD } }))
 const TARGET_PRESETS = [...presetsAt(9999), ...presetsAt(250)]
 
@@ -63,7 +63,8 @@ export function TargetPanel({ target, onChange }: Props) {
   const pickEnemy = (enemyId: string | null) => {
     const picked = enemyId ? enemiesById.get(enemyId) : undefined
     const faction = picked ? PRESET_FACTION[picked.faction] ?? picked.faction : target.faction
-    update({ enemyId, faction, ...AUTO_HEAD })
+    // the wiki's base level (the level its stats are for) and its own head multiplier when it isn't the faction's
+    update({ enemyId, faction, ...AUTO_HEAD, ...(picked?.baseLevel ? { baseLevel: picked.baseLevel } : {}), ...(picked?.headMultiplier ? { headshotMultiplier: picked.headMultiplier } : {}) })
   }
 
   return (
@@ -166,9 +167,9 @@ export function TargetPanel({ target, onChange }: Props) {
       </div>
       <p className="muted">
         {scaled
-          ? 'Presets don\'t know where they spawn, so set the base level from the mission (or leave it at 1). Steel Path adds 100 levels and x2.5 health/shields, armor only scales with level.'
+          ? 'Picking an enemy sets the base level its stats are for (wiki). Steel Path adds 100 levels and x2.5 health/shields, armor only scales with level.'
           : 'Pick a preset to get level-scaled health, shields and time to kill.'}
-        {' '}Head multiplier and headcrits follow the faction: 3x on most, ~1.5x on Murmur/Techrot, no headcrits on most Corpus/Murmur/Techrot.
+        {' '}Head multiplier and headcrits follow the faction (or the enemy, when the wiki gives it its own): 3x on most, ~1.5x on Murmur/Techrot, no headcrits on most Corpus/Murmur/Techrot.
       </p>
     </section>
   )

@@ -18,7 +18,7 @@ import type { FrameLoad } from '../optimizer/damageCap'
 import { defaultConditionalStacks, maxConditionalStacks } from '../calc/parseMod'
 import { SHARD_BUFFS, SHARD_COLORS, SHARD_SLOTS, VIOLET_ENERGY_THRESHOLD, shardBuffsById, type ShardSlot } from '../data/archonShards'
 import { abilityDamageFor } from '../data/abilityDamage'
-import type { AbilityContext } from '../calc/abilityDamage'
+import { NO_UWB, type AbilityContext, type UniversalBonuses } from '../calc/abilityDamage'
 import { AbilityDamageCard } from './AbilityDamageCard'
 
 interface Props {
@@ -189,11 +189,12 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, 
   const state = warframeStateFor(build, totals)
   // what damaging abilities run on: the frame's stats, Roar from any active cast ("bonus damage to all weapons and abilities"),
   // the shards' "Ability Damage on enemies affected by X", and the Calculator's target
-  const roar = casts.reduce((sum, cast) => {
+  // Roar wiki: "Multiple Roars do not stack. A stronger Roar will overwrite a weaker one", so the strongest one counts
+  const roar = casts.reduce((best, cast) => {
     const ability = abilitiesById.get(cast.id)
-    if (!ability) return sum
+    if (!ability) return best
     const strength = cast.by === 'ally' ? teammateStrength : totals.abilityStrength
-    return sum + effectsFor(ability, cast.by).reduce((total, effect) => total + (effect.kind === 'factionDamage' ? scaledValue(ability, effect.value, strength) : 0), 0)
+    return Math.max(best, effectsFor(ability, cast.by).reduce((total, effect) => total + (effect.kind === 'factionDamage' ? scaledValue(ability, effect.value, strength) : 0), 0))
   }, 0)
   const shardVsStatus = { electricity: 0, radiation: 0, corrosive: 0 }
   for (const slot of shards) {
@@ -201,8 +202,31 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, 
     const key = shard && ({ 'violet-ability-electricity': 'electricity', 'topaz-ability-radiation': 'radiation', 'emerald-ability-corrosion': 'corrosive' } as const)[shard.id as 'violet-ability-electricity']
     if (shard && key) shardVsStatus[key] += slot.tauforged ? shard.tauforged : shard.normal
   }
+  // Universal Weapon Bonuses from the active casts and the frame's arcanes, only the ones the wiki's Universal_Weapon_Bonuses
+  // page lists: Vex Armor / Deathbringer "Damage" (base), Eclipse "Damage Multipliers", Nourish "Viral", Empowered Quiver
+  // "Modded Critical Damage" (on a 1.0x base that's +value), Arcane Avenger "Absolute Critical Chance" 45%, Arcane Crepuscular
+  // "+3.0x" absolute crit damage. abilities only take the kinds their own page says (src/data/abilityDamage.ts)
+  const uwb: UniversalBonuses = { ...NO_UWB, elemental: [] }
+  for (const cast of casts) {
+    const ability = abilitiesById.get(cast.id)
+    if (!ability) continue
+    const strength = cast.by === 'ally' ? teammateStrength : totals.abilityStrength
+    for (const effect of effectsFor(ability, cast.by)) {
+      const value = 'value' in effect ? scaledValue(ability, effect.value, strength) : 0
+      if (effect.kind === 'baseDamage' && (cast.id === 'vexArmor' || cast.id === 'deathbringer')) uwb.base += value
+      if (effect.kind === 'damageMultiplier' && cast.id === 'eclipse') uwb.multiplier *= 1 + value
+      if (effect.kind === 'element' && cast.id === 'nourish') uwb.elemental.push({ damageType: 'viral', value })
+      if (effect.kind === 'critDamageMod' && cast.id === 'empoweredQuiver') uwb.critMultiplierBonus += value
+    }
+  }
+  for (const slot of arcaneSlots) {
+    const name = slot && arcanesById.get(slot.arcaneId)?.name
+    if (name === 'Arcane Avenger' && slot!.conditionalStacks > 0) uwb.flatCritChance += 0.45
+    if (name === 'Arcane Crepuscular') // "While invisible", same as the panel assumes for it on weapons
+      uwb.critMultiplierBonus += 3
+  }
   const abilityContext = (subsumed: boolean): AbilityContext => ({
-    strength: totals.abilityStrength, duration: totals.abilityDuration, range: totals.abilityRange, roar, shardVsStatus, subsumed,
+    strength: totals.abilityStrength, duration: totals.abilityDuration, range: totals.abilityRange, roar, shardVsStatus, subsumed, uwb,
     target: abilityTarget ?? { faction: 'None', armor: 0, health: 0, shield: 0, debuffs: { stacks: {}, heatArmorStrip: 0, corrosiveProjections: 0, otherArmorReduction: 0, damageVulnerability: 0, liftedOrKnockedDown: false, statusTypeSource: 'build' } },
   })
 
@@ -350,7 +374,7 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, 
         {!modeled && <div className="kit-effect inactive">No weapon buff modeled</div>}
         {(() => {
           // an equipped augment version replaces the plain one (Gaseous Quake turns Sound Quake into its channeled form)
-          const defs = abilityDamageFor(entry.by === 'helminth' ? subsumed?.from ?? '' : baseName, entry.info.name).filter((def) => !def.augment || equippedNames.has(def.augment))
+          const defs = abilityDamageFor(entry.by === 'helminth' ? subsumed?.from ?? '' : baseName, entry.info.name).filter((def) => (!def.augment || equippedNames.has(def.augment)) && (!def.subsumed || subsumed?.name === def.subsumed))
           return defs.some((def) => def.augment) ? defs.filter((def) => def.augment) : defs
         })().map((def) => <AbilityDamageCard key={`${frame.name}:${def.id}`} def={def} ctx={abilityContext(entry.by === 'helminth')} />)}
       </div>

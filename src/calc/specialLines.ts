@@ -45,6 +45,23 @@ const RULES: [RegExp, (match: RegExpMatchArray) => SpecialLine][] = [
   [/^Increased Damage and Status Chance by \+?([\d.]+)% for every ([\d,]+) Warframe Health\. Capped at ([\d.]+)%/i, (m) => ({
     trigger: `Warframe health per ${m[2]}:`, maxStacks: Math.round(Number(m[3]) / Number(m[1])), effects: [stat('damage', pct(m[1])), stat('statusChance', pct(m[1]))],
   })],
+  // Primary Plated Round: "On Reload: Deal increased damage per round loaded based on max magazine size". wiki
+  // Primary_Plated_Round: "Max Damage Bonus = 15 x sqrt(5 x Magazine Size)" (%), "additive to base damage sources such as
+  // Serration". rank only changes how long it lasts (3-10 s), so the number is the same at every rank
+  [/^Deal increased damage per round loaded based on max magazine size/i, () => ({
+    trigger: 'On Reload (an empty magazine, buff lasts 10 s):', effects: [{ kind: 'damagePerMagazine', coefficient: 0.15 }],
+  })],
+  // Secondary Outburst: "consume all Combo Multipliers to increase Secondary Weapon Critical Chance and Critical Damage by 20%
+  // per Combo consumed for 30s". wiki: "+240%" at 12x, "additive with mods like Pistol Gambit". stacks = the combo multiplier
+  [/consume all Combo Multipliers to increase Secondary Weapon Critical Chance and Critical Damage by ([\d.]+)% per Combo consumed/i, (m) => ({
+    trigger: 'Swapped from melee at a combo multiplier of (stacks):', maxStacks: 12, effects: [stat('critChance', pct(m[1])), stat('critDamage', pct(m[1]))],
+  })],
+  // Cascadia Empowered: "Deals +750 Damage matching the Damage Type of the Status Effect", wiki: "an extra instance of damage
+  // when proccing a status effect", "Not affected by damage, element, physical ... or critical mods", "Affected by faction mods
+  // and bonuses once", "Affected by Damage Vulnerability", "Not affected by weakspots"
+  [/^Deals \+?([\d,]+) Damage matching the Damage Type of the Status Effect/i, (m) => ({ effects: [{ kind: 'flatPerProc', value: Number(m[1].replace(/,/g, '')) }] })],
+  // Meticulous Aim: "-45% Bodyshot Damage", wiki: "Bodyshot damage penalty is multiplicative to weapon overall damage"
+  [/^-([\d.]+)% Bodyshot Damage$/i, (m) => ({ effects: [{ kind: 'bodyShotMultiplier', value: -pct(m[1]) }] })],
   // Melee Doughty: "Gain 1.0x Critical Damage for every 10% Puncture Status chance on your Melee Weapon."
   [/^Gain ([\d.]+)x Critical Damage for every 10% Puncture Status chance/i, (m) => ({ effects: [{ kind: 'critPerPunctureStatus', value: Number(m[1]) }] })],
   // Nightwatch Napalm (Ogris): "Rockets disperse napalm, inflicting 30% damage over 6s across 90% of the explosion area."

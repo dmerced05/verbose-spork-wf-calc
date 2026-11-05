@@ -9,10 +9,13 @@ export type PerkEffect =
   | { kind: 'base'; stat: BaseStat; value: number } // added to the weapon's base stats before mods
   | { kind: 'flat'; stat: 'critChance' | 'statusChance'; value: number } // native Incarnons: added after mods
   | { kind: 'mod'; effect: ModEffect } // works like a mod line (+% Damage, +% Multishot, ...)
+  | { kind: 'mods'; effects: ModEffect[] } // a line that's more than one mod effect (King's Gambit)
   | { kind: 'nonCritBonus'; chance: number; value: number } // Devouring/Devastating Attrition
   | { kind: 'armorStripPerPuncture'; value: number } // Latron's Flensing Spikes
   // Wiseman's Regard / Decisive Stature: base chance goes up by a share of the other modded chance, capped
   | { kind: 'convert'; stat: 'critChance' | 'statusChance'; from: 'critChance' | 'statusChance'; ratio: number; max: number }
+  // Survivor's Edge: "Base Status Chance set to 12%", replaces the base instead of adding to it
+  | { kind: 'baseSet'; stat: 'critChance' | 'statusChance' | 'critMultiplier'; value: number }
 
 export interface PerkStatement {
   text: string
@@ -47,7 +50,18 @@ function parsePerkBody(body: string, native: boolean): PerkEffect | null {
   const armorStrip = body.match(/^Remove ([\d.]+)% Armor per Puncture stack$/)
   if (armorStrip) return { kind: 'armorStripPerPuncture', value: percent(armorStrip[1]) }
 
-  const convert = body.match(/^\+([\d.]+)% of current (Critical|Status) Chance as Base (Critical|Status) Chance, up to ([\d.]+)%$/)
+  // King's Gambit (Sicarus): "Bodyshots can't crit, weak point hits get +150% Critical Chance" -> two mod-like lines, the
+  // second only counts on heads like Acuity's weak point crit
+  const kingsGambit = body.match(/^Bodyshots can't crit, weak point hits get \+([\d.]+)% Critical Chance$/)
+  if (kingsGambit) return { kind: 'mods', effects: [{ kind: 'noBodyCrit' }, { kind: 'stat', stat: 'weakpointCritChance', value: percent(kingsGambit[1]) }] }
+  const baseSet = body.match(/^Base (Critical Chance|Status Chance|Critical Multiplier) set to ([\d.]+)(%|x)$/)
+  if (baseSet) {
+    const stat = baseSet[1] === 'Critical Chance' ? 'critChance' : baseSet[1] === 'Status Chance' ? 'statusChance' : 'critMultiplier'
+    return { kind: 'baseSet', stat, value: baseSet[3] === '%' ? percent(baseSet[2]) : Number(baseSet[2]) }
+  }
+  // High Ground / Wiseman's Regard written the other way: "Converts 25% of current Status Chance to Base Critical Chance, max 35%"
+  const converts = body.match(/^Converts ([\d.]+)% of current (Critical|Status) Chance to Base (Critical|Status) Chance, max ([\d.]+)%$/)
+  const convert = converts ?? body.match(/^\+([\d.]+)% of current (Critical|Status) Chance as Base (Critical|Status) Chance, up to ([\d.]+)%$/)
   if (convert) {
     const statOf = (word: string) => (word === 'Critical' ? 'critChance' : 'statusChance')
     return { kind: 'convert', stat: statOf(convert[3]), from: statOf(convert[2]), ratio: percent(convert[1]), max: percent(convert[4]) }
@@ -176,6 +190,10 @@ export function stackingNote(effect: PerkEffect | null): string | null {
       }[effect.stat]
     case 'flat':
       return `Flat ${effect.stat === 'critChance' ? 'crit' : 'status'} chance added after mods: mods don't multiply it, it just adds on at the end.`
+    case 'baseSet':
+      return `Replaces the base ${effect.stat === 'critMultiplier' ? 'crit multiplier' : effect.stat === 'critChance' ? 'crit chance' : 'status chance'} (other base bonuses don't add on top), then mods multiply it.`
+    case 'mods':
+      return 'Body shots never crit with it on. Weak point hits get the crit chance like Primary Acuity: in with crit mods, heads only.'
     case 'mod':
       return 'Works like one more mod line: it adds in with mods of the same stat (a +% Damage line adds to Serration, +% Multishot to Split Chamber).'
     case 'nonCritBonus':

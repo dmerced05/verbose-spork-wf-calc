@@ -13,6 +13,12 @@ export interface Attack {
   statusChance: number // fraction
   damage: DamageMap
   heavy?: boolean // Heavy Attack / Heavy Slam: x combo multiplier, uses up the combo
+  // the wiki module's ExtraHeadshotDmg: + this to headshot bonuses (Kuva Chakkhurr / Cernos Prime 0.5), or null = no headshot
+  // multiplier at all (-2 in the module: Alternox, Arca Plasmor, Nataruk's Perfect Shot)
+  extraHeadshot?: number | null
+  followsStance?: boolean // melee attacks that aren't the Normal Attack but go off with every combo hit (Exalted Blade's wave)
+  noCombo?: boolean // a heavy that doesn't take the combo multiplier (Exalted Blade's heavy waves)
+  wave?: boolean // Exalted Blade's energy waves: full damage point blank, 0 at 70 m
   heavyCrit?: boolean // not a heavy, but gets the heavy-only crit chance (True Steel's x2): glaive bounce explosions
   forcedProcChance?: Record<string, number> // guaranteed procs on a share of hits (a stance combo's Bleeds), set by the calc
   stanceNote?: string // which stance combo the Normal Attack was scored with, set by the calc
@@ -123,6 +129,9 @@ export interface Enemy {
   health: number
   shield: number
   armor: number
+  baseLevel?: number // the level its base stats are for (wiki), the target panel scales from it
+  headMultiplier?: number // when the wiki gives one that differs from the faction's
+  source?: 'wiki' | 'export' // wiki = only on the wiki (the export doesn't have it)
 }
 
 export interface EquippedMod {

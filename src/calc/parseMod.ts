@@ -45,6 +45,10 @@ export type ModEffect =
   | { kind: 'forcedProcChance'; damageType: string; value: number } // extra proc chance on every hit, outside the damage split
   | { kind: 'napalm'; fraction: number; seconds: number; procChance: number } // Nightwatch Napalm: a burning patch per rocket, see damage.ts
   | { kind: 'critPerPunctureStatus'; value: number } // Melee Doughty: +Nx crit multiplier per 10% Puncture status chance, see damage.ts
+  | { kind: 'damagePerMagazine'; coefficient: number } // Primary Plated Round: +coefficient x sqrt(5 x magazine) damage, see damage.ts
+  | { kind: 'flatPerProc'; value: number } // Cascadia Empowered: a separate flat hit per status proc, see damage.ts
+  | { kind: 'bodyShotMultiplier'; value: number } // Meticulous Aim: "-45% Bodyshot Damage", see damage.ts
+  | { kind: 'noBodyCrit' } // King's Gambit (Sicarus Incarnon): "Bodyshots can't crit"
 
 // armor/health are flat ("+900 Armor"), the *Percent ones % of base, damageResistance is one multiplicative DR source
 export type FrameStat = 'armor' | 'armorPercent' | 'health' | 'healthPercent' | 'shieldPercent' | 'energyPercent' | 'strength' | 'duration' | 'range' | 'efficiency'
@@ -348,7 +352,8 @@ export interface TriggerContext { isMelee: boolean; bodyShots: boolean; noKills?
 export function triggerUptime(trigger: string, { isMelee, bodyShots, noKills }: TriggerContext): number {
   if (noKills && /kill/i.test(trigger)) return 0
   if (isHeadshotTrigger(trigger) && !/kill/i.test(trigger)) return bodyShots ? 0 : 1
-  if (/melee kill/i.test(trigger) && !isMelee) return 0.5
+  // melee-kill buffs on a gun (Dexterity) and Secondary Outburst's combo swap need you to keep meleeing between shots: half
+  if (/melee kill|swapped from melee/i.test(trigger) && !isMelee) return 0.5
   if (/armor past/i.test(trigger)) return 0.5
   return 1
 }

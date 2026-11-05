@@ -1,7 +1,7 @@
 // checks the calc against worked examples from the wiki. run with: npm run check
 import { calculate, enervateAverageCrit, type CalcInput } from '../src/calc/damage'
 import { STATUS_TYPES } from '../src/calc/constants'
-import { arcanes, getCompatibleArcanes, getCompatibleMods, mods, warframes, weapons } from '../src/data'
+import { arcanes, enemies, getCompatibleArcanes, getCompatibleMods, mods, warframes, weapons } from '../src/data'
 import { warframeTotals } from '../src/calc/warframeStats'
 import { scaleArmor, scaleHealth } from '../src/calc/target'
 import { estimateKill } from '../src/calc/kill'
@@ -1170,6 +1170,85 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
   expectClose('Melee Doughty half Heat', withDoughty({ puncture: 50, heat: 50 }).hit.average, 212.5)
 }
 
+// Primary Plated Round (wiki table): 25-round magazine = +167.71% ("Matches ... Serration"), 80 = +300%. additive with Serration
+{
+  const plated = arcanes.find((arcane) => arcane.name === 'Primary Plated Round')!
+  const withPlated = (magazineSize: number) => calculate({
+    weapon: { ...testWeapon(testAttack({ impact: 100 })), magazineSize, reloadTime: 2 }, attack: testAttack({ impact: 100 }), mods: [maxed('Serration')],
+    arcane: { arcane: plated, rank: 5, conditionalStacks: 1 }, armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 },
+    target: { faction: 'None', layer: 'health', enemyId: null, baseLevel: 1, level: 1, steelPath: false, manualArmor: 0, headshot: false, headshotMultiplier: 3, headcrit: false },
+  })
+  expectClose('Plated Round 25 rounds', withPlated(25).moddedBaseDamage, 100 * (1 + 1.65 + 0.15 * Math.sqrt(125))) // the wiki table rounds it to 167.71%
+  expectClose('Plated Round 80 rounds', withPlated(80).moddedBaseDamage, 100 * (1 + 1.65 + 3))
+}
+// Cascadia Empowered: 750 per proc, faction once, no mods/crit. 1 proc/s of Impact, Roar +50% -> 750 x 1.5 = 1125 per proc
+{
+  const cascadia = arcanes.find((arcane) => arcane.name === 'Cascadia Empowered')!
+  const result = run(testAttack({ impact: 100 }, { statusChance: 1, critChance: 0.5 }), { mods: [maxed('Serration')], buffs: { roar: 0.5 }, arcane: { arcane: cascadia, rank: 5, conditionalStacks: 1 } })
+  const row = dotOf(result, 'cascadia')
+  expectClose('Cascadia Empowered per proc', row.tick.average, 1125)
+  expectClose('Cascadia Empowered procs/s', row.procsPerSecond, 1)
+}
+// Secondary Outburst: 20% per combo, 12x -> +240% crit chance and crit damage: 20% x 3.4 = 68%, 2 x 3.4 = 6.8
+{
+  const outburst = arcanes.find((arcane) => arcane.name === 'Secondary Outburst')!
+  const result = run(testAttack({ impact: 100 }, { critChance: 0.2 }), { arcane: { arcane: outburst, rank: 5, conditionalStacks: 12 } })
+  expectClose('Secondary Outburst crit chance at 12x', result.critChance, 0.68)
+  expectClose('Secondary Outburst crit mult at 12x', result.critMultiplier, 6.8)
+}
+// Meticulous Aim (wiki): Serration + body = 225 x 2.65 x 0.55 = 327.94. Heat ticks on the body take the -45% twice
+{
+  const aim = equipFake('Meticulous Aim', ['+105% Headshot Damage', '-45% Bodyshot Damage'])
+  const body = run(testAttack({ impact: 225 }), { mods: [maxed('Serration'), aim] })
+  expectClose('Meticulous Aim body', body.hit.average, 225 * 2.65 * 0.55)
+  const heat = run(testAttack({ heat: 100 }, { statusChance: 1 }), { mods: [aim] })
+  expectClose('Meticulous Aim Heat tick twice', dotOf(heat, 'heat').tick.average, 0.5 * 100 * 0.55 ** 2)
+}
+// Survivor's Edge (Sicarus): "Base Status Chance set to 12%" replaces the base. King's Gambit: body shots never crit
+{
+  const sicarus = weapons.find((weapon) => weapon.name === 'Sicarus')!
+  const sicarusCalc = (tier: string, perkName: string, headshot: boolean) => calculate({ weapon: sicarus, attack: sicarus.attacks[0], mods: [], incarnonPerks: [{ perk: perkFor('Sicarus', tier, perkName), stacks: 0 }],
+    armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None', headshot } })
+  expectClose("Survivor's Edge base status set to 12%", sicarusCalc('IV', "Survivor's Edge", false).statusChance, 0.12)
+  expectClose("King's Gambit body can't crit", sicarusCalc('II', "King's Gambit", false).critChance, 0)
+  expectClose("King's Gambit head +150%", sicarusCalc('II', "King's Gambit", true).critChance, sicarus.attacks[0].critChance * 2.5)
+}
+
+// wiki data (scripts/wiki-*.json): enemies take the wiki's numbers (Crewman 90 health / 120 shields, the export had 60 / 150),
+// Lancer's faction comes back as Grineer (the export said "Rifle"), Juggernaut's base level is 15
+{
+  const byName = (name: string) => enemies.find((enemy) => enemy.name === name)!
+  expectClose('wiki Crewman health', byName('Crewman').health, 90)
+  expectClose('wiki Crewman shields', byName('Crewman').shield, 120)
+  expectClose('Lancer is Grineer again', byName('Lancer').faction === 'Grineer' ? 1 : 0, 1)
+  expectClose('wiki Juggernaut base level', byName('Juggernaut').baseLevel ?? 0, 15)
+  // Kuva Chakkhurr: "+50% bonus damage on headshots is additive to ... Primary Deadhead". body 260, head 260 x 3 x 1.5
+  const chakkhurr = weapons.find((weapon) => weapon.name === 'Kuva Chakkhurr')!
+  const shot = (headshot: boolean) => calculate({ weapon: chakkhurr, attack: chakkhurr.attacks[0], mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 },
+    target: { faction: 'None', layer: 'health', enemyId: null, baseLevel: 1, level: 1, steelPath: false, manualArmor: 0, headshot, headshotMultiplier: 3, headcrit: false } }).hit.normal
+  expectClose('Kuva Chakkhurr innate +50% headshot', shot(true) / shot(false), 3 * 1.5)
+  // Alternox's beam: ExtraHeadshotDmg -2, no headshot multiplier
+  const alternox = weapons.find((weapon) => weapon.name === 'Alternox')!
+  const beam = (headshot: boolean) => calculate({ weapon: alternox, attack: alternox.attacks.find((attack) => attack.name === 'Normal Attack')!, mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 },
+    target: { faction: 'None', layer: 'health', enemyId: null, baseLevel: 1, level: 1, steelPath: false, manualArmor: 0, headshot, headshotMultiplier: 3, headcrit: false } }).hit.normal
+  expectClose('Alternox beam no headshot multiplier', beam(true) / beam(false), 1)
+}
+// multi-hit heavy forced procs: Dual Daggers' full heavy is 4 x 2.5x hits each with a forced Bleed, so 4 Bleeds worth 2.5x
+// each = 1 proc-equivalent on the 10x hit... as shares that's 4 x 0.25 = 1 forced Slash per full heavy
+{
+  const { forcedProcShares, heavyComboFor } = await import('../src/data/heavyAttacks')
+  expectClose('Dual Daggers full heavy forced Slash', forcedProcShares(heavyComboFor('Fang Prime')!, 'fullCombo').slash, 1)
+  expectClose('Dagger biggest hit forced Impact', forcedProcShares(heavyComboFor('Sheev')!, 'biggestHit').impact, 1)
+}
+// Exalted Blade's wave: same base damage as the swing, its own hit
+{
+  const blade = weapons.find((weapon) => weapon.name === 'Exalted Blade')!
+  const swing = blade.attacks.find((attack) => attack.name === 'Normal Attack')!
+  const wave = blade.attacks.find((attack) => attack.name === 'Energy Wave')!
+  expectClose('Exalted Blade wave = swing', Object.values(wave.damage).reduce((a, b) => a + b, 0), Object.values(swing.damage).reduce((a, b) => a + b, 0))
+  expectClose('heavy wave has no combo', blade.attacks.find((attack) => attack.name === 'Heavy Attack Energy Wave')!.noCombo ? 1 : 0, 1)
+}
+
 // ability damage (src/data/abilityDamage.ts), the wiki's own worked examples
 {
   const { ABILITY_DAMAGE } = await import('../src/data/abilityDamage')
@@ -1187,6 +1266,31 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
   expectClose('Virulence growth hit', abilityDef('virulence').build(at(1.45), { stacks: 100 }).events[0].raw, 200 * 1.45 * 101)
   // Reckoning after Smite: 7,500 + 10 x 750, no armor on the neutral target
   expectClose('Reckoning with 10 Radiation', runAbility(abilityDef('reckoning').build(at(1), { radiation: 10 }), at(1)).biggestHit, 15000)
+  // Roar: x(1 + 0.5) on hits, twice on status ticks ("0.35 x 100 x (1 + 0.5) x (1 + 0.5)" for a Slash tick)
+  const javelin = (roar: number) => runAbility(abilityDef('radial-javelin').build(at(1), {}), neutralAbilityContext({ strength: 1, roar }))
+  expectClose('Roar on an ability hit', javelin(0.5).direct, javelin(0).direct * 1.5)
+  expectClose('Roar twice on its status ticks', javelin(0.5).dot, javelin(0).dot * 1.5 * 1.5)
+  // Jade's Judgment: "100% ability duration will give ... 6" ticks, 101% gives 7
+  expectClose('Jade Light ticks at 100%', abilityDef('jades-judgment').build(at(1), { wells: 1, beams: 1 }).events.filter((e) => e.label.startsWith('Jade Light')).length, 6)
+  expectClose('Jade Light ticks at 101%', abilityDef('jades-judgment').build(neutralAbilityContext({ strength: 1, duration: 1.01 }), { wells: 1, beams: 1 }).events.filter((e) => e.label.startsWith('Jade Light')).length, 7)
+  // Brimstone: "every 0.5 seconds, the field's damage increases by 100% for each active field, up to a 10x damage multiplier cap"
+  expectClose('Brimstone 10x cap', Math.max(...abilityDef('brimstone').build(at(1), { fields: 4 }).events.map((e) => e.raw)), 7500)
+  // Jade Stars motes: elemental UWB yes ("Nourish and Valence Formation"), multipliers no ("damage multipliers like Eclipse"),
+  // crit needs both a flat chance and a multiplier bonus ("Base 0% critical chance", "Base 1.0x critical multiplier")
+  {
+    const mote = (uwb: Partial<import('../src/calc/abilityDamage').UniversalBonuses>) => {
+      const ctx = neutralAbilityContext({ strength: 1, uwb: { base: 0, elemental: [], multiplier: 1, flatCritChance: 0, critMultiplierBonus: 0, ...uwb } })
+      return runAbility({ events: [abilityDef('jade-stars').build(ctx, { rate: 5, vitality: 0 }).events[0]].map((e) => ({ ...e, procs: {} })) }, ctx).total
+    }
+    expectClose('Jade Stars mote', mote({}), 500)
+    expectClose('Jade Stars Valence Heat x3', mote({ elemental: [{ damageType: 'heat', value: 2 }] }), 1500)
+    expectClose('Jade Stars ignores Eclipse', mote({ multiplier: 1.9 }), 500)
+    expectClose('Jade Stars Avenger alone', mote({ flatCritChance: 0.45 }), 500)
+    expectClose('Jade Stars Avenger + 1x crit', mote({ flatCritChance: 0.45, critMultiplierBonus: 1 }), 725)
+    const combo = abilityDef('sandstorm-jade-stars').build(at(3), { seconds: 10, types: 2, vitality: 1 }).events
+    expectClose('Sandstorm launches a mote each tick', combo.filter((e) => e.label === 'Jade Stars mote').length, 40)
+    expectClose('Mote Heat procs 3 Str + Vitality', combo.find((e) => e.label === 'Jade Stars mote')!.procs!.heat, 6)
+  }
   // Miasma: the cast's Viral proc doubles the ticks after it: 150 + 5 x 300 at 100%
   expectClose('Miasma own Viral', runAbility(abilityDef('miasma').build(at(1), { spored: 0 }), at(1)).direct, 150 + 5 * 300)
 }

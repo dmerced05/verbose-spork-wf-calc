@@ -26,7 +26,7 @@ export interface ExaltedRule {
 const PSEUDO_BANNED = ['Parry', 'Reflex Coil', "Mentor's Legacy", 'Melee Animosity', 'Fury', 'Primed Fury', 'Finishing Touch', 'Melee Crescendo']
 
 export const EXALTED: Record<string, ExaltedRule> = {
-  'Exalted Blade': { warframe: 'Excalibur', ability: 'Exalted Blade', strength: 'base', note: 'Energy waves deal the same base damage as the swing and hit separately (not counted). Excalibur\'s sword passive always applies.' },
+  'Exalted Blade': { warframe: 'Excalibur', ability: 'Exalted Blade', strength: 'base', note: 'Energy waves deal the same base damage as the swing and hit separately: "Energy Wave" and "Normal Attack + Energy Wave" count them point blank (they fall to 0 at 70 m). Excalibur\'s sword passive always applies.' },
   'Valkyr Talons': { warframe: 'Valkyr', ability: 'Hysteria', strength: 'base', note: 'While Hysteria is up, Warcry\'s armor bonus is x3.' },
   'Iron Staff': { warframe: 'Wukong', ability: 'Primal Fury', strength: 'base' },
   'Desert Wind': { warframe: 'Baruuk', ability: 'Serene Storm', strength: 'base', note: 'Wind waves deal the same base damage as the swing (not counted).' },

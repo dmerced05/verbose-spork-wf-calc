@@ -15,21 +15,19 @@ const kindOf = (entry: LeaderboardEntry): AttackKind | null => {
 }
 const KIND_LABEL = Object.fromEntries(ATTACK_KINDS.map((kind) => [kind.id, kind.label])) as Record<AttackKind, string>
 import { expandLeaderboard, type Leaderboard as LeaderboardData, type LeaderboardEntry, type LeaderboardFile } from '../optimizer/leaderboardTypes'
-import { AbilityBoard } from './AbilityBoard'
 
 const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 2 })
 const percent = (value: number) => `${Math.round(value * 100)}%`
 const CATEGORIES = ['All', 'Primary', 'Secondary', 'Melee']
 const PAGE_SIZE = 50
 
-type RankBy = 'sustained' | 'window' | 'single' | 'attack' | 'boss' | 'abilities'
+type RankBy = 'sustained' | 'window' | 'single' | 'attack' | 'boss'
 const RANK_BY: { id: RankBy; label: string }[] = [
   { id: 'sustained', label: 'Sustained DPS' },
   { id: 'window', label: 'Damage in a time window' },
   { id: 'single', label: 'Single damage instance' },
   { id: 'attack', label: 'Whole attack (hit + procs)' },
   { id: 'boss', label: 'Boss damage' },
-  { id: 'abilities', label: 'Ability damage' },
 ]
 const BOSS_BOARD = 'boss' // src/optimizer/bossLeaderboard.ts (not imported: it pulls the optimizer into the page)
 const BOSS_BLURB = 'Sustained DPS on a boss: status capped at 4 stacks per type and no kills, so on-kill buffs (Deadhead, Galvanized stacks, Bladed Rounds...) never come up'
@@ -88,7 +86,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
 
   const boss = rankBy === 'boss'
   const data = boss ? bossData : mainData
-  const objectiveId: ObjectiveId = rankBy === 'window' ? (`window${windowSeconds}` as ObjectiveId) : boss || rankBy === 'abilities' ? 'sustained' : rankBy
+  const objectiveId: ObjectiveId = rankBy === 'window' ? (`window${windowSeconds}` as ObjectiveId) : boss ? 'sustained' : rankBy
   const objective = objectiveById(objectiveId)
   // DPS rankings were also optimized without fire rate / attack speed mods, single hit doesn't care about fire rate.
   // the boss board only has the fire-rate-allowed ranking
@@ -151,17 +149,6 @@ export function Leaderboard({ onLoadBuild }: Props) {
       </div>
     </label>
   )
-  // Warframe abilities aren't weapon builds: worked out live from src/data/abilityDamage.ts, nothing to load
-  if (rankBy === 'abilities') {
-    return (
-      <div className="leaderboard">
-        <section className="panel">
-          <div className="leaderboard-settings">{rankTabs}</div>
-          <AbilityBoard />
-        </section>
-      </div>
-    )
-  }
   if (boss && bossError) {
     return (
       <section className="panel">

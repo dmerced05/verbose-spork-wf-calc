@@ -12,8 +12,9 @@ export const weapons = weaponsJson as Weapon[]
 export const mods = modsJson as Mod[]
 export const arcanes = arcanesJson as Arcane[]
 export const arcanesById = new Map(arcanes.map((arcane) => [arcane.uniqueName, arcane]))
-// only the main factions, the export also has wildlife, Stalker, specters etc.
-export const enemies = (enemiesJson as Enemy[]).filter((enemy) => ['Grineer', 'Corpus', 'Infestation', 'Orokin', 'Sentient', 'Techrot'].includes(enemy.faction))
+// enemies of the factions the calc knows (build-data gives them the wiki's faction names: Kuva Grineer, Corpus Amalgam, Narmer...).
+// wildlife, Stalker, specters and the like come through as 'None' and are left out like before
+export const enemies = (enemiesJson as Enemy[]).filter((enemy) => enemy.faction !== 'None')
 
 export const weaponsById = new Map(weapons.map((weapon) => [weapon.uniqueName, weapon]))
 export const warframes = warframesJson as Warframe[]

@@ -3,7 +3,7 @@
 // classes that hit more than once I use the per-hit "Stanceless Combos" Heavy row from each class's wiki page,
 // plus per-weapon arsenal readings where they disagree with the wiki (they win).
 // - the leaderboard's single damage instance = the biggest hit
-// - "full heavy" = every hit added up (all at the current combo, forced procs listed but not scored)
+// - "full heavy" = every hit added up (all at the current combo), with each hit's forced damage procs (forcedProcShares)
 // classes not listed here hit once, their heavy stays the export's number
 
 export interface HeavyHit {
@@ -135,6 +135,24 @@ export const biggestHit = (combo: HeavyCombo) => Math.max(...combo.hits.filter((
 export const comboTotal = (combo: HeavyCombo) => combo.hits.reduce((total, hit) => total + hit.multiplier, 0)
 
 export type HeavyMode = 'biggestHit' | 'fullCombo'
+
+// the forced damage procs (Slash = Bleed, Impact, Puncture) as shares of one proc on the scored hit. the calc scores the heavy
+// as one hit worth the scored multiplier, and a proc ticks off the hit that applied it, so a forced Bleed from a 2.5x hit in a
+// 10x full heavy is 0.25 of a proc on the 10x hit: same ticks as a whole proc on the 2.5x hit. status-only ones (Knockdown,
+// Ragdoll, Lifted, Stagger, Stun) do no damage and are left out
+const DAMAGE_PROCS: Record<string, string> = { Slash: 'slash', Impact: 'impact', Puncture: 'puncture' }
+export function forcedProcShares(combo: HeavyCombo, mode: HeavyMode): Record<string, number> {
+  const scored = mode === 'fullCombo' ? combo.hits : [combo.hits.find((hit) => !hit.radial && hit.multiplier === biggestHit(combo))!]
+  const total = scored.reduce((sum, hit) => sum + hit.multiplier, 0)
+  const shares: Record<string, number> = {}
+  for (const hit of scored) {
+    for (const proc of hit.procs ?? []) {
+      const damageType = DAMAGE_PROCS[proc]
+      if (damageType) shares[damageType] = (shares[damageType] ?? 0) + hit.multiplier / total
+    }
+  }
+  return shares
+}
 
 const percent = (value: number) => `${Math.round(value * 100)}%`
 

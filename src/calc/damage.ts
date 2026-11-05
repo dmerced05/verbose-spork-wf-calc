@@ -20,7 +20,7 @@ import { hasBonusElement, type BonusElement, type WeaponPassive } from '../data/
 import { SHELL_BY_SHELL_RELOAD } from '../data/reloads'
 import { compressionFor } from '../data/compression'
 import { abilitiesById, abilityApplies, castStacks, effectsFor, scaledValue, strengthFor, type AbilityCast } from '../data/warframeAbilities'
-import { biggestHit, comboTotal, heavyComboFor, type HeavyCombo, type HeavyMode } from '../data/heavyAttacks'
+import { biggestHit, comboTotal, forcedProcShares, heavyComboFor, type HeavyCombo, type HeavyMode } from '../data/heavyAttacks'
 import { expectedDamage, simulateDamage, type DamageRange, type ShotModel } from './simulate'
 import { STANCES, applyStance, bestCombo, comboLabel, usesStance, type StanceChoice } from '../data/stances'
 
@@ -273,6 +273,9 @@ function partsOf(input: CalcInput): CalcInput[] {
   }))
 }
 
+const firstTickFor = (damageType: string) =>
+  damageType === 'blast' ? 1.5 : damageType === 'electricity' || damageType === 'gas' || damageType === 'cascadia' ? 0 : 1
+
 // one shot's worth of every part. the direct part (first) is what the shot "is" for the stat lines (crit, status, fire
 // rate, magazine); damage numbers are added up. the biggest single instance stays the biggest one part lands, since in
 // game they're separate hits. parts at another fire rate keep their own (Alternox's alt-fire explosion)
@@ -355,10 +358,14 @@ function calculateOnce({
   if (heavyComboData && attack.heavyMultiplier) {
     const multiplier = heavyMode === 'fullCombo' ? comboTotal(heavyComboData) : biggestHit(heavyComboData)
     const scale = multiplier / attack.heavyMultiplier
+    // each hit's forced Bleed / Impact / Puncture, weighted by that hit's share of the scored damage
+    const forced = { ...attack.forcedProcChance }
+    for (const [damageType, share] of Object.entries(forcedProcShares(heavyComboData, heavyMode))) forced[damageType] = (forced[damageType] ?? 0) + share
     attack = {
       ...attack,
       damage: Object.fromEntries(Object.entries(attack.damage).map(([damageType, amount]) => [damageType, amount * scale])),
       heavyMultiplier: multiplier,
+      forcedProcChance: forced,
     }
     heavyCombo = { combo: heavyComboData, mode: heavyMode, multiplier }
   }
@@ -404,6 +411,10 @@ function calculateOnce({
   let duplicateOnCritChance = 0 // Melee Duplicate
   let napalm: Extract<ModEffect, { kind: 'napalm' }> | null = null // Nightwatch Napalm
   let critPerPunctureStatus = 0 // Melee Doughty
+  let platedRound = 0 // Primary Plated Round's coefficient (0.15)
+  let flatPerProc = 0 // Cascadia Empowered
+  let bodyShotMultiplier = 1 // Meticulous Aim
+  let noBodyCrit = false // King's Gambit
   const modFlat = { critChance: 0, statusChance: 0 } // "+20 Final Status Chance" (Entropy Burst, Napalm Grenades)
   let critPerHit: { value: number; resetsAfter: number } | null = null // Secondary Enervate
   let infiniteAmmo = false
@@ -460,6 +471,18 @@ function calculateOnce({
         break
       case 'critPerPunctureStatus':
         critPerPunctureStatus += effect.value * times
+        break
+      case 'damagePerMagazine':
+        platedRound += effect.coefficient * times
+        break
+      case 'flatPerProc':
+        flatPerProc += effect.value * times
+        break
+      case 'bodyShotMultiplier':
+        bodyShotMultiplier *= 1 + effect.value * times
+        break
+      case 'noBodyCrit':
+        if (times > 0) noBodyCrit = true
         break
       case 'heavyScaledCritChance':
         // normal attacks get the value, heavies get value x factor, so the extra part only counts on heavies
@@ -806,7 +829,8 @@ function calculateOnce({
   // to Finishing Touch")
   if (attack.finisher) separateDamageMultiplier *= (1 + bonus.finisherDamage) * (1 + finisherVulnerability)
   // pseudo-exalted (Landslide, Shattered Lash, Whipclaw, Blade Storm): "1x additional damage per combo multiplier" on every hit
-  const heavyComboFactor = isHeavy || (isMelee && exalted?.abilityCombo) ? combo : 1
+  // Exalted Blade's heavy waves: "Energy wave's damage does not scale off combo counter"
+  const heavyComboFactor = (isHeavy && !attack.noCombo) || (isMelee && exalted?.abilityCombo) ? combo : 1
   if (exalted && exalted.strength !== 'none') {
     requirements.push(`${exalted.ability} active (${exalted.strength === 'base' ? 'base damage' : `+${Math.round((exalted.strengthBonus ?? 0) * 100)}% damage`} x ${Math.round(exaltedStrength * 100)}% Ability Strength)`)
   }
@@ -825,6 +849,17 @@ function calculateOnce({
     requirements.push(`${attack.name}: +${Math.round(attack.damagePerMagazineRound * 100)}% per round in a full ${rounds}-round magazine (x${(1 + attack.damagePerMagazineRound * rounds).toFixed(1)})`)
   }
 
+  // Primary Plated Round (wiki): "Max Damage Bonus = 15 x sqrt(5 x Magazine Size)" in %, "additive to base damage sources
+  // such as Serration", off the modded magazine (a 25-round magazine = +167.71%, "Matches ... Serration"). primaries only,
+  // not battery magazines (no flag for those in the data) or Incarnon charges. it lasts 10 s, so it covers a whole magazine
+  // only if you empty it in 10 s: the wiki's "Ideal Fire Rate" = magazine / 10
+  if (platedRound > 0 && weapon.category === 'Primary' && weapon.magazineSize && !/incarnon/i.test(attack.name)) {
+    const rounds = Math.max(1, Math.round(weapon.magazineSize * (1 + bonus.magazineCapacity) * magazineMultiplier))
+    const plated = platedRound * Math.sqrt(5 * rounds)
+    bonus.damage += plated
+    requirements.push(`Primary Plated Round: +${(plated * 100).toFixed(1)}% damage from a ${rounds}-round magazine, needs ${(rounds / 10).toFixed(1)}+ shots/s to last the whole magazine`)
+  }
+
   // ---- Kuva / Tenet / Coda bonus element: an innate element worth X% of base damage ----
   if (bonusElement && bonusElement.value > 0 && hasBonusElement(weapon.name)) {
     const extra = sum(Object.values(attack.damage)) * bonusElement.value
@@ -840,6 +875,7 @@ function calculateOnce({
   let nonCritPeakBonus = 0 // the bonus itself, for the biggest possible hit
   let armorStripPerPuncture = 0
   const conversions: Extract<PerkEffect, { kind: 'convert' }>[] = []
+  const perkBaseSet: Partial<Record<'critChance' | 'statusChance' | 'critMultiplier', number>> = {}
   for (const { perk, stacks: perkStacks } of incarnonPerks) {
     for (const statement of perk.statements) {
       if (!statement.effect || !perkAppliesTo(statement.mode, isIncarnonAttack, weapon.category === 'Melee')) continue
@@ -865,6 +901,8 @@ function calculateOnce({
       if (effect.kind === 'base') perkBase[effect.stat] += effect.value * times
       else if (effect.kind === 'flat') perkFlat[effect.stat] += effect.value * times
       else if (effect.kind === 'mod') applyEffect(effect.effect, times)
+      else if (effect.kind === 'mods') for (const part of effect.effects) applyEffect(part, times)
+      else if (effect.kind === 'baseSet') perkBaseSet[effect.stat] = effect.value
       else if (effect.kind === 'nonCritBonus') {
         nonCritChanceBonus += effect.chance * effect.value
         nonCritPeakBonus += effect.value
@@ -884,9 +922,9 @@ function calculateOnce({
   attack = {
     ...attack,
     damage: Object.fromEntries(Object.entries(attack.damage).map(([damageType, amount]) => [damageType, amount * baseDamageScale])),
-    critChance: attack.critChance + perkBase.critChance + passiveBase.critChance,
-    critMultiplier: attack.critMultiplier + perkBase.critMultiplier,
-    statusChance: attack.statusChance + perkBase.statusChance + passiveBase.statusChance,
+    critChance: perkBaseSet.critChance ?? attack.critChance + perkBase.critChance + passiveBase.critChance,
+    critMultiplier: perkBaseSet.critMultiplier ?? attack.critMultiplier + perkBase.critMultiplier,
+    statusChance: perkBaseSet.statusChance ?? attack.statusChance + perkBase.statusChance + passiveBase.statusChance,
   }
   weapon = { ...weapon, multishot: (attack.multishot ?? weapon.multishot) + perkBase.multishot }
 
@@ -1006,9 +1044,13 @@ function calculateOnce({
   // Vigilante set: "X% chance to enhance Critical Hits from Primary Weapons", a crit that gets enhanced goes up one tier, which
   // averages out the same as that much more crit chance on every hit that crits
   const vigilanteChance = weapon.category === 'Primary' ? VIGILANTE_ENHANCE_PER_PIECE * Math.min(6, setPieces.Vigilante ?? 0) : 0
-  const critChance = critBeforeVigilante + vigilanteChance * Math.min(1, Math.max(0, critBeforeVigilante))
+  // King's Gambit (Sicarus Incarnon): "Bodyshots can't crit, weak point hits get +150% Critical Chance"
+  const critChance = noBodyCrit && !target.headshot ? 0 : critBeforeVigilante + vigilanteChance * Math.min(1, Math.max(0, critBeforeVigilante))
+  if (noBodyCrit) requirements.push(target.headshot ? "King's Gambit: weak point hits, +150% crit chance" : "King's Gambit: body shots can't crit")
   // headcrit doubles the weapon's *base* crit multiplier, so mods scale it but Cold's flat bonus doesn't
-  const headcritFactor = isHeadshot && headcrit ? HEADCRIT_MULTIPLIER : 1
+  // the wiki module's ExtraHeadshotDmg -2 (Alternox, Arca Plasmor, Nataruk's Perfect Shot): no headshot multiplier at all
+  const noHeadMultiplier = attack.extraHeadshot === null
+  const headcritFactor = isHeadshot && headcrit && !noHeadMultiplier ? HEADCRIT_MULTIPLIER : 1
   // Tenacious Bond (companion): "+1.2x Final Critical Damage Multiplier", a flat add the mods don't scale: 1 + tier x
   // (crit multi - 1 + final) per the wiki. the headcrit doubles it too: a Vadarya headcrit through Electric Shield only
   // matched in game (5,581,803 vs 5,589,989) with it inside the x2, and 12% off without
@@ -1086,10 +1128,15 @@ function calculateOnce({
 
   // Weak_Point: (head multiplier + 1.5 x weak point damage bonuses) x (1 + headshot multiplier bonuses)
   const weakPointMultiplier = headMultiplier + WEAK_POINT_BONUS_RATE_ON_HEAD * bonus.weakpointDamage
-  const headshotFactor = isHeadshot ? weakPointMultiplier * (1 + bonus.headshotMultiplier) : 1
+  // innate headshot bonuses (Kuva Chakkhurr, Cernos Prime +50%, Synapse +20%): "additive to other sources of +bonus damage on
+  // headshot such as Primary Deadhead" (wiki Kuva Chakkhurr)
+  bonus.headshotMultiplier += attack.extraHeadshot ?? 0
+  const headshotFactor = isHeadshot && !noHeadMultiplier ? weakPointMultiplier * (1 + bonus.headshotMultiplier) : 1
   // Debuffs panel vulnerability + Petrify, added together
   const vulnerability = debuffs.damageVulnerability + abilityVulnerability
-  const sharedMultiplier = (1 + vulnerability) * headshotFactor
+  // Meticulous Aim: "Bodyshot damage penalty is multiplicative to weapon overall damage", anything but the head
+  const bodyShotFactor = isHeadshot ? 1 : bodyShotMultiplier
+  const sharedMultiplier = (1 + vulnerability) * headshotFactor * bodyShotFactor
 
   // Xata's Whisper: X% of the weapon's total damage as a separate Void hit, faction applies to it twice
   // faction counts twice on these (Xata's Whisper wiki: "double dips on faction damage, and body part weaknesses"), so
@@ -1174,15 +1221,22 @@ function calculateOnce({
     average: split.average * factor,
   })
 
+  // Meticulous Aim on DoTs (wiki): "The -45% bodyshot damage is always applied twice to Slash, Heat, Toxin, and Blast, but will
+  // not apply to Electricity or Gas if they are from a headshot"
+  const dotBodyShot = (damageType: string) =>
+    bodyShotMultiplier === 1 ? 1 : ['electricity', 'gas'].includes(damageType) && isHeadshot ? 1 : bodyShotMultiplier ** 2
+  // Cascadia Empowered counts every proc that lands, before the stack caps below trim the DoTs
+  const procsLanding = sum(Object.values(procRates))
+  const procMix = Object.entries(procRates).filter(([, rate]) => rate > 0)
   const dots: DotRow[] = Object.entries(DOT_STATUSES)
     .filter(([damageType]) => (procRates[damageType] ?? 0) > 0)
     .map(([damageType, info]) => {
       const elementMultiplier = info.usesElementMods ? 1 + (elementBonus[damageType] ?? 0) + (statusElementBonus[damageType] ?? 0) : 1
-      const headshotPart = !isHeadshot ? 1 : info.fullHeadshot ? headshotFactor : 1 + bonus.headshotMultiplier
+      const headshotPart = !isHeadshot || noHeadMultiplier ? 1 : info.fullHeadshot ? headshotFactor : 1 + bonus.headshotMultiplier
       const merged = BEAM_MERGED_DOTS.includes(damageType) ? beamMerge : 1
       const beforeCrit =
         info.fraction * statusBase * elementMultiplier * factionMultiplier * (1 + bonus.statusDamage + (statusDamageByType[damageType] ?? 0)) *
-        (1 + vulnerability) * headshotPart * merged
+        (1 + vulnerability) * headshotPart * merged * dotBodyShot(damageType)
       // Xata's Whisper also goes off on each Blast detonation: 26% x detonation x faction again x (1 + elemental mods),
       // "the Elemental Damage Bonus is applied even though Blast detonations don't scale off Elemental Damage Bonuses" (wiki)
       const xataOnBlast = damageType === 'blast' && xataShare > 0
@@ -1260,6 +1314,19 @@ function calculateOnce({
     const line = 'Nightwatch Napalm: target stays in the fire for the full burn'
     if (!requirements.includes(line)) requirements.push(line)
   }
+  // Cascadia Empowered (wiki): "Creates an extra instance of damage when proccing a status effect" worth 750 of the proc's
+  // damage type. "Not affected by damage, element, physical ... or critical mods", "Affected by faction mods and bonuses once",
+  // "Affected by Damage Vulnerability", "Not affected by weakspots", but the target's armor and weakness to that type do count.
+  // so per proc: 750 x faction x (1 + vulnerability) x type multiplier, averaged over the build's proc mix
+  if (flatPerProc > 0 && procsLanding > 0) {
+    const perProc = sum(procMix.map(([damageType, rate]) => rate * typeMultiplier(damageType))) / procsLanding * flatPerProc * factionMultiplier * (1 + vulnerability)
+    const flat: CritSplit = { normal: perProc, crit: perProc, average: perProc }
+    dots.push({
+      damageType: 'cascadia', procsPerSecond: procsLanding, tick: flat, ticks: 1, perProc: flat, dps: perProc * procsLanding, aoe: null,
+      note: `Cascadia Empowered: +${flatPerProc} per status proc in the proc's own damage type, faction and vulnerability only (no mods, crits or headshots).`,
+      factors: { fraction: 0, statusBase: flatPerProc, element: 1, faction: factionMultiplier, statusDamage: 0, vulnerability, headshot: 1, merged: 1, type: perProc / (flatPerProc * factionMultiplier * (1 + vulnerability)) },
+    })
+  }
   const dotDps = sum(dots.map((dot) => dot.dps))
 
   // ---- biggest single instance (damage cap tab) ----
@@ -1316,7 +1383,8 @@ function calculateOnce({
       procsPerPellet: pelletsPerSecondForModel > 0 ? dot.procsPerSecond / pelletsPerSecondForModel : 0,
       tick: dot.damageType === 'blast' ? dot.perProc : dot.tick,
       ticks: dot.damageType === 'blast' ? 1 : dot.ticks,
-      firstTickAt: dot.damageType === 'blast' ? 1.5 : dot.damageType === 'electricity' || dot.damageType === 'gas' ? 0 : 1,
+      // merged attacks label their parts' rows "heat (Explosion)", so go by the type before the label
+      firstTickAt: firstTickFor(dot.damageType.split(' (')[0]),
       refreshes: dot.damageType === 'heat' && statusMode !== 'capped', // capped Heat can't pile past 4
     })),
   }

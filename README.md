@@ -77,7 +77,16 @@ collected by hand from the wiki since warframe-items doesn't have them. `src/cal
 - mod-like lines (+% Damage, +% Multishot, +% Fire Rate, CO-type per status, +% Headshot Damage) go through the mod parser
 - Devouring/Devastating Attrition = 50% chance for +2000% on non-crits (expected value), Latron's Flensing Spikes = 20% armor per Puncture stack
 - [Incarnon Form only] / [Normal only] restrict a statement to that attack, untagged applies to both. melee ignores the tags
-- conditional parts ("When Channeled Ability active:", "On Kill: ... Stacks up to 4x.") start off, toggle them in the panel
+- conditional parts ("When Channeled Ability active:", "On Kill: ... Stacks up to 4x.") start where the leaderboard has them
+  (`scenarioPerkStacks` in src/calc/incarnon.ts), change them in the panel:
+  - the same rules as mod conditionals (max stacks, headshot hits off on body shots, kills off on the boss board), so Riddled
+    Target sits at 4 (+100% multishot), Furis's Stormburst at 3 (+1.2 base multishot), Haven Foray's Overshield +30 on, Daring
+    Reverie's channeled +38 on
+  - off when the scenario can't meet it: another weapon equipped (Stalker's perks), crowds / range (within 6 m), a hurt or fresh
+    target (below half health, undamaged, fewer than 3 statuses)
+  - status triggers ("On Puncture Status Effect", "On hitting Electricity-affected enemies") switch back off when the build never
+    applies that status: Stormburst does nothing on a Furis with no Electricity
+  - Prelude of Might's "When Critical Chance below 40%" is checked against the build's final crit chance
 
 Enemy box: pick a preset (its wiki base level fills in), set base level + level (slider) and Steel Path. Health/shields/armor scale with the
 Enemy_Level_Scaling curves for the selected faction (smoothstep blend between 70-80 levels over base), armor clamps 200-2700.
@@ -169,6 +178,8 @@ Tonkkatt, Pyrana Prime, Dual Coda Torxica, plus Tekko / Alternox / Epitaph signa
 
 What the leaderboard (and a freshly equipped mod/arcane) assumes for "On X:" bonuses:
 - most triggers (On Kill, On Status Effect...) at max stacks
+- Incarnon perk conditions too, with a few extra rules (see the Incarnon section above)
+- Secondary Outburst at the full 12x (Crescendo builds)
 - headshot / weak point *hit* triggers (Primary Crux, Longbow Sharpshot) off, since the scenario is body shots.
   Headshot *kill* triggers (Primary/Secondary Deadhead) stay on, the buff works on every shot once it's up
 - melee-kill triggers on a gun (Primary/Secondary Dexterity) at half: you have to swap to melee and kill to keep them up
@@ -339,8 +350,30 @@ One leaderboard, ranked by a setting (`src/optimizer/objectives.ts`, each one op
 The DPS-type rankings are optimized twice, with and without fire rate / attack speed mods (and arcanes), switched by "Allow fire rate
 mods". If the search happens to find a better build without them, that build is used for the "allowed" board too.
 
-Settings on the page: Rank by, time window, Primary/Secondary/Melee, search, "Allow fire rate mods" and "Include Incarnon forms". Incarnon forms run on
-Incarnon charge which isn't in the data, so they never reload here, which is why they can be toggled off.
+Settings on the page: Rank by, time window (3 s by default, the burst ranking), Primary/Secondary/Melee, search, "Allow fire rate
+mods" and "Include Incarnon forms".
+
+Incarnon forms run on their charges, then have to be earned back (`incarnonRefill` in build-data, damage.ts):
+- each Genesis page: "each charge producing N rounds to a maximum of M" per weak point hit (Vasto 3 to 24 = 8 hits, Onos 30 to
+  350, Torid / Angstrum count direct hits), "Individual Multishot bullets can build charges"
+- refill time = hits / the normal form's hit rate (its fire rate with the same fire rate mods x its projectiles, its own magazine and
+  reloads included), every normal shot assumed to land on a weak point, Incarnon Efficiency's +50% charge counted
+- plus switching both ways, each 2x the base reload (`INCARNON_SWAP_RELOADS` in damage.ts). The Genesis pages say "Mode switching
+  is not instantaneous and has an animation equal to the weapon's reload speed", but in game the swap runs longer than a reload,
+  and no page gives a timing, so 2x is my call until there's a measured number. Reload mods don't shorten it (Phenmor's reload
+  perk "Does not affect transition from Incarnon back to base form")
+- the leaderboard tags an Incarnon form "Refill" on sustained / boss and on any time window longer than its battery takes to fire:
+  past that point the number leans on the refill assumption, and how long the refill really takes depends on your aim
+- the calculator's Full results show the battery on its own: rounds and shots, time to fire it all, damage per battery (DoTs
+  included), damage per second while it lasts, and the best-case refill
+- so a small battery (Vasto Prime's 24 rounds, ~1.2 s of fire) spends most of a fight refilling: still near the top in 3 s, much
+  lower in sustained. Unmodded Vasto Prime: 8 hits at 1.76/s = 4.5 s + 4 s switching per form
+
+Onos's Incarnon form (`onosIncarnon` in build-data): holding the trigger charges for 4 s (the module's 0.25/s) while the Radiation
+beam ticks 7 times, ramping "up to 2.5x" (Talk:Onos measured 36, 41 ... 69 off a 30 base: 30 x (1 + 1.5k/8)), then the Heat blast
+and its 3 m explosion. 1 round a tick + 50 for the blast = 57 rounds a cycle, 6 cycles a 350-round form. "Held Damage + Charge Attack
++ Charge Radial Attack" is the whole cycle, and nothing lands at t = 0: the blast comes one charge in (4 s unmodded), so it misses
+a 3 s window without fire rate mods
 
 - Scenario (`src/optimizer/scenario.ts`): no faction, no armor, body shots, conditionals at max stacks with exceptions
   (`triggerUptime` in `src/calc/parseMod.ts`): headshot-hit triggers (Crux, Sharpshot) off, headshot-kill triggers (Deadhead) on,
@@ -351,7 +384,9 @@ Incarnon charge which isn't in the data, so they never reload here, which is why
   spend the combo they need
 - Search (`src/optimizer/optimize.ts`): mod pool = compatible mods with an effect that can raise that ranking (`modPool.ts`, fire rate /
   magazine / reload only for the DPS-type rankings), beam search over 8 slots (width 8), single-mod swaps, best Incarnon perk per tier,
-  best arcane, elemental slot order. Heuristic, so check odd results in the calculator ("Load build" applies the scenario too)
+  best arcane, elemental slot order. Incarnon perks that need a status the build brings (Furis's Stormburst needs Electricity,
+  Latron's Riddled Target Puncture, 9 weapons in all) also get a full search with the perk locked in, since the perk pass runs on
+  finished mods and would never add the element for it (Furis: 619k -> 1.42M sustained). Heuristic, so check odd results in the calculator ("Load build" applies the scenario too)
 - Conflicts: same rules as the mod browser, see Mod restrictions below
 - Not optimized: Exilus slot, polarities/capacity. Event-only attacks (reload explosions, turret expiry) are skipped
 - Each attack is scored on its own (an impact + its explosion aren't summed). Incarnon forms count as 1 projectile. Charged attacks use
@@ -477,7 +512,7 @@ Classes not in the table hit once and keep the export's number
 - Faction weaknesses apply to shields, not overguard
 - Heat/Toxin/Electricity/Gas ticks are reduced by armor (the wiki pages don't say either way)
 - Heat stacks tick on their own 1 s clocks here, in game they merge into one tick per second (same total, slightly different timing)
-- Incarnon forms never reload (Felarx's form has its own 60-round pool that mods don't touch, the others' charge isn't in the data)
+- Incarnon forms refill at 100% weak point accuracy with the normal form (the real number depends on your aim)
 - Head multiplier/headcrit defaults are per faction. Picking an enemy uses the wiki's head multiplier when it has its own
   (about 80 do), the rest still follow the faction
 - Incarnon Genesis per-status bonuses aren't in the data (Cedo's +60%/status is in the passives table)
@@ -487,6 +522,14 @@ Classes not in the table hit once and keep the export's number
 - Incarnon perks: "Base X set to Y" (Survivor's Edge) replaces the base, King's Gambit zeroes body crit and adds +150% weak point
   crit chance like Acuity, "Converts X% of current ... to Base ..." (High Ground) works like Wiseman's Regard. Not modeled:
   Munitions Grit's multishot-projectile bonus, Kinetic Killer (slide attacks aren't in the calc), utility perks (shown greyed out)
+- "On last shot in magazine" (Torid's Final Fusillade, +3 multishot) and "On final magazine burst" (Burston's Forceful Finality, +5)
+  only hit one shot / burst per magazine, so they're averaged over it: value x rounds in that shot / shots per magazine. Torid's
+  5-round grenades get +0.6, its Incarnon form's 170 charges +0.018
+- Plentiful Mayhem (Torid, Miter): "Multishot consumes ammo directly from Capacity", so a shot costs its projectile count like an
+  ammo-hungry alt-fire (5 rounds at 1.9 multishot = 2.6 shots a magazine, the Incarnon form "pools directly from its magazine").
+  Torid's "+60%" goes on the extra projectiles only, "multiplicative to base damage bonuses like Serration": the average
+  projectile gets 1 + 0.6 x (M - 1) / M. In the Incarnon form "all multishot bonuses are increased by 60%" instead. Miter's
+  version (wiki "+20") has no damage part here, the number's unclear
 
 ## Not modeled yet
 
@@ -509,7 +552,7 @@ These need something the calc doesn't have yet, so they're parked:
   Serration", off the modded magazine. 25 rounds = +167.7%, 80 = +300%. Full bonus assumed, with a note on the fire rate it needs
   to last a whole magazine (magazine / 10 s, the wiki's "Ideal Fire Rate")
 - Secondary Outburst: +20% crit chance and crit damage per combo multiplier consumed, in with crit mods ("additive with mods like
-  Pistol Gambit"). The leaderboard assumes half (6x = +120%), like melee-kill buffs on a gun
+  Pistol Gambit"). Assumed at the full 12x (+240%): it's a Crescendo-build arcane that rides on a maxed combo
 - Cascadia Empowered: an extra hit per status proc worth 750 of the proc's type x faction x (1 + vulnerability) x the target's
   armor/weakness for that type. "Not affected by damage, element, physical ... or critical mods", "Affected by faction mods and
   bonuses once", "Not affected by weakspots". It's a row next to the DoTs, procs/s = every proc that lands

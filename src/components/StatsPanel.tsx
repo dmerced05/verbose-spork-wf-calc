@@ -226,6 +226,25 @@ export function StatsPanel({ result, body, head, arsenal, unmodded, canHeadshot 
         </tbody>
       </table>
 
+      {result.battery && (
+        <>
+          <h3>Incarnon battery <span className="muted-inline">(one full form, crits averaged, DoTs included)</span></h3>
+          <table className="stat-compare">
+            <tbody>
+              <tr><td>Rounds</td><td>{formatNumber(result.battery.rounds, 0)} ({formatNumber(result.battery.shots, 1)} shots)</td></tr>
+              <tr title="Every shot in the battery at this fire rate"><td>Time to fire it all</td><td>{formatNumber(result.battery.seconds, 2)}s</td></tr>
+              <tr title="Every shot's damage plus the full DoT of its procs"><td>Damage per battery</td><td>{formatNumber(result.battery.damage, 0)}</td></tr>
+              <tr><td>Damage per second while it lasts</td><td>{formatNumber(result.battery.damage / Math.max(1e-9, result.battery.seconds), 0)}</td></tr>
+              {result.battery.refillSeconds !== null && (
+                <tr title="Weak point (or direct) hits with the normal form, every shot counting, plus 2x the base reload to swap in and again to swap out. Real refills depend on your aim">
+                  <td>Refill (best case)</td><td>{formatNumber(result.battery.refillSeconds, 2)}s</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </>
+      )}
+
       <h3>Damage types <span className="muted-inline">(per pellet)</span></h3>
       <table className="stat-compare">
         <thead>

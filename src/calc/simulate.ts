@@ -24,13 +24,14 @@ export interface ShotModel {
   critChance: number
   dots: DotModel[]
   instantDots: boolean // Harmony heavies detonate their procs on the spot
+  firstShotAt?: number // seconds before the first shot (a charge that has to finish first)
 }
 
 // shot times from t = 0 until the window closes: a full magazine, then a reload, and so on
 export function shotTimes(model: ShotModel, seconds: number): number[] {
   const times: number[] = []
   const interval = 1 / model.fireRate
-  let time = 0
+  let time = model.firstShotAt ?? 0
   let roundsLeft = model.magazineSize ?? Infinity
   while (time < seconds && times.length < 200000) {
     times.push(time)

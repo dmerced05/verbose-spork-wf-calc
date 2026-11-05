@@ -6,7 +6,7 @@ import { estimateKill } from './calc/kill'
 import { CO_MODE_LABELS, resolveCoBehavior, type CoMode } from './calc/conditionOverload'
 import { EnemyPanel } from './components/EnemyPanel'
 import { IncarnonPanel } from './components/IncarnonPanel'
-import { getIncarnonTiers, type SelectedPerk } from './calc/incarnon'
+import { getIncarnonTiers, scenarioPerkStacks, type SelectedPerk } from './calc/incarnon'
 import { DebuffsPanel } from './components/DebuffsPanel'
 import { PassivesPanel } from './components/PassivesPanel'
 import { WarframePanel } from './components/WarframePanel'
@@ -95,7 +95,7 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
   const [arcaneSlot, setArcaneSlot] = useState<ArcaneSlot | null>(null)
   const [coOverride, setCoOverride] = useState<CoMode | 'auto'>('auto')
   const [incarnonSelection, setIncarnonSelection] = useState<Record<string, string | null>>({})
-  const [incarnonStacks, setIncarnonStacks] = useState<Record<string, number>>({}) // conditional perks start off
+  const [incarnonStacks, setIncarnonStacks] = useState<Record<string, number>>({}) // only what you changed, the rest is scenarioPerkStacks
   const [target, setTarget] = useState(DEFAULT_TARGET)
   const [debuffs, setDebuffs] = useState(DEFAULT_DEBUFFS)
   const [buffs, setBuffs] = useState<Buffs>({ roar: 0, combo: 1, gladiatorWarframePieces: 0 })
@@ -165,9 +165,14 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
   const compatibleMods = useMemo(() => getCompatibleMods(weapon), [weapon])
   const compatibleArcanes = useMemo(() => getCompatibleArcanes(weapon), [weapon])
   const incarnonTiers = useMemo(() => getIncarnonTiers(weapon.name), [weapon])
+  // a perk's conditional part starts where the leaderboard has it (incarnon.ts scenarioPerkStacks: status / kill / channel /
+  // overshield conditions on, headshot hits only with headshots on), until you change it in the panel
+  const perkStacks: Record<string, number> = Object.fromEntries((incarnonTiers ?? []).flatMap(({ perks }) => perks.map((perk) => [
+    perk.name, incarnonStacks[perk.name] ?? scenarioPerkStacks(perk, { isMelee, bodyShots: !target.headshot }),
+  ])))
   const incarnonPerks: SelectedPerk[] = (incarnonTiers ?? []).flatMap(({ tier, perks }) => {
     const perk = perks.find((candidate) => candidate.name === incarnonSelection[tier])
-    return perk ? [{ perk, stacks: incarnonStacks[perk.name] ?? 0 }] : []
+    return perk ? [{ perk, stacks: perkStacks[perk.name] ?? 0 }] : []
   })
 
   const weaponPassives = useMemo(() => passivesFor(weapon.name), [weapon])
@@ -391,7 +396,7 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
             <IncarnonPanel
               tiers={incarnonTiers}
               selection={incarnonSelection}
-              stacks={incarnonStacks}
+              stacks={perkStacks}
               isIncarnonAttack={/incarnon/i.test(attack.name)}
               isMelee={weapon.category === 'Melee'}
               onSelectionChange={setIncarnonSelection}

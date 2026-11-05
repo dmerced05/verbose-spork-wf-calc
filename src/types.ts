@@ -16,6 +16,10 @@ export interface Attack {
   // the wiki module's ExtraHeadshotDmg: + this to headshot bonuses (Kuva Chakkhurr / Cernos Prime 0.5), or null = no headshot
   // multiplier at all (-2 in the module: Alternox, Arca Plasmor, Nataruk's Perfect Shot)
   extraHeadshot?: number | null
+  // Incarnon form refill (wiki Genesis pages): "each charge producing 3 rounds" per weak point hit (direct hit on Torid / Angstrum)
+  incarnonRefill?: { roundsPerHit: number; directHits?: boolean }
+  // a charged shot that only lands once it's charged (Onos's Incarnon blast): the first one comes one cycle in, not at t = 0
+  firstShotAfterCharge?: boolean
   followsStance?: boolean // melee attacks that aren't the Normal Attack but go off with every combo hit (Exalted Blade's wave)
   noCombo?: boolean // a heavy that doesn't take the combo multiplier (Exalted Blade's heavy waves)
   wave?: boolean // Exalted Blade's energy waves: full damage point blank, 0 at 70 m

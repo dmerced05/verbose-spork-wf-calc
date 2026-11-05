@@ -1249,6 +1249,88 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
   expectClose('heavy wave has no combo', blade.attacks.find((attack) => attack.name === 'Heavy Attack Energy Wave')!.noCombo ? 1 : 0, 1)
 }
 
+// Incarnon conditionals at the scenario's stacks (incarnon.ts scenarioPerkStacks)
+{
+  const { scenarioPerkStacks } = await import('../src/calc/incarnon')
+  const body = { isMelee: false, bodyShots: true }
+  expectClose('Riddled Target starts at 4 stacks', scenarioPerkStacks(perkFor('Latron', 'II', 'Riddled Target'), body), 4)
+  expectClose('Stormburst starts at 3 stacks', scenarioPerkStacks(perkFor('Furis', 'II', 'Stormburst'), body), 3)
+  expectClose('Haven Foray (Overshields) starts on', scenarioPerkStacks(perkFor('Furis', 'II', 'Haven Foray'), body), 1)
+  expectClose('Headcracker off on body shots', scenarioPerkStacks(perkFor('Furis', 'IV', 'Headcracker'), body), 0)
+  expectClose('Headcracker on with headshots', scenarioPerkStacks(perkFor('Furis', 'IV', 'Headcracker'), { isMelee: false, bodyShots: false }), 10)
+  const latron = weapons.find((weapon) => weapon.name === 'Latron')!
+  const latronWith = (perkName: string, stacks: number) => calculate({ weapon: latron, attack: latron.attacks[0], mods: [], incarnonPerks: [{ perk: perkFor('Latron', 'II', perkName), stacks }],
+    armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' } })
+  // Latron is mostly Puncture, so it procs Puncture and keeps "+25% Multishot" x 4 = +100%: 1 -> 2
+  expectClose('Riddled Target 4 stacks = x2 multishot', latronWith('Riddled Target', 4).multishot, 2)
+  // Furis: Stormburst needs Electricity procs. plain Furis has none, so it's switched off; with an Electricity mod it's +0.4 x 3
+  const furis = weapons.find((weapon) => weapon.name === 'Furis')!
+  const furisWith = (tier: string, perkName: string, stacks: number, extra: ReturnType<typeof equipFake>[] = []) => calculate({ weapon: furis, attack: furis.attacks[0], mods: extra,
+    incarnonPerks: [{ perk: perkFor('Furis', tier, perkName), stacks }], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' } })
+  expectClose('Stormburst off without Electricity', furisWith('II', 'Stormburst', 3).multishot, furis.multishot)
+  expectClose('Stormburst with Electricity', furisWith('II', 'Stormburst', 3, [equipFake('Convulsion', ['+90% Electricity'])]).multishot, furis.multishot + 1.2)
+  // Haven Foray: +28 base, +30 more with Overshields
+  const furisBase = Object.values(furis.attacks[0].damage).reduce((a, b) => a + b, 0)
+  expectClose('Haven Foray with Overshields', furisWith('II', 'Haven Foray', 1).moddedBaseDamage, furisBase + 58)
+  // Prelude of Might: +3 base crit multiplier only while crit chance is under 40%
+  const prelude = furisWith('IV', 'Prelude of Might', 1)
+  expectClose('Prelude of Might under 40% crit', prelude.critMultiplier, furis.attacks[0].critMultiplier + 3)
+  expectClose('Prelude of Might off at 40%+ crit', furisWith('IV', 'Prelude of Might', 1, [equipFake('Point Strike', ['+2000% Critical Chance'])]).critMultiplier, furis.attacks[0].critMultiplier)
+}
+
+// Torid: Final Fusillade's +3 multishot is the last shot of a magazine only, Plentiful Mayhem makes multishot cost ammo
+{
+  const torid = weapons.find((weapon) => weapon.name === 'Torid')!
+  const grenade = torid.attacks.find((attack) => attack.name === 'Grenade Impact')!
+  const form = torid.attacks.find((attack) => attack.name === 'Incarnon Form')!
+  const toridWith = (attack: typeof grenade, perkName: string, mods: ReturnType<typeof maxed>[] = []) => calculate({ weapon: torid, attack, mods,
+    incarnonPerks: [{ perk: perkFor('Torid', 'II', perkName), stacks: 0 }], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' } })
+  // 5-round magazine: +3 on 1 of 5 shots = +0.6 average
+  expectClose('Final Fusillade on a 5-round magazine', toridWith(grenade, 'Final Fusillade').multishot, 1.6)
+  // Incarnon form's 170 charges: +3 / 170
+  expectClose('Final Fusillade on 170 charges', toridWith(form, 'Final Fusillade').multishot, 1 + 3 / 170)
+  // Plentiful Mayhem + Split Chamber (+90%): 1.9 projectiles a shot, the 0.9 extra ones at +60% -> x(1 + 0.6 x 0.9 / 1.9)
+  const mayhemNormal = toridWith(grenade, 'Plentiful Mayhem', [maxed('Split Chamber')])
+  const plainNormal = calculate({ weapon: torid, attack: grenade, mods: [maxed('Split Chamber')], incarnonPerks: [{ perk: perkFor('Torid', 'II', 'Plentiful Mayhem'), stacks: 0 }].map(({ perk }) => ({ perk: { ...perk, statements: perk.statements.filter((statement) => statement.effect?.kind !== 'multishotCostsAmmo') }, stacks: 0 })),
+    armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 }, target: { ...grineerTarget, faction: 'None' } })
+  expectClose('Plentiful Mayhem extra projectiles +60%', mayhemNormal.hit.average / plainNormal.hit.average, 1 + 0.6 * 0.9 / 1.9)
+  // 5 rounds / 1.9 per shot = 2.63 shots a magazine
+  expectClose('Plentiful Mayhem shots per magazine', mayhemNormal.shotModel.magazineSize ?? 0, 5 / 1.9)
+  // Incarnon form: multishot bonuses x1.6 (+90% -> +144%), and 170 charges / 2.44 per shot
+  const mayhemForm = toridWith(form, 'Plentiful Mayhem', [maxed('Split Chamber')])
+  expectClose('Plentiful Mayhem Incarnon multishot', mayhemForm.multishot, 2.44)
+  expectClose('Plentiful Mayhem Incarnon shots per charge pool', mayhemForm.shotModel.magazineSize ?? 0, 170 / 2.44)
+}
+
+// the optimizer retries status-gated perks with their own search: Furis's Stormburst only works with Electricity in the build,
+// so the plain perk pass never picked it (619k). locked in, the search adds Electricity and lands ~1.42M
+{
+  const { optimizeAttack } = await import('../src/optimizer/optimize')
+  const { objectiveById } = await import('../src/optimizer/objectives')
+  const furis = weapons.find((weapon) => weapon.name === 'Furis')!
+  const build = optimizeAttack(furis, furis.attacks[0], objectiveById('sustained')!)
+  expectClose('Furis leaderboard search finds Stormburst', build.perks.some(({ perk }) => perk.name === 'Stormburst') ? 1 : 0, 1)
+}
+
+// Incarnon form refill: Vasto Prime's 24 rounds = 8 weak point hits ("each charge producing 3 rounds") with the normal form
+// (2.5/s, 6-round magazine, 1 s reload: 6 / 3.4 = 1.76 hits/s) = 4.53 s, plus a 2-reload swap each way = 8.53 s
+// Onos: a 57-round charge cycle (7 beam ticks + the 50-round blast) is 6 per 350-round form, and the blast lands 4 s in
+{
+  const run1 = (name: string, attackName: string) => {
+    const weapon = weapons.find((candidate) => candidate.name === name)!
+    return calculate({ weapon, attack: weapon.attacks.find((attack) => attack.name === attackName)!, mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 },
+      target: { ...grineerTarget, faction: 'None' } })
+  }
+  expectClose('Vasto Prime Incarnon refill + switching', run1('Vasto Prime', 'Incarnon Form').shotModel.reloadTime ?? 0, 8 / (6 / (6 / 2.5 + 1)) + 4)
+  const blast = run1('Onos', 'Incarnon Form Charge Attack')
+  expectClose('Onos 6 charge cycles per form', blast.shotModel.magazineSize ?? 0, 6)
+  // battery: 6 blasts, so 6 x (blast + its Heat DoT), fired 4 s apart
+  expectClose('Onos battery = 6 blasts', blast.battery!.damage, 6 * blast.attackTotal)
+  expectClose('Onos battery fires in 24 s', blast.battery!.seconds, 24)
+  expectClose('Onos blast not in the first 3 s', blast.damageInWindow(3), 0)
+  expectClose('Onos blast lands by 5 s', blast.damageInWindow(5) > 0 ? 1 : 0, 1)
+}
+
 // ability damage (src/data/abilityDamage.ts), the wiki's own worked examples
 {
   const { ABILITY_DAMAGE } = await import('../src/data/abilityDamage')

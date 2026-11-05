@@ -26,6 +26,9 @@ import { STANCES, applyStance, bestCombo, comboLabel, usesStance, type StanceCho
 
 // "sustained" = average DPS over a fight this long: reloads, DoT ramp-up and Heat stacking count, and DoT ticks
 // after the fight ends don't (so long Status Duration tails stop inflating it)
+// one Incarnon swap (in or out) in base reloads. the Genesis pages say "equal to the weapon's reload speed", but in game it's
+// longer, so 2x until there's a measured number
+export const INCARNON_SWAP_RELOADS = 2
 export const SUSTAINED_FIGHT_SECONDS = 10 // about how long one tough enemy lives; Heat stacks die with it
 // the DoTs a beam's merged tick feeds twice (wiki Multishot)
 const GAS_MAX_INSTANCES = 10
@@ -140,6 +143,9 @@ export interface CalcResult {
   peakDotTick: { damageType: string; value: number } | null
   averageShot: number
   attackTotal: number // one attack: every pellet/duplicate + the full DoT of its procs
+  // an Incarnon form's whole battery: shots in it, time to fire them all, the damage they do (DoTs included), and the refill
+  // (weak point hits + swaps) before the next one. null for anything that isn't a charged Incarnon form
+  battery: { rounds: number; shots: number; seconds: number; damage: number; refillSeconds: number | null } | null
   duplicateStrikes: number // Melee Duplicate: average strikes per attack (1 without it)
   burstDps: number
   procsPerSecond: number
@@ -206,6 +212,12 @@ const quantize = (proportion: number) => (Math.sign(proportion) * Math.floor(Mat
 // "On Toxin Status Effect:" (Primary Blight), "On Melee Electricity Status:", "On Status Effect:" -> the status it waits
 // for ('any' for no type), null when the trigger isn't a status one
 export function statusTrigger(trigger: string): string | null {
+  // Incarnon wording: "On hitting Electricity-affected enemies" (Furis Stormburst), "On Toxin-affected targets"
+  const affected = trigger.match(/^On (?:hitting )?([A-Za-z]+)[- ]affected\b|^On hitting ([A-Za-z]+) target/i)
+  if (affected) {
+    const type = (affected[1] ?? affected[2]).toLowerCase()
+    return DAMAGE_TYPES.includes(type) ? type : null
+  }
   const match = trigger.match(/^On (?:Weapon |Melee )?(?:([A-Za-z]+) )?Status\b/i)
   if (!match) return null
   const type = match[1]?.toLowerCase()
@@ -321,6 +333,12 @@ function combineParts(results: CalcResult[], names: string[]): CalcResult {
     peakDotTick: peakDot,
     averageShot: add((result) => result.averageShot),
     attackTotal: add((result) => result.attackTotal),
+    // a whole cycle (Onos's beam + blast): every part's battery damage added up, the slowest part's firing time
+    battery: main.battery ? {
+      ...main.battery,
+      seconds: Math.max(...results.map((result) => result.battery?.seconds ?? 0)),
+      damage: add((result) => result.battery?.damage ?? 0),
+    } : null,
     burstDps: add((result) => result.burstDps),
     procsPerSecond: totalProcs,
     dots,
@@ -876,6 +894,10 @@ function calculateOnce({
   let armorStripPerPuncture = 0
   const conversions: Extract<PerkEffect, { kind: 'convert' }>[] = []
   const perkBaseSet: Partial<Record<'critChance' | 'statusChance' | 'critMultiplier', number>> = {}
+  const critGatedMultiplier: { below: number; value: number; perk: string }[] = []
+  const lastShotBonuses: { value: number; burst: boolean; perk: string }[] = []
+  let multishotCostsAmmo: { damage: number; perk: string } | null = null
+  let incarnonChargeBonus = 0 // Incarnon Efficiency
   for (const { perk, stacks: perkStacks } of incarnonPerks) {
     for (const statement of perk.statements) {
       if (!statement.effect || !perkAppliesTo(statement.mode, isIncarnonAttack, weapon.category === 'Melee')) continue
@@ -898,11 +920,21 @@ function calculateOnce({
         if (!requirements.includes(label)) requirements.push(label)
       }
       const effect = statement.effect
+      // Prelude of Might (Furis): "When Critical Chance below 40%: +3 Base Critical Multiplier", checked against the build's
+      // final crit chance once that's known (below)
+      const critGate = statement.condition?.match(/Critical Chance below ([\d.]+)%/i)
+      if (critGate && effect.kind === 'base' && effect.stat === 'critMultiplier') {
+        critGatedMultiplier.push({ below: Number(critGate[1]) / 100, value: effect.value * times, perk: perk.name })
+        continue
+      }
       if (effect.kind === 'base') perkBase[effect.stat] += effect.value * times
       else if (effect.kind === 'flat') perkFlat[effect.stat] += effect.value * times
       else if (effect.kind === 'mod') applyEffect(effect.effect, times)
       else if (effect.kind === 'mods') for (const part of effect.effects) applyEffect(part, times)
       else if (effect.kind === 'baseSet') perkBaseSet[effect.stat] = effect.value
+      else if (effect.kind === 'lastShot') lastShotBonuses.push({ value: effect.value * times, burst: effect.burst, perk: perk.name })
+      else if (effect.kind === 'chargeGain') incarnonChargeBonus += effect.value
+      else if (effect.kind === 'multishotCostsAmmo') multishotCostsAmmo = { damage: effect.damage, perk: perk.name }
       else if (effect.kind === 'nonCritBonus') {
         nonCritChanceBonus += effect.chance * effect.value
         nonCritPeakBonus += effect.value
@@ -926,7 +958,35 @@ function calculateOnce({
     critMultiplier: perkBaseSet.critMultiplier ?? attack.critMultiplier + perkBase.critMultiplier,
     statusChance: perkBaseSet.statusChance ?? attack.statusChance + perkBase.statusChance + passiveBase.statusChance,
   }
-  weapon = { ...weapon, multishot: (attack.multishot ?? weapon.multishot) + perkBase.multishot }
+  // magazine-based perks need the magazine: the Incarnon form's charges, or the modded magazine over each shot's ammo cost
+  const charges = attack.incarnonCharges ?? null
+  const magazineRounds = weapon.category === 'Melee' ? null
+    : charges ?? (weapon.magazineSize ? Math.max(1, Math.round(weapon.magazineSize * (1 + bonus.magazineCapacity) * magazineMultiplier)) : null)
+  // Final Fusillade: "+3 Multishot on last shot in magazine", Forceful Finality: "+5 Base Multishot" on the final burst. one shot
+  // (or one burst of burstCount rounds) out of the magazine gets it, so the average shot gets value x shots-with-it / shots.
+  // Plentiful Mayhem makes each shot cost its projectiles, so fewer shots per magazine and the last one is a bigger share
+  let lastShotBase = 0
+  for (const bonusLine of lastShotBonuses) {
+    if (!magazineRounds) continue
+    const shotsWithIt = bonusLine.burst ? Math.max(1, attack.burstCount ?? 1) : 1
+    const shots = Math.max(shotsWithIt, magazineRounds / (attack.ammoCost ?? 1) / (multishotCostsAmmo ? Math.max(1, (attack.multishot ?? weapon.multishot) + perkBase.multishot) : 1))
+    const average = bonusLine.value * shotsWithIt / shots
+    lastShotBase += average
+    requirements.push(`${bonusLine.perk} (Incarnon): +${bonusLine.value} multishot on the last ${shotsWithIt > 1 ? `${shotsWithIt}-round burst` : 'shot'} of ${Math.round(shots)} per magazine = +${average.toFixed(2)} on average`)
+  }
+  weapon = { ...weapon, multishot: (attack.multishot ?? weapon.multishot) + perkBase.multishot + lastShotBase }
+  // Plentiful Mayhem (wiki Torid Incarnon Genesis): "Multishot consumes ammo directly from Capacity and increases Damage by +60%",
+  // "multiplicative to base damage bonuses like Serration", "on applies to projectiles generated by multishot", and "In the
+  // Incarnon Form, instead of increasing the damage of additional projectiles ... all multishot bonuses are increased by 60%".
+  // the extra projectiles are (multishot - 1) of every multishot, so the average projectile gets 1 + 60% x (M - 1) / M
+  const mayhem = multishotCostsAmmo as { damage: number; perk: string } | null // set in the perk loop, TS can't see it
+  if (mayhem && mayhem.damage > 0 && weapon.category !== 'Melee') {
+    if (isIncarnonAttack) bonus.multishot *= 1 + mayhem.damage
+    else {
+      const projectiles = weapon.multishot * (multishotLocked || attack.noMultishotMods ? 1 : 1 + bonus.multishot)
+      if (projectiles > 1) separateDamageMultiplier *= 1 + mayhem.damage * (projectiles - 1) / projectiles
+    }
+  }
 
   // ---- 2. damage type proportions + quantization ----
   const baseDamage = sum(Object.values(attack.damage))
@@ -1055,8 +1115,13 @@ function calculateOnce({
   // (crit multi - 1 + final) per the wiki. the headcrit doubles it too: a Vadarya headcrit through Electric Shield only
   // matched in game (5,581,803 vs 5,589,989) with it inside the x2, and 12% off without
   const tenaciousBond = buffs.tenaciousBond ?? 0
+  const gatedCritMultiplier = sum(critGatedMultiplier.map((gate) => {
+    const on = critChance < gate.below
+    requirements.push(`${gate.perk} (Incarnon): crit chance ${Math.round(critChance * 100)}% is ${on ? 'under' : 'not under'} ${Math.round(gate.below * 100)}%, so its +${gate.value}x base crit multiplier is ${on ? 'on' : 'off'}`)
+    return on ? gate.value : 0
+  }))
   const critMultiplier =
-    ((attack.critMultiplier * (1 + bonus.critDamage) + tenaciousBond) * headcritFactor + finalCritMultiplierBonus) * abilityCritDamageScale +
+    (((attack.critMultiplier + gatedCritMultiplier) * (1 + bonus.critDamage) + tenaciousBond) * headcritFactor + finalCritMultiplierBonus) * abilityCritDamageScale +
     (attack.isAoE ? 0 : coldCritMultiplierBonus(stacks('cold')))
   // over 100% the lowest tier is the "normal" hit and the next tier up is the "crit" (Damage/Calculation 4.3)
   const normalCritMultiplier = 1 + Math.floor(critChance) * (critMultiplier - 1)
@@ -1354,16 +1419,50 @@ function calculateOnce({
   // so magazine mods make the reload longer
   const shellReload = incarnonCharges ? undefined : SHELL_BY_SHELL_RELOAD[weapon.name]
   const reloadSpeedScale = Math.max(0.01, 1 + bonus.reloadSpeed)
-  const reloadTime = !reloads
+  const normalReload = !reloads
     ? null
     : reloadOverride ?? (shellReload ? (shellReload.delay + shellReload.perShell * magazineSize!) : weapon.reloadTime!) / reloadSpeedScale
+  // the Incarnon form's "reload" is filling the gauge again with the normal form (wiki: "Incarnon Form is charged by filling
+  // the Incarnon Transmutation gauge ... by achieving weakpoint hits", "each charge producing 3 rounds to a maximum of 24" on
+  // Vasto, "Individual Multishot bullets can build charges"). so a full form takes charges / rounds-per-hit weak point hits,
+  // landed at the normal form's own rate: its fire rate (same fire rate mods) x its projectiles, reloads included. every
+  // normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits instead), so this is the best case
+  const refill = incarnonCharges && attack.incarnonRefill ? (() => {
+    const normal = weapon.attacks.find((candidate) => !/incarnon/i.test(candidate.name) && !candidate.parts && !candidate.heavy)
+    if (!normal) return null
+    const pullRate = normal.fireRate * Math.max(0.01, 1 + fireRateBonus) * fireRateMultiplier
+    const projectiles = (normal.multishot ?? 1) * (1 + bonus.multishot)
+    const normalMagazine = weapon.magazineSize ? Math.max(1, weapon.magazineSize * (1 + bonus.magazineCapacity)) : null
+    const normalReloadTime = weapon.reloadTime ? weapon.reloadTime / reloadSpeedScale : 0
+    const pullsPerSecond = normalMagazine ? normalMagazine / (normalMagazine / pullRate + normalReloadTime) : pullRate
+    const hits = incarnonCharges / attack.incarnonRefill.roundsPerHit / (1 + incarnonChargeBonus)
+    const filling = hits / (pullsPerSecond * projectiles)
+    // switching takes a reload both ways: "Mode switching is not instantaneous and has an animation equal to the weapon's
+    // reload speed" (every Genesis page), and "When Incarnon Form ends, the weapon's magazine will be refilled ... as if it were
+    // reloaded" (wiki Incarnon). reload mods don't shorten it: Phenmor's reload perk "Does not affect transition from Incarnon
+    // back to base form" and only reaches the way in "with a well-timed manual reload". in game the swap runs longer than a
+    // plain reload (my call, no source gives a timing), so each swap is 2x the base reload, in and out
+    const switching = 2 * INCARNON_SWAP_RELOADS * (weapon.reloadTime ?? 0)
+    const seconds = filling + switching
+    requirements.push(`Incarnon form refill: ${Math.round(hits)} ${attack.incarnonRefill.directHits ? 'direct' : 'weak point'} hits with the normal form (${(pullsPerSecond * projectiles).toFixed(1)}/s, every normal shot assumed to count) = ${filling.toFixed(1)} s, plus ${switching.toFixed(1)} s switching in and out = ${seconds.toFixed(1)} s per ${incarnonCharges}-round form`)
+    return seconds
+  })() : null
+  const reloadTime = refill ?? normalReload
   // Ammo Efficiency: that share of shots is free, so a magazine fires magazine / (1 - efficiency) shots. capped at 75% in
   // total since Hotfix 44.1.3 ("only 1 in 4 shots uses ammo"); what used to be 100% is now "Infinite Ammo", which ignores it
   const ammoEfficiency = (infiniteAmmo as boolean) ? 0.99 : Math.min(AMMO_EFFICIENCY_CAP, bonus.ammoEfficiency)
   // rounds per magazine: ammo per round from the wiki (Tenet Tetra's grenade "consumes all ammo", 80 of 80), at least 1
   // a cost of the whole base magazine means it always takes everything that's left, so bigger magazines still give one
-  const takesWholeMagazine = Boolean(attack.ammoCost && weapon.magazineSize && attack.ammoCost >= weapon.magazineSize)
-  const roundsPerMagazine = magazineSize ? (takesWholeMagazine || attack.reloadsAfterShot ? 1 : Math.max(1, Math.floor(magazineSize / (attack.ammoCost ?? 1) + 1e-9))) : null
+  // (against the Incarnon charges for a form: Onos's 57-round cycle isn't "the whole magazine" of a 350-round form)
+  const baseMagazine = incarnonCharges ?? weapon.magazineSize
+  const takesWholeMagazine = Boolean(attack.ammoCost && baseMagazine && attack.ammoCost >= baseMagazine)
+  // Plentiful Mayhem: every projectile costs a round, so a shot of M projectiles uses M x the shot's cost (the average M, a
+  // 2.4 multishot fires 2 or 3). no floor then, it's an average over many magazines
+  const ammoPerShot = (attack.ammoCost ?? 1) * (mayhem ? Math.max(1, multishot) : 1)
+  const roundsPerMagazine = magazineSize
+    ? (takesWholeMagazine || attack.reloadsAfterShot ? 1 : Math.max(1, mayhem ? magazineSize / ammoPerShot : Math.floor(magazineSize / ammoPerShot + 1e-9)))
+    : null
+  if (mayhem && magazineSize) requirements.push(`${mayhem.perk} (Incarnon): each shot uses ${ammoPerShot.toFixed(2)} rounds (its multishot), ${roundsPerMagazine!.toFixed(1)} shots per ${magazineSize}-round magazine`)
   const shotsPerMagazine = roundsPerMagazine ? roundsPerMagazine / Math.max(0.01, 1 - ammoEfficiency) : null
   const uptime = shotsPerMagazine && reloadTime ? shotsPerMagazine / (fireRate * reloadTime + shotsPerMagazine) : 1
   const steadyStateDps = (burstDps + dotDps) * uptime
@@ -1371,6 +1470,7 @@ function calculateOnce({
   // shots over time with procs on their own clocks (src/calc/simulate.ts)
   const pelletsPerSecondForModel = hitsPerAttack * fireRate
   const shotModel: ShotModel = {
+    firstShotAt: attack.firstShotAfterCharge ? 1 / fireRate : 0,
     fireRate,
     multishot: hitsPerAttack,
     magazineSize: shotsPerMagazine,
@@ -1461,6 +1561,10 @@ function calculateOnce({
     hit,
     averageShot,
     attackTotal,
+    battery: incarnonCharges && shotsPerMagazine ? {
+      rounds: incarnonCharges, shots: shotsPerMagazine, seconds: shotsPerMagazine / fireRate,
+      damage: attackTotal * shotsPerMagazine, refillSeconds: reloadTime,
+    } : null,
     duplicateStrikes: strikes,
     burstDps,
     procsPerSecond,

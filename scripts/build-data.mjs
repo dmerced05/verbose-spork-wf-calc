@@ -315,6 +315,49 @@ function toWeapon(weapon) {
 // proc." the export has both area parts at 150 (and plain Vectis's direct hit at 5), so they're rebuilt from that.
 // every part gets EVO2's +base damage ("Direct hit, orb embed, and orb AoE explosion damage are all affected"), taken
 // as the same proportion of each (pool 150). the delays (0.4 s, ticks over 2.5 s) aren't timed, it all lands per shot
+// how fast each Incarnon form comes back: rounds of the form per weak point hit with the normal form, from each Genesis page's
+// "each charge producing N rounds to a maximum of M" (Vasto: 3 to 24, so 8 hits; Onos: 30 to 350). Torid and Angstrum count
+// "direct hits" instead of weak point hits. pulled 2026-11-04
+const INCARNON_ROUNDS_PER_HIT = {
+  Angstrum: 40, Atomos: 1, Ballistica: 1.5, Boar: 3, Boltor: 8, Braton: 10, Bronco: 0.5, Burston: 30, Cestra: 10, Dera: 2, Despair: 5,
+  Dread: 5, 'Dual Toxocyst': 30, Felarx: 2, Furis: 14, Gammacor: 1, Gorgon: 0.66, Kunai: 5, Laetum: 18, Lato: 4, Latron: 5, Lex: 2,
+  Onos: 30, Paris: 5, Phenmor: 34, Sicarus: 10, Soma: 10, Strun: 1, Sybaris: 8, Torid: 34, Vasto: 3, Vectis: 10, Zylok: 1,
+}
+const DIRECT_HIT_GAUGES = new Set(['Angstrum', 'Torid'])
+const incarnonFamily = (name) => name.replace(/^(Mk1-|Prisma |Rakta |Synoid |Telos |Dex )/, '').replace(/ (Prime|Wraith|Vandal)$/, '')
+function incarnonRefill(weapon) {
+  const family = incarnonFamily(weapon.name)
+  const roundsPerHit = INCARNON_ROUNDS_PER_HIT[family]
+  if (!roundsPerHit) return
+  for (const attack of weapon.attacks) {
+    if (attack.incarnonCharges) attack.incarnonRefill = { roundsPerHit, ...(DIRECT_HIT_GAUGES.has(family) ? { directHits: true } : {}) }
+  }
+}
+
+// Onos Incarnon form (wiki Onos): "Holding down the trigger releases a wide beam that inflicts Radiation damage. The beam
+// narrows and increases in damage the longer the charge is held. Once fully charged, the Arm Cannon releases a powerful Heat
+// shot", "Onos consumes 1 round per tick of damage, then 50 rounds upon releasing the Heat beam". the module has the charge
+// at 0.25/s (4 s) and the beam at 2 ticks/s, and Talk:Onos measured 7 ticks before the blast ("the first tick of the beam
+// just doesn't exist"), ramping 30 -> 2.5x: 36, 41, 47 ... 69 = 30 x (1 + 1.5 k / 8) for k = 1..7. so one charge cycle is
+// 7 beam ticks averaging 30 x 1.75, then the blast, 57 rounds in all: 350 rounds = 6 cycles. every part is set to that cycle
+// (beam 1.75 ticks/s, 57/7 rounds a tick) so they all run out together, and nothing lands at t = 0
+function onosIncarnon(weapon) {
+  if (weapon.name !== 'Onos') return
+  const cycleRounds = 7 + 50
+  for (const attack of weapon.attacks) {
+    if (attack.name === 'Incarnon Form Held Damage') {
+      attack.damage = Object.fromEntries(Object.entries(attack.damage).map(([type, amount]) => [type, amount * 1.75]))
+      attack.fireRate = attack.fireRate * 7 / 8
+      attack.ammoCost = cycleRounds / 7
+      attack.firstShotAfterCharge = true
+    }
+    if (attack.name === 'Incarnon Form Charge Attack' || attack.name === 'Incarnon Form Charge Radial Attack') {
+      attack.ammoCost = cycleRounds
+      attack.firstShotAfterCharge = true
+    }
+  }
+}
+
 function vectisIncarnon(weapon) {
   if (!/^Vectis( Prime)?$/.test(weapon.name)) return
   const form = weapon.attacks.find((attack) => attack.name === 'Incarnon Form')
@@ -338,7 +381,7 @@ const regularWeapons = [...readJson('Primary'), ...readJson('Secondary'), ...rea
       weapon.attacks?.length,
   )
   .map((weapon) => toWeapon(weapon))
-  .map((weapon) => { vectisIncarnon(weapon); return weapon })
+  .map((weapon) => { vectisIncarnon(weapon); onosIncarnon(weapon); return weapon })
 
 
 // exalted weapons (Exalted Blade, Valkyr Talons, Regulators...) and the pseudo-exalted abilities that take mods (Landslide,
@@ -435,6 +478,8 @@ const NOT_WHOLE_SHOTS = new Set(['Coda Pox|Spore Impact', 'Neutralizer|Normal At
 // secondary projectiles that scatter, so on one target they mostly miss
 const EXTRA_WHOLE_SHOTS = {
   Bubonico: [['Burst', 'Radial Attack']], 'Coda Bubonico': [['Burst', 'Radial Attack']],
+  // a whole Onos Incarnon charge: the 7 ramping beam ticks and the blast with its explosion
+  Onos: [['Incarnon Form Held Damage', 'Incarnon Form Charge Attack', 'Incarnon Form Charge Radial Attack']],
   // a swing and the wave it throws hit the same target (point blank) as two separate hits
   'Exalted Blade': [['Normal Attack', 'Energy Wave']], 'Exalted Prime Blade': [['Normal Attack', 'Energy Wave']], 'Exalted Umbra Blade': [['Normal Attack', 'Energy Wave']],
   Stug: [['Blob Embed', 'Blob Embed', 'Blob Explosion'], ['Incarnon Form Blob Embed', 'Incarnon Form Blob Embed', 'Incarnon Form Blob Explosion']],
@@ -488,6 +533,7 @@ for (const weapon of [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons])
 for (const weapon of [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons]) {
   const charges = weapon.attacks.find((attack) => attack.incarnonCharges)?.incarnonCharges
   if (charges) for (const attack of weapon.attacks) if (/incarnon/i.test(attack.name) && !attack.incarnonCharges) attack.incarnonCharges = charges
+  incarnonRefill(weapon)
 }
 
 const weapons = [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons]

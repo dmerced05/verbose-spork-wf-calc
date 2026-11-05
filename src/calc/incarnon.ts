@@ -1,6 +1,6 @@
 // turns the hand-collected Incarnon perk text (src/data/incarnon.ts) into effects the calc understands
 import { INCARNON_FAMILIES } from '../data/incarnon'
-import { parseStatLine, type ModEffect } from './parseMod'
+import { parseStatLine, triggerUptime, type ModEffect, type TriggerContext } from './parseMod'
 
 export type PerkMode = 'both' | 'normal' | 'incarnon'
 export type BaseStat = 'damage' | 'critChance' | 'critMultiplier' | 'statusChance' | 'multishot'
@@ -14,6 +14,13 @@ export type PerkEffect =
   | { kind: 'armorStripPerPuncture'; value: number } // Latron's Flensing Spikes
   // Wiseman's Regard / Decisive Stature: base chance goes up by a share of the other modded chance, capped
   | { kind: 'convert'; stat: 'critChance' | 'statusChance'; from: 'critChance' | 'statusChance'; ratio: number; max: number }
+  // Final Fusillade (Torid) / Forceful Finality (Burston): a base bonus on the last shot / burst of each magazine only
+  | { kind: 'lastShot'; stat: 'multishot'; value: number; burst: boolean }
+  // Plentiful Mayhem (Torid, Miter): every extra projectile from multishot uses a round of the magazine, and on Torid the
+  // extra projectiles hit harder (or, in the Incarnon form, multishot bonuses are 60% bigger)
+  | { kind: 'multishotCostsAmmo'; damage: number }
+  // Incarnon Efficiency / Catalyst: "+50% Incarnon charge" per weak point hit, so the form refills in fewer hits
+  | { kind: 'chargeGain'; value: number }
   // Survivor's Edge: "Base Status Chance set to 12%", replaces the base instead of adding to it
   | { kind: 'baseSet'; stat: 'critChance' | 'statusChance' | 'critMultiplier'; value: number }
 
@@ -113,6 +120,25 @@ function parsePerkLine(effects: string, native: boolean): PerkStatement[] {
       text = text.slice(0, modeTag.index).trim()
     }
 
+    // "On last shot in magazine: +3 Base Multishot" isn't a buff you keep up, it's one shot (or one burst) per magazine.
+    // damage.ts spreads it over the magazine as an average
+    const lastShot = text.match(/^On (last shot in magazine|final magazine burst):\s*\+([\d.]+) Base Multishot$/i)
+    if (lastShot) {
+      statements.push({ text: rawStatement, effect: { kind: 'lastShot', stat: 'multishot', value: Number(lastShot[2]), burst: /burst/i.test(lastShot[1]) }, mode, condition: null, maxStacks: 1 })
+      continue
+    }
+    // the refill already assumes weak point hits, so "On Weakpoint Hit: +50% Incarnon charge" is just always on
+    const chargeGain = text.match(/^On (?:Weakpoint Hit|Headshot):\s*\+([\d.]+)% Incarnon charge$/i)
+    if (chargeGain) {
+      statements.push({ text: rawStatement, effect: { kind: 'chargeGain', value: percent(chargeGain[1]) }, mode: 'both', condition: null, maxStacks: 1 })
+      continue
+    }
+    const costsAmmo = text.match(/^Multishot consumes ammo from Capacity(?: and increases Damage by \+([\d.]+)%)?$/i)
+    if (costsAmmo) {
+      statements.push({ text: rawStatement, effect: { kind: 'multishotCostsAmmo', damage: costsAmmo[1] ? percent(costsAmmo[1]) : 0 }, mode, condition: null, maxStacks: 1 })
+      continue
+    }
+
     // "On Non-Critical Hit: 50% chance to deal 2000% Damage" is a chance roll, not something you toggle
     const nonCrit = text.match(/^On Non-Critical Hit:\s*(.+)$/)
     if (nonCrit) {
@@ -172,6 +198,26 @@ export interface SelectedPerk {
   stacks: number // how many stacks of the conditional part are up (0 = off)
 }
 
+// how much of a perk's conditional part the usual fight assumes (the leaderboard, Compare, and a freshly picked perk in the
+// calculator). same rules as mod conditionals (parseMod triggerUptime: max stacks, headshot hits off on body shots, kills
+// off on the boss board), and on top of that the ones that need something the scenario doesn't have:
+//  - another specific weapon equipped (Stalker's Vendetta / Resentment need Dread + Hate / Despair)
+//  - a crowd or a position (enemies within 6 m, none within 5 m, impaling 5) or a hurt / fresh target (below half health,
+//    undamaged, fewer than 3 statuses): the scenario is one full-health target with the build's own statuses on it
+// status triggers ("On Puncture Status Effect", "On hitting Electricity-affected enemies") start at max like mods do, and the
+// calc turns them back off when the build never applies that status (damage.ts statusTrigger). Prelude of Might's "When
+// Critical Chance below 40%" is checked against the build's real crit chance there too
+const NOT_IN_SCENARIO = /equipped(?!:)|Dread and|Hate and|within \d+ ?m|impaling|below half Health|undamaged|Undamaged|fewer than \d+ Status/i
+export function perkConditionUptime(condition: string, context: TriggerContext): number {
+  if (NOT_IN_SCENARIO.test(condition) && !/Melee Weapon equipped|No Primary equipped|equip from Primary/i.test(condition)) return 0
+  return triggerUptime(condition, context)
+}
+export function scenarioPerkStacks(perk: IncarnonPerk, context: TriggerContext): number {
+  if (!perk.maxStacks) return 0
+  const uptimes = perk.statements.filter((statement) => statement.condition && statement.effect).map((statement) => perkConditionUptime(statement.condition!, context))
+  return uptimes.length ? Math.floor(perk.maxStacks * Math.max(...uptimes)) : 0
+}
+
 // melee Incarnon form is a state, not a separate attack in the data, so mode tags don't filter melee
 export const perkAppliesTo = (mode: PerkMode, isIncarnonAttack: boolean, isMelee: boolean) =>
   mode === 'both' || isMelee || (mode === 'incarnon') === isIncarnonAttack
@@ -190,6 +236,13 @@ export function stackingNote(effect: PerkEffect | null): string | null {
       }[effect.stat]
     case 'flat':
       return `Flat ${effect.stat === 'critChance' ? 'crit' : 'status'} chance added after mods: mods don't multiply it, it just adds on at the end.`
+    case 'lastShot':
+      return `Only the last ${effect.burst ? 'burst' : 'shot'} of each magazine gets it, so over a magazine it's +${effect.value} spread across every shot (more with a small magazine).`
+    case 'chargeGain':
+      return `Each weak point hit fills ${Math.round(effect.value * 100)}% more of the gauge, so the Incarnon form comes back in fewer normal-form hits.`
+    case 'multishotCostsAmmo':
+      return 'Every extra projectile multishot adds uses a round, so a magazine lasts magazine / multishot trigger pulls.' +
+        (effect.damage ? ` The extra projectiles get +${Math.round(effect.damage * 100)}% damage, multiplying with Serration (Incarnon form: multishot bonuses are 60% bigger instead).` : '')
     case 'baseSet':
       return `Replaces the base ${effect.stat === 'critMultiplier' ? 'crit multiplier' : effect.stat === 'critChance' ? 'crit chance' : 'status chance'} (other base bonuses don't add on top), then mods multiply it.`
     case 'mods':

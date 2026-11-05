@@ -29,6 +29,7 @@ const RANK_BY: { id: RankBy; label: string }[] = [
   { id: 'attack', label: 'Whole attack (hit + procs)' },
   { id: 'boss', label: 'Boss damage' },
 ]
+const SUSTAINED_SECONDS = 10 // damage.ts SUSTAINED_FIGHT_SECONDS (not imported: the calc stays out of this page's bundle)
 const BOSS_BOARD = 'boss' // src/optimizer/bossLeaderboard.ts (not imported: it pulls the optimizer into the page)
 const BOSS_BLURB = 'Sustained DPS on a boss: status capped at 4 stacks per type and no kills, so on-kill buffs (Deadhead, Galvanized stacks, Bladed Rounds...) never come up'
 
@@ -45,7 +46,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
   const [bossData, setBossData] = useState<LeaderboardData | null>(null)
   const [bossError, setBossError] = useState<string | null>(null)
   const [rankBy, setRankBy] = useState<RankBy>('sustained')
-  const [windowSeconds, setWindowSeconds] = useState<number>(10)
+  const [windowSeconds, setWindowSeconds] = useState<number>(3) // burst by default
   const [includeIncarnon, setIncludeIncarnon] = useState(true)
   const [allowFireRate, setAllowFireRate] = useState(true)
   const [bestPerWeapon, setBestPerWeapon] = useState(false)
@@ -188,7 +189,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
             {CATEGORIES.map((option) => <option key={option}>{option}</option>)}
           </select>
           <input placeholder="Search weapons or attacks (e.g. heavy slam)" value={search} onChange={(event) => { setSearch(event.target.value); resetPaging() }} />
-          <label className="inline-check" title="Incarnon forms fire their wiki Incarnon Charges, then reload like a magazine (forms the wiki has no charge count for never reload)">
+          <label className="inline-check" title="Incarnon forms fire their wiki Incarnon Charges, then refill: weak point (or direct) hits with the normal form, plus 2x the base reload to swap each way. A Refill tag means the ranking runs past the battery">
             <input type="checkbox" checked={includeIncarnon} onChange={(event) => { setIncludeIncarnon(event.target.checked); resetPaging() }} />
             Include Incarnon forms
           </label>
@@ -229,7 +230,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
         </div>
         <p className="muted">
           Every weapon attack, each optimized on its own, in one fixed scenario: {data.scenario}
-          Incarnon forms fire their wiki Incarnon Charges, then reload like a magazine. Burst weapons fire their wiki burst, and ammo costs come from the wiki (Tenet Tetra's grenade uses the whole magazine). Shell-by-shell weapons (Felarx, Struns, Corinth, Zarr)
+          Incarnon forms fire their wiki Incarnon Charges, then refill with weak point (or direct) hits from the normal form, every shot counting, plus 2x the base reload to swap each way (Refill tag: the ranking runs past the battery, so that part depends on your aim). Burst weapons fire their wiki burst, and ammo costs come from the wiki (Tenet Tetra's grenade uses the whole magazine). Shell-by-shell weapons (Felarx, Struns, Corinth, Zarr)
           reload longer with magazine mods. Precomputed {new Date(data.generatedAt).toLocaleDateString()} from {data.dataVersion}.
         </p>
       </section>
@@ -276,7 +277,24 @@ export function Leaderboard({ onLoadBuild }: Props) {
               })()}
             </div>
             <div className="board-score">
-              <span className="value">{compact.format(entry.score)}</span>
+              <span className="value">
+                {compact.format(entry.score)}
+                {/* an Incarnon form whose battery runs out inside this ranking's time: past that the number leans on the refill
+                    (every normal-form shot a weak point / direct hit, plus the swaps), which in a real fight depends on your aim.
+                    firing time from the stored stats: uptime = T / (T + reload), so T = uptime x reload / (1 - uptime) */}
+                {(() => {
+                  const { reloadTime, uptime, magazineSize } = entry.stats
+                  if (!entry.incarnonForm || reloadTime === null || magazineSize === null || uptime >= 1) return null
+                  const firing = (uptime * reloadTime) / Math.max(1e-9, 1 - uptime)
+                  const span = rankBy === 'window' ? windowSeconds : rankBy === 'sustained' || rankBy === 'boss' ? SUSTAINED_SECONDS : null
+                  if (span === null || span <= firing) return null
+                  return (
+                    <Tip className="niche-tag" text={`Refill assumed: the ${magazineSize}-shot battery is empty after ${firing.toFixed(1)} s, so this ${span} s number includes refilling it (${reloadTime.toFixed(1)} s of weak point / direct hits with the normal form, every shot counting, plus 2x reload swapping each way). How long that really takes depends on your aim.`}>
+                      Refill
+                    </Tip>
+                  )
+                })()}
+              </span>
               <span className="label">
                 {rankBy === 'single' && fullHeavy && /^heavy attack$/i.test(entry.attack) && heavyComboFor(entry.weaponName) ? 'all hits' : objective.unit}
               </span>

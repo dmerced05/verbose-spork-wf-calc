@@ -352,8 +352,9 @@ export interface TriggerContext { isMelee: boolean; bodyShots: boolean; noKills?
 export function triggerUptime(trigger: string, { isMelee, bodyShots, noKills }: TriggerContext): number {
   if (noKills && /kill/i.test(trigger)) return 0
   if (isHeadshotTrigger(trigger) && !/kill/i.test(trigger)) return bodyShots ? 0 : 1
-  // melee-kill buffs on a gun (Dexterity) and Secondary Outburst's combo swap need you to keep meleeing between shots: half
-  if (/melee kill|swapped from melee/i.test(trigger) && !isMelee) return 0.5
+  // melee-kill buffs on a gun (Dexterity) need you to keep meleeing between shots: half. Secondary Outburst stays at the full
+  // 12x: it goes on Crescendo-style builds that sit at max combo anyway, and that's the only place it's used
+  if (/melee kill/i.test(trigger) && !isMelee) return 0.5
   if (/armor past/i.test(trigger)) return 0.5
   return 1
 }

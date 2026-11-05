@@ -2,10 +2,10 @@
 // beam search over a pruned mod pool, then single swaps, Incarnon perks, arcane, and elemental slot order.
 // it's a heuristic, not a proof of the best build, but it's checked against hand-built meta builds.
 import { resolveCoBehavior } from '../calc/conditionOverload'
-import { calculate, type CalcResult, type SelectedPassive } from '../calc/damage'
+import { calculate, statusTrigger, type CalcResult, type SelectedPassive } from '../calc/damage'
 import type { HeavyMode } from '../data/heavyAttacks'
 import { BONUS_ELEMENT_RANGE, BONUS_ELEMENTS, hasBonusElement, passivesFor, type BonusElement } from '../data/passives'
-import { getIncarnonTiers, type SelectedPerk } from '../calc/incarnon'
+import { getIncarnonTiers, scenarioPerkStacks, type SelectedPerk } from '../calc/incarnon'
 import { defaultConditionalStacks, parseUpgrade, raisesFireRate, utilityValue } from '../calc/parseMod'
 import { getCompatibleArcanes, getCompatibleMods } from '../data'
 import type { Arcane, Attack, Buffs, Debuffs, EquippedArcane, EquippedMod, Mod, TargetSettings, Weapon } from '../types'
@@ -75,6 +75,8 @@ export interface OptimizeConstraints {
   neutralPool?: boolean
   // one target that never dies (the boss board): on-kill conditionals and kill-based passives off
   noKills?: boolean
+  // set internally on the status-gated perk retries (end of optimizeAttack) so they don't retry again
+  noPerkRetry?: boolean
 }
 
 // how far a result is from the crit limits, 0 = inside them
@@ -108,7 +110,7 @@ export function evaluateSeed(weapon: Weapon, attack: Attack, objective: Objectiv
   for (const { tier, name } of seed.perks) {
     const perk = tiers.find((candidate) => candidate.tier === tier)?.perks.find((option) => option.name === name)
     if (!perk) return null
-    perks.push({ perk, stacks: 0 })
+    perks.push({ perk, stacks: scenarioPerkStacks(perk, { isMelee, bodyShots: !SCENARIO_TARGET.headshot }) })
   }
   const arcane = arcaneData ? equipArcane(arcaneData, isMelee) : null
   const passives = passivesFor(weapon.name).map((passive) => ({ passive, stacks: passive.condition ? passive.scenarioStacks ?? passive.maxStacks ?? 1 : 1 }))
@@ -150,11 +152,14 @@ export function optimizeAttack(
   const beamWidth = constraints?.beamWidth ?? BEAM_WIDTH
   const slotCount = SLOT_COUNT - locked.length
 
+  // Incarnon conditionals at the scenario's stacks (incarnon.ts scenarioPerkStacks), like mod conditionals
+  const perkContext = { isMelee, bodyShots: !scenario.target.headshot, noKills: constraints?.noKills }
+  const atScenario = (perk: SelectedPerk['perk']): SelectedPerk => ({ perk, stacks: scenarioPerkStacks(perk, perkContext) })
   let arcane: EquippedArcane | null = constraints?.lockedArcane && constraints.lockedArcane !== 'none' ? constraints.lockedArcane : null
   // locked tiers are set once up front and never revisited
   let perks: SelectedPerk[] = incarnonTiers.flatMap(({ tier, perks: options }) => {
     const perk = lockedPerks[tier] ? options.find((option) => option.name === lockedPerks[tier]) : undefined
-    return perk ? [{ perk, stacks: 0 }] : []
+    return perk ? [atScenario(perk)] : []
   })
   // passives at the scenario's stacks, Kuva/Tenet/Coda element picked below (at the max 60%)
   const passives: SelectedPassive[] = passivesFor(weapon.name).map((passive) => ({
@@ -246,11 +251,11 @@ export function optimizeAttack(
       perks = withoutTier
       let bestScore = evaluate(best.mods)
       for (const perk of options) {
-        perks = [...withoutTier, { perk, stacks: 0 }]
+        perks = [...withoutTier, atScenario(perk)]
         const score = evaluate(best.mods)
         if (score > bestScore * (1 + 1e-9)) {
           bestScore = score
-          bestPerk = { perk, stacks: 0 }
+          bestPerk = atScenario(perk)
         }
       }
       perks = bestPerk ? [...withoutTier, bestPerk] : withoutTier
@@ -316,13 +321,31 @@ export function optimizeAttack(
   const found: OptimizedBuild = { weapon, attack, score: objective.score(result), result, mods: [...locked, ...best.mods], arcane, perks, passives, bonusElement }
   // a bigger pool can walk the beam into a worse corner (Exalted Blade vs Grineer: the bane crowds out a better crit
   // build early), so with a real target I also search the plain pool and keep whichever ends up better
-  if (scenarioTarget && (scenarioTarget.faction !== 'None' || scenarioTarget.headshot)) {
-    const plain = optimizeAttack(weapon, attack, objective, allowFireRateMods, heavyMode, { ...constraints, neutralPool: true })
-    const searchScore = (build: OptimizedBuild) => {
-      const miss = critViolation(build.result.critChance, constraints)
-      return miss > 0 ? build.score * Math.exp(-20 * miss) * 1e-3 : build.score
-    }
-    if (searchScore(plain) > searchScore(found) * (1 + 1e-9)) return plain
+  const searchScore = (build: OptimizedBuild) => {
+    const miss = critViolation(build.result.critChance, constraints)
+    return miss > 0 ? build.score * Math.exp(-20 * miss) * 1e-3 : build.score
   }
-  return found
+  let winner = found
+  if (scenarioTarget && (scenarioTarget.faction !== 'None' || scenarioTarget.headshot)) {
+    const plain = optimizeAttack(weapon, attack, objective, allowFireRateMods, heavyMode, { ...constraints, neutralPool: true, noPerkRetry: true })
+    if (searchScore(plain) > searchScore(winner) * (1 + 1e-9)) winner = plain
+  }
+  // perks that only work with a status the build brings itself (Furis's Stormburst needs Electricity, Latron's Riddled Target
+  // Puncture). the perk pass runs on finished mods, and with no Electricity in them Stormburst does nothing (damage.ts turns
+  // it off), so it never got picked and the mods never had a reason to add Electricity: Furis's leaderboard build was 619k,
+  // Stormburst + Electricity is 1.42M. so every status-gated perk that didn't make it gets its own search with it locked in
+  if (!constraints?.noPerkRetry) {
+    for (const { tier, perks: options } of incarnonTiers) {
+      if (tier in lockedPerks) continue
+      for (const perk of options) {
+        if (winner.perks.some((selected) => selected.perk === perk)) continue
+        if (!perk.statements.some((statement) => statement.condition && statement.effect && statusTrigger(statement.condition))) continue
+        const retry = optimizeAttack(weapon, attack, objective, allowFireRateMods, heavyMode, {
+          ...constraints, lockedPerks: { ...lockedPerks, [tier]: perk.name }, noPerkRetry: true,
+        })
+        if (searchScore(retry) > searchScore(winner) * (1 + 1e-9)) winner = retry
+      }
+    }
+  }
+  return winner
 }

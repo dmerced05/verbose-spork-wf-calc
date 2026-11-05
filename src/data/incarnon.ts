@@ -46,7 +46,7 @@ IV | Survivor's Edge | Braton Prime | +10% Base Critical Chance; +14% Base Statu
     variants: ['Torid'],
     lines: `
 II | Final Fusillade | ALL | +51 Base Damage; On last shot in magazine: +3 Base Multishot
-II | Plentiful Mayhem | ALL | +31 Base Damage; Multishot consumes ammo from Capacity; +60% Damage
+II | Plentiful Mayhem | ALL | +31 Base Damage; Multishot consumes ammo from Capacity and increases Damage by +60%
 III | Swift Deliverance | ALL | +50% Projectile Speed
 III | Renewed Horror | ALL | On Reload from Empty: damage field duration doubles on first shot
 III | Extended Volley | ALL | +9 Base Magazine Capacity [Normal only]

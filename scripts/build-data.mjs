@@ -690,6 +690,9 @@ writeFileSync(new URL('modSets.json', outDir), JSON.stringify(modSets))
 writeFileSync(new URL('helminth.json', outDir), JSON.stringify(helminthAbilities))
 writeFileSync(new URL('arcanes.json', outDir), JSON.stringify(arcanes))
 writeFileSync(new URL('weapons.json', outDir), JSON.stringify(weapons))
+// the update each weapon came out in ("19.0.7"), wiki's Introduced. own file so weapons.json (and the leaderboard's
+// fingerprints) don't change over it. only Data Analysis reads it
+writeFileSync(new URL('introduced.json', outDir), JSON.stringify(Object.fromEntries(weapons.map((weapon) => [weapon.name, WIKI_WEAPONS[weapon.name]?.introduced ?? null]).filter(([, version]) => version))))
 
 // stance combos, summed per combo from the wiki (scripts/wiki-stances.txt has the format). the calc uses them for
 // melee Normal Attack DPS: hits per second and damage multipliers from the combo instead of one plain swing

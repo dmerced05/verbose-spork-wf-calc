@@ -3,10 +3,13 @@
 import { evaluateSeed, optimizeAttack, type OptimizedBuild, type SeedBuild } from './optimize'
 import { raisesFireRate } from '../calc/parseMod'
 import { BOARDS, boardKey } from './objectives'
+import { SCENARIO_HEADSHOT } from './scenario'
 import { heavyComboFor } from '../data/heavyAttacks'
 import type { LeaderboardStats, StoredEntry } from './leaderboardTypes'
 import type { Weapon } from '../types'
 
+// guns on a headshot board aim for the head, melee keeps the body-shot scenario
+const scenarioFor = (weapon: Weapon, headshot?: boolean) => (headshot && weapon.category !== 'Melee' ? SCENARIO_HEADSHOT : null)
 const round = (value: number, digits = 4) => Math.round(value * 10 ** digits) / 10 ** digits
 
 // mods stay as [uniqueName, name, rank, stacks] here, the build script turns them into indexes into the shared table.
@@ -25,7 +28,8 @@ export function toEntry(build: OptimizedBuild): WeaponEntry {
     type: build.weapon.type,
     attack: build.attack.name,
     incarnonForm: /incarnon/i.test(build.attack.name),
-    score: round(build.score, 2),
+    // time-to-kill scores are 1 / seconds (0.02 for 50 s), so small ones keep significant digits instead of 2 decimals
+    score: Math.abs(build.score) < 100 ? Number(build.score.toPrecision(5)) : round(build.score, 2),
     stats: {
       critChance: round(result.critChance),
       critMultiplier: round(result.critMultiplier),
@@ -52,8 +56,9 @@ export function toEntry(build: OptimizedBuild): WeaponEntry {
 // board key -> this weapon's entries on it
 // seeds: builds found in the Compare tab (scripts/leaderboard-seeds.json). each one is scored the leaderboard's way and
 // only replaces the search's build when it scores higher, so a seed can never make an entry worse
-export function optimizeWeapon(weapon: Weapon, seeds: SeedBuild[] = []): Record<string, WeaponEntry[]> {
-  const boards = Object.fromEntries(BOARDS.map((board) => [board.key, [] as WeaponEntry[]]))
+// onlyBoards: just these boards (build-leaderboard --boards), the rest come back empty and the script keeps the old ones
+export function optimizeWeapon(weapon: Weapon, seeds: SeedBuild[] = [], onlyBoards?: string[]): Record<string, WeaponEntry[]> {
+  const boards = Object.fromEntries(BOARDS.filter((board) => !onlyBoards || onlyBoards.includes(board.key)).map((board) => [board.key, [] as WeaponEntry[]]))
   // event-only attacks (reload explosions, turret expiry) don't fire at the fire rate, so they're skipped.
   const attacks = weapon.attacks.filter(
     // headshot-only parts (Vectis Incarnon's orb explosion) never happen in the leaderboard's body-shot scenario
@@ -65,13 +70,14 @@ export function optimizeWeapon(weapon: Weapon, seeds: SeedBuild[] = []): Record<
   for (const attack of attacks) {
     const builds = new Map<string, OptimizedBuild>()
     found.set(attack.name, builds)
-    for (const { key, objective, allowFireRateMods, heavyMode, heavyOnly } of BOARDS) {
+    for (const { key, objective, allowFireRateMods, heavyMode, heavyOnly, headshot } of BOARDS) {
+      if (onlyBoards && !onlyBoards.includes(key)) continue
       // heavies use up the combo, so spamming them at max combo isn't real DPS. they only compete for single hits.
       // same for alt-fires that need a gauge filled first (Trumna's grenade: 5 kills each): one volley, not a fire rate
       if ((attack.heavy || attack.altGate) && objective.usesFireRate) continue
       // the full-heavy board only holds multi-hit Heavy Attacks
       if (heavyOnly && !(attack.heavyMultiplier && heavyComboFor(weapon.name))) continue
-      builds.set(key, optimizeAttack(weapon, attack, objective, allowFireRateMods, heavyMode))
+      builds.set(key, optimizeAttack(weapon, attack, objective, allowFireRateMods, heavyMode, scenarioFor(weapon, headshot) ? { scenario: scenarioFor(weapon, headshot) } : undefined))
     }
     // the search is a heuristic, so the no-fire-rate build can come out ahead. it's a legal build either way
     for (const { key, objective, allowFireRateMods } of BOARDS) {
@@ -89,7 +95,7 @@ export function optimizeWeapon(weapon: Weapon, seeds: SeedBuild[] = []): Record<
       if (seed.weaponId !== weapon.uniqueName || seed.attack !== attack.name) continue
       const spec = BOARDS.find((candidate) => candidate.key === seed.board)
       if (!spec || !builds.has(spec.key)) continue
-      const seeded = evaluateSeed(weapon, attack, spec.objective, spec.heavyMode ?? 'biggestHit', seed)
+      const seeded = evaluateSeed(weapon, attack, spec.objective, spec.heavyMode ?? 'biggestHit', seed, scenarioFor(weapon, spec.headshot) ?? undefined)
       // "no fire rate" boards stay that way
       if (!seeded || (!spec.allowFireRateMods && (seeded.mods.some(({ mod, rank }) => raisesFireRate(mod.levelStats, rank)) || (seeded.arcane && raisesFireRate(seeded.arcane.arcane.levelStats))))) continue
       if (seeded.score > builds.get(spec.key)!.score) builds.set(spec.key, seeded)

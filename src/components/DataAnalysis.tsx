@@ -1,4 +1,4 @@
-// Data Analysis: Warframe abilities side by side. each ability runs on the build that fits how it scales (src/data/abilityBuilds.ts)
+// Experimental > Ability Damage (the file kept its old Data Analysis name): Warframe abilities side by side. each ability runs on the build that fits how it scales (src/data/abilityBuilds.ts)
 // against a real target, so % of HP abilities (Smite, Reave, Sow + Reap) show up as what they are: they take the same share
 // of a Lancer and a Babau. hover a row for the wiki's scaling notes, the build's mods and why that build
 import { useMemo, useState } from 'react'
@@ -50,7 +50,7 @@ const DEFAULT_TARGET: TargetSettings = {
 const num = (value: number) => Math.round(value).toLocaleString()
 const pct = (value: number) => `${Math.round(value * 1000) / 10}%`
 
-export function DataAnalysis() {
+export function AbilityDamagePage() {
   const [target, setTarget] = useState(DEFAULT_TARGET)
   const [roar, setRoar] = useState(0)
   const [sort, setSort] = useState<Sort>('kill')

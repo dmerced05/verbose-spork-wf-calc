@@ -1,5 +1,5 @@
-# verbose-spork-wf-calc
-calculator for warframe
+# Verbose Spork Warframe Analysis
+calculator and analysis for warframe (repo: verbose-spork-wf-calc)
 
 React + Vite + TypeScript. Item data comes from [@wfcd/items](https://github.com/WFCD/warframe-items) (the package was renamed from `warframe-items`, which stopped updating in April 2025), trimmed at build time.
 
@@ -24,17 +24,33 @@ them). `node scripts/compare-wiki-data.mjs` lists every attack whose damage / cr
 
 - **Calculator**: one weapon attack vs one target, with your Warframe, debuffs, buffs, a riven and the damage math written out
   (FormulaPanel). The Build Advisor under it says what each stat is worth to the build right now and which mod gets it cheapest
-- **Leaderboard**: precomputed best builds for every weapon attack, plus a Boss Damage board (see Leaderboard)
-- **Compare Build Paths**: one weapon, 2-4 build paths with their own rules (lock mods in/out, arcane, Incarnon perks, crit limits,
+- **Leaderboard**: precomputed best builds for every weapon attack, plus Boss time-to-kill boards (see Leaderboard)
+- **Compare** (two pages):
+  - **Build Paths**: one weapon, 2-4 build paths with their own rules (lock mods in/out, arcane, Incarnon perks, crit limits,
   a riven), each optimized and shown side by side. Runs in a worker, never writes to the leaderboard
-- **Compare Weapons**: two weapons of one category, base stats with where each sits in its category (evolved Incarnon numbers),
+  - **Weapons**: two weapons of one category, base stats with where each sits in its category (evolved Incarnon numbers),
   and what the leaderboard's best builds do with them
 - **Rivens**: roll ranges per stat and layout, why some stats suit the weapon, and a god-roll search (the optimizer rebuilt
   around each candidate riven)
 - **Damage Cap**: can one hit pass the 32-bit damage limit, and what it takes. A ladder of layers (mods, headshot, solo priming,
   Warframe arcanes, shards, your frame, enemy debuffs, allies), each optimized for the biggest single instance
-- **Data Analysis**: Warframe ability damage side by side against a real target (see Ability damage)
+- **⚠ Experimental** (two pages, flagged as leaning on more guesses):
+  - **Ability Damage**: Warframe ability damage side by side against a real target (see Ability damage)
+  - **Data Analysis**: the whole arsenal in graphs. An Attack switch at the top swaps every section (except Enervate) between Normal fire, Normal + Incarnon (Incarnon form where a weapon has one),
+    Alt-fire & special (other fire modes, glaive throws, ranged melee attacks; the hardest-hitting one per weapon), Incarnon form
+    and Melee heavy, and filters the leaderboard rows the same way (Normal fire = best non-Incarnon build). Slams aren't counted. Incarnon weapons' base stats include the evolutions the leaderboard picked for
+    that attack (base-stat lines only: +base damage / crit / status / multiplier, "set to", native flat crit/status; conditionals at
+    scenario stacks), and every dot's tooltip lists those evolutions. The leaderboard only stores tiers that change damage. Average/median crit, crit multiplier, status and base damage per
+    category, crit and status histograms, a crit-vs-status scatter; a per-subtype breakdown
+    (gun types plus spearguns, melee by wiki class: table of medians and median leaderboard score, then a picked subtype's
+    histograms, scatter, top weapons and most picked mods/arcanes); the leaderboard section filters by subtype too; how much crit Secondary
+    Enervate really gives by base crit, no other crit mods (the calc's own cycle average: ~103% at 0% base, ~133% at 60%),
+    against Primed Pistol Gambit, Creeping Bullseye and Gambit + Galvanized Crosshairs; base stats
+    by release update (wiki "Introduced", bucketed by 5 updates); what a Prime changes over the original; and what the
+    leaderboard's best builds pick (mods, arcanes, damage mix, Incarnon share, and how well each base stat predicts the
+    score, as a Spearman rank correlation). Charts are hand-rolled SVG (src/components/charts.tsx), no chart library
 - **Status Guide**: how each status scales and what it does, with the numbers the calc uses
+- **About**: empty for now
 
 ## How the math works
 
@@ -180,7 +196,8 @@ What the leaderboard (and a freshly equipped mod/arcane) assumes for "On X:" bon
 - most triggers (On Kill, On Status Effect...) at max stacks
 - Incarnon perk conditions too, with a few extra rules (see the Incarnon section above)
 - Secondary Outburst at the full 12x (Crescendo builds)
-- headshot / weak point *hit* triggers (Primary Crux, Longbow Sharpshot) off, since the scenario is body shots.
+- headshot / weak point *hit* triggers (Primary Crux, Longbow Sharpshot) off, since the scenario is body shots (on for guns on
+  the Single damage instance board, which is headshots).
   Headshot *kill* triggers (Primary/Secondary Deadhead) stay on, the buff works on every shot once it's up
 - melee-kill triggers on a gun (Primary/Secondary Dexterity) at half: you have to swap to melee and kill to keep them up
 - Primary Bulwark (+1% damage per armor past 1,000, max +500%) at half (+250%), it needs a tank frame. In the calculator
@@ -326,11 +343,28 @@ opens). After a data update: `npm run leaderboard`, then deploy.
 Rebuilds are incremental (`scripts/leaderboardFingerprint.ts`): one engine hash over the shared code (damage formula, optimizer,
 scenario, stances, weapon classes) and one hash per weapon over what the per-item lookups *return* for it (its mods, passives,
 Incarnon perks, heavy combo...). Engine change = full rebuild, a fixed augment only reruns the weapons that can equip it.
-Comment-only edits don't count. Flags: `--dry` (just say what's stale), `--only=<names>`, `--all`, `--adopt` (stamp fingerprints without rerunning), `--boss`.
+Comment-only edits don't count. Flags: `--dry` (just say what's stale), `--only=<names>`, `--all`, `--boards=<keys>` (only re-optimize those boards, e.g. `single`; the rest are kept from the old file), `--adopt` (stamp fingerprints without rerunning), `--boss`.
 
-Boss Damage board (`src/optimizer/bossLeaderboard.ts`, `--boss` into `public/boss-leaderboard.json`): one target that doesn't
-die, status capped at 4 stacks a type, on-kill conditionals off (Deadhead, Galvanized, Merciless, kill passives), Devouring
-Attrition off, gauge-gated alt-fires left out, sustained DPS over a 10 s fight.
+Boss time-to-kill boards (`src/optimizer/bossLeaderboard.ts`, `--boss` into `public/boss-leaderboard.json`): each build is
+optimized to kill one Steel Path hardmode boss solo as fast as it can, ranked by seconds (stored as 1 / seconds):
+- Janus Captain Vor: wiki "Health = 7500, Shield = 2750, Armor = 250", "SpawnLevel = 375", Grineer, "Solo: 1x health", and
+  "immune to armor reduction" (Heat, Corrosive, auras, Flensing Spikes do nothing). Level 375 with Steel Path's x2.5: 942k shields,
+  14.3M health, 2,700 armor
+- The Fragmented One: "Health = 50000", "SpawnLevel = 225" solo, The Murmur, "Viral damage resistance and immunity to Viral
+  status", plus Update 40's "Steel Path / Deep Archimedea base health bonus: 150,000": 80.8M health, no shields or armor
+- damage attenuation (`attenuatedTimeToKill` in src/calc/simulate.ts), the wiki's two-layer model (Necramite / Archon "Damage
+  Resistance Logic"): each trigger is Reinhard-mapped, MDPT x DPT / (DPT + MDPT), then a bucket follows the last 1 s of damage and
+  decays toward it with lambda = 2/3, and damage is scaled by MDPS / bucket while the bucket is over MDPS. Update 40 made the caps
+  "proportional to Max Health" but no hardmode boss has published numbers, so both use Hemocyte's (the only post-rework ones on the
+  wiki): MDPT = 5% of max health, MDPS = 20% of max health. A guess, `BOSS_ATTENUATION` in bossLeaderboard.ts. It puts a floor of
+  ~5 s on any boss's health. The search uses a quick estimate (each layer at least pool / min(MDPS, mapped burst) x uptime), the
+  picked build is then timed on the full bucket model
+- time to kill = time to strip the shields (shield-layer damage) + time to deal the health, each off the expected damage over time
+  (reloads, Incarnon refills, DoT ticks as they land), found by a few secant steps and a short bisection over the killing shot.
+  Past 10 minutes it's extrapolated ("10+ min" on the page) so weak builds still give the search a slope
+- status capped at 4 stacks a type, on-kill conditionals off, Devouring Attrition off, gauge-gated alt-fires left out, heavies left
+  out, body shots
+- not modeled: invulnerable phases (Vor's shielded phases and turrets), adds, movement
 
 Every attack (component) of every weapon gets its own listing (Normal Attack, Slam, Heavy Slam, Heavy Attack, alt-fire,
 Incarnon form...), each optimized on its own. "Best attack per weapon only" collapses it back to one row per weapon.
@@ -343,7 +377,8 @@ on a gun that isn't recognised counts as primary fire. The filter applies before
 One leaderboard, ranked by a setting (`src/optimizer/objectives.ts`, each one optimized separately):
 - Sustained DPS: average over a 60 s fight (see Damage over time above)
 - Damage in a time window (3 / 10 / 30 s): simulates shots from t = 0 with reloads, DoTs count the part that fits in the window
-- Single damage instance: one hit of one projectile / one melee swing, crits averaged, no DoTs
+- Single damage instance: one hit of one projectile / one melee swing, crits averaged, no DoTs. Guns score it on headshots
+  (weak point mods, Acuity and headshot-hit triggers in play; AoE can't headshot), melee stays on body hits
 - Whole attack (hit + procs): everything one attack does to one target, every pellet / Melee Duplicate strike plus the full DoT of
   each proc it lands (forced ones included). Made for heavies and glaive detonations, which live on their procs
 
@@ -375,7 +410,7 @@ and its 3 m explosion. 1 round a tick + 50 for the blast = 57 rounds a cycle, 6 
 + Charge Radial Attack" is the whole cycle, and nothing lands at t = 0: the blast comes one charge in (4 s unmodded), so it misses
 a 3 s window without fire rate mods
 
-- Scenario (`src/optimizer/scenario.ts`): no faction, no armor, body shots, conditionals at max stacks with exceptions
+- Scenario (`src/optimizer/scenario.ts`): no faction, no armor, body shots (gun single hits: headshots), conditionals at max stacks with exceptions
   (`triggerUptime` in `src/calc/parseMod.ts`): headshot-hit triggers (Crux, Sharpshot) off, headshot-kill triggers (Deadhead) on,
   melee kills on a gun (Dexterity) and armor thresholds (Bulwark, +1%/armor past 1,000) at half. When two arcanes tie, the one with
   headshot multiplier / reload speed wins (reload counts half for single hit), so Deadhead and Merciless beat Dexterity,
@@ -437,7 +472,7 @@ target HP, kill time, and status notes (Viral x10, armor at its lowest).
   a storm tick every 0.25 s launches a mote each time, Strength-many Heat procs per mote (doubled with Archon Vitality) plus
   Strength-many procs of the melee's damage types per tick. At level cap that's Viral x10 and armor 2700 -> 270 in a second or two
 
-Cards show on the Warframe panel for your own and subsumed abilities. The Data Analysis tab runs every one on the build its page
+Cards show on the Warframe panel for your own and subsumed abilities. The Experimental > Ability Damage page runs every one on the build its page
 says it scales with (`src/data/abilityBuilds.ts`: Max Strength 420% / Strength + Duration 321% Str 199% Dur / Max Duration 332%,
 real mods at max rank plus Crimson shards, augments swapped in for filler mods) against a picked target, with Roar and UWB
 (Valence Formation, Nourish, Eclipse, Arcane Avenger, a crit multiplier bonus, Arcane Arachne) as settings.
@@ -447,7 +482,7 @@ real mods at max rank plus Crimson shards, augments swapped in for filler mods) 
 ```
 scripts/build-data.mjs    trims warframe-items to weapons/mods/arcanes/enemies JSON
 scripts/check-calc.ts     wiki example checks
-scripts/pull-wiki-data.py wiki weapon + enemy modules -> scripts/wiki-*.json. compare-wiki-data.mjs diffs weapons against them
+scripts/pull-wiki-data.py wiki weapon + enemy modules -> scripts/wiki-*.json (build-data also writes src/data/introduced.json from it: each weapon's release update, only Data Analysis reads it). compare-wiki-data.mjs diffs weapons against them
 src/calc/constants.ts     faction table, status effects, DoT fractions
 src/calc/parseMod.ts      stat lines -> effects, incl. "On Kill: ... Stacks up to 5x"
 src/calc/damage.ts        the pipeline above

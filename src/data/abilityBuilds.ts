@@ -1,4 +1,4 @@
-// the builds the Data Analysis tab runs each ability on. abilities scale with different stats (a nuke wants Strength, a zone
+// the builds the Experimental > Ability Damage page runs each ability on. abilities scale with different stats (a nuke wants Strength, a zone
 // or a ramp wants Strength and Duration, Jade's beams want Duration), so each ability gets the build that fits it, made from
 // real mods at max rank and run through the Warframe panel's own stat math (src/calc/warframeStats.ts), set bonus included
 import { modsById, mods, warframesById, warframes, warframeBaseName } from '.'

@@ -8,6 +8,8 @@
 //   npm run leaderboard -- --dry        just list what would rerun and why
 //   npm run leaderboard -- --all        full rebuild
 //   npm run leaderboard -- --only=Kronen Prime,Glaive    also rerun these (by name), changed or not
+//   npm run leaderboard -- --boards=single   only re-optimize these boards (keys), keep the others from the old file.
+//                                       for a change that only touches those boards (the engine hash still marks everyone)
 //   npm run leaderboard -- --adopt      stamp fingerprints on the current file without rerunning anything.
 //                                       only for when you know the file already matches the code
 //   npm run leaderboard -- --boss       the Boss Damage board instead (src/optimizer/bossLeaderboard.ts), into its own
@@ -47,7 +49,8 @@ const SEEDS = new URL('scripts/leaderboard-seeds.json', ROOT)
 const loadSeeds = (): SeedBuild[] => (existsSync(SEEDS) ? (JSON.parse(readFileSync(SEEDS, 'utf8')) as SeedBuild[]) : [])
 // seeds are main-board builds, the boss board doesn't take them
 const seedsFor = (seeds: SeedBuild[], weaponId: string) => (BOSS ? [] : seeds.filter((seed) => seed.weaponId === weaponId))
-const runWeapon = (weapon: Weapon, seeds: SeedBuild[]) => (BOSS ? optimizeWeaponBoss(weapon) : optimizeWeapon(weapon, seeds))
+const ONLY_BOARDS = option('boards')?.split(',').map((key) => key.trim()).filter(Boolean)
+const runWeapon = (weapon: Weapon, seeds: SeedBuild[]) => (BOSS ? optimizeWeaponBoss(weapon) : optimizeWeapon(weapon, seeds, ONLY_BOARDS))
 // the boss board also depends on its own module
 const bossEngine = (engine: string) => createHash('sha256').update(engine).update(readFileSync(new URL('src/optimizer/bossLeaderboard.ts', ROOT), 'utf8')).digest('hex').slice(0, 16)
 
@@ -60,7 +63,7 @@ function runShard(shard: number, count: number) {
   const boards: Boards = Object.fromEntries(BOARDS.map((board) => [board.key, []]))
   todo.forEach((weaponId, index) => {
     if (index % count !== shard) return
-    for (const [key, entries] of Object.entries(runWeapon(weaponsById.get(weaponId)!, seedsFor(seeds, weaponId)))) boards[key].push(...entries)
+    for (const [key, entries] of Object.entries(runWeapon(weaponsById.get(weaponId)!, seedsFor(seeds, weaponId)))) boards[key]?.push(...entries)
     process.stdout.write('.')
   })
   writeFileSync(new URL(`shard-${shard}.json`, CACHE_DIR), JSON.stringify(boards))
@@ -156,7 +159,9 @@ async function main() {
 
   // keep everything that isn't being rerun or removed
   const stale = new Set([...todo, ...removed])
-  const boards: Boards = Object.fromEntries(BOARDS.map(({ key }) => [key, old.boards[key].filter((entry) => !stale.has(entry.weaponId))]))
+  // with --boards only those boards drop the stale weapons' entries, the others keep theirs (removed weapons go everywhere)
+  const rerun = (key: string) => !ONLY_BOARDS || ONLY_BOARDS.includes(key)
+  const boards: Boards = Object.fromEntries(BOARDS.map(({ key }) => [key, old.boards[key].filter((entry) => !(rerun(key) ? stale : new Set(removed)).has(entry.weaponId))]))
 
   if (todo.length) {
     // every core: this process just waits while the shards run
@@ -164,7 +169,7 @@ async function main() {
     rmSync(CACHE_DIR, { recursive: true, force: true })
     mkdirSync(CACHE_DIR, { recursive: true })
     writeFileSync(new URL('todo.json', CACHE_DIR), JSON.stringify(todo))
-    console.log(`optimizing ${todo.length} of ${weapons.length} weapons x ${BOARDS.length} rankings on ${count} process(es)...`)
+    console.log(`optimizing ${todo.length} of ${weapons.length} weapons x ${ONLY_BOARDS?.length ?? BOARDS.length} rankings on ${count} process(es)...`)
     // the shards run a plain-JS bundle of this script instead of going through tsx: ~1.6x faster, same results
     // (tsx's on-the-fly compile wraps every inner function of the calc in a naming helper, and it runs millions of times)
     const runner = fileURLToPath(new URL('runner.mjs', CACHE_DIR))
@@ -173,14 +178,14 @@ async function main() {
     await Promise.all(
       Array.from({ length: count }, (_, shard) =>
         new Promise<void>((resolve, reject) => {
-          const child = spawn(process.execPath, [runner, `--shard=${shard}`, `--of=${count}`, ...(BOSS ? ['--boss'] : [])], { stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, WF_ROOT: root } })
+          const child = spawn(process.execPath, [runner, `--shard=${shard}`, `--of=${count}`, ...(BOSS ? ['--boss'] : []), ...(ONLY_BOARDS ? [`--boards=${ONLY_BOARDS.join(',')}`] : [])], { stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, WF_ROOT: root } })
           child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`shard ${shard} exited with ${code}`))))
         }),
       ),
     )
     for (let shard = 0; shard < count; shard++) {
       const part = JSON.parse(readFileSync(new URL(`shard-${shard}.json`, CACHE_DIR), 'utf8')) as Boards
-      for (const { key } of BOARDS) boards[key].push(...part[key])
+      for (const { key } of BOARDS) if (rerun(key)) boards[key].push(...(part[key] ?? []))
     }
   }
 

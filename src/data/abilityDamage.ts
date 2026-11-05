@@ -621,7 +621,7 @@ export const ABILITY_DAMAGE: AbilityDamageDef[] = [
     scaling: [
       'Jade Stars: "Abilities that rapidly deal damage ticks, like Xaku\'s Grasp of Lohk, will cause a mote to launch every time it deals damage to a target", "replenish one every 0.2 seconds" (so 4 storm ticks a second all launch)',
       'Elemental Sandstorm: "1 status proc of the chosen type for every 100% Status Chance" per tick, from the melee weapon\'s damage types',
-      'At level cap the damage numbers are small, what carries is the target state: 10 Viral (x4.25 health damage), 10 Corrosive and Heat\'s armor strip for everything else on the squad. The Data Analysis notes show it',
+      'At level cap the damage numbers are small, what carries is the target state: 10 Viral (x4.25 health damage), 10 Corrosive and Heat\'s armor strip for everything else on the squad. The Ability Damage page\'s notes show it',
       'Motes take elemental Universal Weapon Bonuses (Valence Formation Heat x3 including its DoT, Nourish) and flat crit (Arcane Avenger), not Arachne or Eclipse',
       'Archon Vitality on Inaros doubles the motes\' Heat procs ("Status Effects from abilities that deal Heat Damage will be applied twice")',
     ],

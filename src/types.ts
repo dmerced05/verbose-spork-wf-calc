@@ -159,6 +159,14 @@ export interface TargetSettings {
   headcrit?: boolean | null // crit headshots double the weapon's base crit multiplier, null = auto from faction
   // how the enemy takes status: normally, capped at 4 stacks of each status, or not at all. undefined = normal
   statusMode?: StatusMode
+  // a boss to kill (the Boss board): its level-scaled pools, so the result carries a time to kill
+  pool?: { health: number; shield: number }
+  armorStripImmune?: boolean // Janus Captain Vor: "immune to armor reduction" (Heat, Corrosive, Flensing... do nothing)
+  statusImmune?: string[] // status types it never takes (The Fragmented One: Viral)
+  // damage attenuation as shares of max health: per trigger (MDPT) and per second (MDPS), see simulate.ts attenuatedTimeToKill
+  attenuation?: { perTrigger: number; perSecond: number }
+  // run the full attenuation timeline (slow). without it the time to kill is a fast estimate, good enough for the optimizer's search
+  exactTimeToKill?: boolean
 }
 export type StatusMode = 'normal' | 'capped' | 'immune'
 

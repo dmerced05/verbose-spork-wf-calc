@@ -6,15 +6,28 @@ import { DamageCap } from './components/DamageCap'
 import { CompareWeapons } from './components/CompareWeapons'
 import { RivenPage } from './components/RivenPage'
 import { StatusGuide } from './components/StatusGuide'
-import { DataAnalysis } from './components/DataAnalysis'
+import { AbilityDamagePage } from './components/DataAnalysis'
+import { DataExplorer } from './components/DataExplorer'
 import type { CompareScenario } from './optimizer/compare'
 import type { RivenConfig } from './calc/riven'
 
-type Tab = 'calculator' | 'leaderboard' | 'compare' | 'weapons' | 'rivens' | 'cap' | 'analysis' | 'status'
-const TABS: Tab[] = ['calculator', 'leaderboard', 'compare', 'weapons', 'rivens', 'cap', 'analysis', 'status']
-const TAB_LABELS: Record<Tab, string> = {
-  calculator: 'Calculator', leaderboard: 'Leaderboard', compare: 'Compare Build Paths', weapons: 'Compare Weapons', rivens: 'Rivens', cap: 'Damage Cap', analysis: 'Data Analysis', status: 'Status Guide',
-}
+// pages, grouped into the top tabs. a page id is what goes in the URL hash (#weapons, #abilities...), and a tab with more than one
+// page shows them as a second row of subtabs
+type Tab = 'calculator' | 'leaderboard' | 'compare' | 'weapons' | 'rivens' | 'cap' | 'abilities' | 'analysis' | 'status' | 'about'
+interface Section { id: string; label: string; pages: { id: Tab; label: string }[] }
+const SECTIONS: Section[] = [
+  { id: 'calculator', label: 'Calculator', pages: [{ id: 'calculator', label: 'Calculator' }] },
+  { id: 'leaderboard', label: 'Leaderboard', pages: [{ id: 'leaderboard', label: 'Leaderboard' }] },
+  { id: 'compare', label: 'Compare', pages: [{ id: 'compare', label: 'Build Paths' }, { id: 'weapons', label: 'Weapons' }] },
+  { id: 'rivens', label: 'Rivens', pages: [{ id: 'rivens', label: 'Rivens' }] },
+  { id: 'cap', label: 'Damage Cap', pages: [{ id: 'cap', label: 'Damage Cap' }] },
+  // the work-in-progress stuff: numbers here lean on guesses more than the rest of the site
+  { id: 'experimental', label: '⚠ Experimental', pages: [{ id: 'abilities', label: 'Ability Damage' }, { id: 'analysis', label: 'Data Analysis' }] },
+  { id: 'status', label: 'Status Guide', pages: [{ id: 'status', label: 'Status Guide' }] },
+  { id: 'about', label: 'About', pages: [{ id: 'about', label: 'About' }] },
+]
+const TABS: Tab[] = SECTIONS.flatMap((section) => section.pages.map((page) => page.id))
+const sectionOf = (tab: Tab) => SECTIONS.find((section) => section.pages.some((page) => page.id === tab))!
 const tabFromHash = (): Tab => {
   if (typeof window === 'undefined') return 'calculator'
   const fromHash = window.location.hash.slice(1) as Tab
@@ -28,7 +41,7 @@ export default function App() {
   const [capOpened, setCapOpened] = useState(tab === 'cap')
   const [weaponsOpened, setWeaponsOpened] = useState(tab === 'weapons')
   const [rivensOpened, setRivensOpened] = useState(tab === 'rivens')
-  const [analysisOpened, setAnalysisOpened] = useState(tab === 'analysis')
+  const [abilitiesOpened, setAbilitiesOpened] = useState(tab === 'abilities')
   const [buildToLoad, setBuildToLoad] = useState<BuildToLoad | null>(null)
   // the calculator's setup, so Compare can run against it and reuse its riven
   const [calculatorScenario, setCalculatorScenario] = useState<CompareScenario | null>(null)
@@ -44,7 +57,7 @@ export default function App() {
       if (next === 'cap') setCapOpened(true)
       if (next === 'weapons') setWeaponsOpened(true)
       if (next === 'rivens') setRivensOpened(true)
-      if (next === 'analysis') setAnalysisOpened(true)
+      if (next === 'abilities') setAbilitiesOpened(true)
       setTab(next)
     }
     window.addEventListener('hashchange', onHashChange)
@@ -57,7 +70,7 @@ export default function App() {
     if (next === 'cap') setCapOpened(true)
     if (next === 'weapons') setWeaponsOpened(true)
     if (next === 'rivens') setRivensOpened(true)
-    if (next === 'analysis') setAnalysisOpened(true)
+    if (next === 'abilities') setAbilitiesOpened(true)
     setTab(next)
     window.history.replaceState(null, '', next === 'calculator' ? '#' : `#${next}`)
   }
@@ -65,15 +78,31 @@ export default function App() {
   return (
     <main>
       <header className="app-header">
-        <h1>WF Damage Calc</h1>
+        <h1>Verbose Spork Warframe Analysis</h1>
         <nav className="tabs" role="tablist">
-          {TABS.map((id) => (
-            <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'active' : ''} onClick={() => openTab(id)}>
-              {TAB_LABELS[id]}
-            </button>
-          ))}
+          {SECTIONS.map((section) => {
+            const active = sectionOf(tab).id === section.id
+            return (
+              <button key={section.id} role="tab" aria-selected={active} className={`${active ? 'active' : ''}${section.id === 'experimental' ? ' experimental' : ''}`}
+                onClick={() => !active && openTab(section.pages[0].id)}>
+                {section.label}
+              </button>
+            )
+          })}
         </nav>
+        {sectionOf(tab).pages.length > 1 && (
+          <nav className="tabs subtabs" role="tablist">
+            {sectionOf(tab).pages.map((page) => (
+              <button key={page.id} role="tab" aria-selected={tab === page.id} className={tab === page.id ? 'active' : ''} onClick={() => openTab(page.id)}>
+                {page.label}
+              </button>
+            ))}
+          </nav>
+        )}
       </header>
+      {sectionOf(tab).id === 'experimental' && (
+        <p className="experimental-note">⚠ Experimental: these pages are for testing and number-crunching, results may not be accurate.</p>
+      )}
 
       {/* both stay mounted so switching tabs doesn't wipe the calculator setup */}
       <div hidden={tab !== 'calculator'}>
@@ -120,11 +149,13 @@ export default function App() {
           />
         </div>
       )}
-      {analysisOpened && (
-        <div hidden={tab !== 'analysis'}>
-          <DataAnalysis />
+      {abilitiesOpened && (
+        <div hidden={tab !== 'abilities'}>
+          <AbilityDamagePage />
         </div>
       )}
+      {/* empty for now */}
+      {tab === 'analysis' && <div className="analysis"><DataExplorer /></div>}
       {capOpened && (
         <div hidden={tab !== 'cap'}>
           <DamageCap
@@ -140,6 +171,8 @@ export default function App() {
       )}
       {/* static text, so it just mounts when shown */}
       {tab === 'status' && <StatusGuide />}
+      {/* empty for now */}
+      {tab === 'about' && <section className="panel"><h2>About</h2><p className="muted">Nothing here yet.</p></section>}
     </main>
   )
 }

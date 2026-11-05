@@ -213,6 +213,11 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .tabs button, .board-tabs button { border: 0; background: transparent; padding: 6px 14px; border-radius: 6px; color: var(--muted); }
 .tabs button.active, .board-tabs button.active { background: rgba(212, 180, 106, 0.15); color: var(--accent); }
 .tabs button:hover, .board-tabs button:hover { color: var(--text); }
+/* the second row under a tab with more than one page (Compare, Experimental) */
+.tabs.subtabs { margin-top: 6px; font-size: 0.92em; }
+.tabs button.experimental { color: #e0a84a; }
+.tabs button.experimental.active { background: rgba(224, 168, 74, 0.15); }
+.experimental-note { margin: 0 0 12px; padding: 8px 12px; border: 1px solid rgba(224, 168, 74, 0.4); border-radius: 8px; background: rgba(224, 168, 74, 0.08); color: #e0a84a; font-size: 0.9em; }
 [hidden] { display: none !important; }
 .load-banner { margin-bottom: 16px; padding: 10px 12px; border: 1px solid rgba(212, 180, 106, 0.4); border-radius: 8px; font-size: 0.85rem; color: var(--muted); }
 .load-banner b { color: var(--text); }
@@ -696,3 +701,31 @@ select { max-width: 100%; }
 .ability-board td:last-child { white-space: normal; overflow-wrap: anywhere; }
 .analysis-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; margin-bottom: 16px; }
 @media (max-width: 900px) { .analysis-top { grid-template-columns: minmax(0, 1fr); } }
+
+/* Data Analysis charts (src/components/charts.tsx) */
+.chart { margin: 12px 0 0; min-width: 0; }
+.chart figcaption { font-size: 0.85rem; margin-bottom: 4px; }
+.chart-body { position: relative; }
+.chart-body svg { display: block; overflow: visible; }
+.chart-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.75rem; color: var(--muted); margin-bottom: 4px; }
+.chart-legend i, .chart-tip .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.chart-tip { position: absolute; pointer-events: none; background: #0f1115; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 0.75rem; white-space: nowrap; z-index: 2; }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 8px; }
+.tile { display: grid; gap: 2px; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.tile .value { font-size: 1.2rem; overflow-wrap: anywhere; }
+.tile-group h3 { margin-top: 8px; }
+.stat-table th { text-align: left; font-size: 0.75rem; color: var(--muted); font-weight: normal; padding: 4px 8px 4px 0; }
+.stat-table td { padding: 4px 8px 4px 0; text-align: left; font-variant-numeric: tabular-nums; }
+.row button.active { border-color: var(--accent); color: var(--accent); }
+.tile-groups { display: grid; gap: 4px; }
+.analysis { display: grid; gap: 16px; max-width: 1100px; }
+.table-scroll { overflow-x: auto; margin-top: 8px; }
+.stat-table.clickable tbody tr { cursor: pointer; }
+.stat-table.clickable tbody tr:hover td { background: #1c2029; }
+.stat-table tr.picked td { color: var(--accent); }
+.stat-table .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.stat-table th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.stat-table th.sortable:hover { color: var(--accent); }
+.chart-tip .tip-extra { color: var(--muted); }
+.chart-tip .tip-extra:first-of-type { margin-top: 4px; }

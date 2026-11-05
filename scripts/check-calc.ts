@@ -1331,6 +1331,36 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
   expectClose('Onos blast lands by 5 s', blast.damageInWindow(5) > 0 ? 1 : 0, 1)
 }
 
+// boss time to kill: 100 Impact at 1/s, no reload, vs a 1,000 health pool = the 10th hit, at t = 9 s (first shot at 0)
+{
+  const pooled = run(testAttack({ impact: 100 }), { target: { faction: 'None', layer: 'health', enemyId: null, baseLevel: 1, level: 1, steelPath: false, manualArmor: 0, headshot: false, headshotMultiplier: 3, headcrit: false, pool: { health: 1000, shield: 0 } } })
+  expectClose('time to kill 1,000 at 100 per second', Math.round(pooled.timeToKill ?? 0), 9)
+  // Janus Captain Vor: "immune to armor reduction", so 10 Corrosive + Heat leave his armor alone
+  const { BOSSES } = await import('../src/optimizer/bossLeaderboard')
+  const vor = BOSSES.find((boss) => boss.key === 'boss-janus-vor')!
+  const stripped = { ...noDebuffs(), heatArmorStrip: 0.5, stacks: { ...noDebuffs().stacks, corrosive: 10 } }
+  const vsVor = (debuffs: Debuffs) => run(testAttack({ impact: 100 }), { target: { ...vor.target, pool: undefined }, armor: vor.armor, debuffs }).hit.average
+  expectClose('Vor ignores armor strip', vsVor(stripped), vsVor(noDebuffs()))
+  // The Fragmented One takes no Viral status
+  const frag = BOSSES.find((boss) => boss.key === 'boss-fragmented-one')!
+  const viralShot = run(testAttack({ viral: 100 }, { statusChance: 1 }), { target: { ...frag.target, pool: undefined } })
+  expectClose('Fragmented One: no Viral procs', viralShot.procsPerSecond > 0 ? (viralShot.dots.find((dot) => dot.damageType === 'viral')?.procsPerSecond ?? 0) : 0, 0)
+}
+
+// damage attenuation (simulate.ts): a huge stream into a 1M health pool with Hemocyte-style caps (5% per trigger, 20% per second)
+// is held to MDPS = 200k/s, so ~5 s however big the hits are. per trigger: 1e9 maps to just under MDPT = 50k (Reinhard)
+{
+  const target = { faction: 'None', layer: 'health' as const, enemyId: null, baseLevel: 1, level: 1, steelPath: false, manualArmor: 0, headshot: false, headshotMultiplier: 3, headcrit: false,
+    pool: { health: 1e6, shield: 0 }, attenuation: { perTrigger: 0.05, perSecond: 0.2 }, exactTimeToKill: true }
+  const huge = run(testAttack({ impact: 1e9 }, { fireRate: 10 }), { target })
+  // (a bit under 5: the bucket starts empty, so the first ~0.4 s go through before it passes MDPS)
+  expectClose('attenuation holds a huge stream to MDPS (~5 s)', Math.round(huge.timeToKill ?? 0), 5)
+  // a small stream (1,000 a shot at 10/s) is under MDPS, only the per-trigger map touches it: 1,000 x 50k / 51k = 980 a shot,
+  // so 1M takes 1e6 / 9,804 = 102 s
+  const small = run(testAttack({ impact: 1000 }, { fireRate: 10 }), { target })
+  expectClose('attenuation: small stream only per-trigger mapped (102 s)', Math.round(small.timeToKill ?? 0), 102)
+}
+
 // ability damage (src/data/abilityDamage.ts), the wiki's own worked examples
 {
   const { ABILITY_DAMAGE } = await import('../src/data/abilityDamage')

@@ -5,7 +5,7 @@ import { STATUS_TYPES } from '../calc/constants'
 import type { Buffs, Debuffs, TargetSettings } from '../types'
 
 export const SCENARIO_DESCRIPTION =
-  'Neutral target (no faction, no armor, body shots), mod/arcane conditionals at max stacks (headshot-hit triggers off, headshot-kill triggers like Deadhead on, melee-kill triggers on guns and armor thresholds like Bulwark at half; ties go to the arcane with headshot/reload value), Condition Overload/Galvanized count only the build\'s own damage types, melee Normal Attacks as the best stance combo of their class on repeat (wiki stance tables: hits, damage multipliers and length at 1.0 attack speed), melee at max combo (12x) with heavy attacks (glaive detonations included) ranked by single hit or whole attack only, rank 30 with enough Forma (capacity ignored), no rivens, exalted weapons at 100% Ability Strength (pseudo-exalted ones at the 12x combo).'
+  'Neutral target (no faction, no armor, body shots; gun single hits are headshots so weak point builds like Acuity show up), mod/arcane conditionals at max stacks (headshot-hit triggers off, headshot-kill triggers like Deadhead on, melee-kill triggers on guns and armor thresholds like Bulwark at half; ties go to the arcane with headshot/reload value), Condition Overload/Galvanized count only the build\'s own damage types, melee Normal Attacks as the best stance combo of their class on repeat (wiki stance tables: hits, damage multipliers and length at 1.0 attack speed), melee at max combo (12x) with heavy attacks (glaive detonations included) ranked by single hit or whole attack only, rank 30 with enough Forma (capacity ignored), no rivens, exalted weapons at 100% Ability Strength (pseudo-exalted ones at the 12x combo).'
 
 export const SCENARIO_TARGET: TargetSettings = {
   faction: 'None',
@@ -19,6 +19,10 @@ export const SCENARIO_TARGET: TargetSettings = {
   headshotMultiplier: null,
   headcrit: null,
 }
+
+// the Single damage instance board aims for the head with guns: a single hit is the one number where weak point builds (Primary /
+// Secondary Acuity: "+350% Weak Point Critical Chance. Multishot cannot be modified.") matter. melee stays on body hits
+export const SCENARIO_HEADSHOT_TARGET: TargetSettings = { ...SCENARIO_TARGET, headshot: true }
 
 export const SCENARIO_DEBUFFS: Debuffs = {
   stacks: Object.fromEntries(STATUS_TYPES.map((statusType) => [statusType, 0])),
@@ -34,3 +38,5 @@ export const SCENARIO_DEBUFFS: Debuffs = {
 // in a real fight, and heavies are usually thrown at max combo too
 export const SCENARIO_COMBO = 13
 export const SCENARIO_BUFFS: Buffs = { roar: 0, combo: SCENARIO_COMBO, gladiatorWarframePieces: 0 }
+
+export const SCENARIO_HEADSHOT = { target: SCENARIO_HEADSHOT_TARGET, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS }

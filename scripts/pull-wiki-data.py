@@ -44,7 +44,8 @@ for slot in ['primary', 'secondary', 'melee']:
                 # on headshot such as Primary Deadhead" (wiki Kuva Chakkhurr). -2 (Alternox, Arca Plasmor, Nataruk's Perfect Shot): no headshot multiplier
                 'extraHeadshot': attack.get('ExtraHeadshotDmg'),
             })
-        weapons[name] = {'internalName': weapon.get('InternalName'), 'defaultUpgrades': weapon.get('DefaultUpgrades') or [], 'attacks': attacks}
+        weapons[name] = {'internalName': weapon.get('InternalName'), 'defaultUpgrades': weapon.get('DefaultUpgrades') or [], 'attacks': attacks,
+                         'introduced': weapon.get('Introduced')}  # the update it came out in ("19.0.7"), for Data Analysis's trends
 
 # enemies: base health/shield/armor/level, faction and head multiplier, by internal name (names repeat across factions)
 FACTIONS = ['grineer', 'corpus', 'infestation', 'orokin', 'sentient', 'stalker', 'narmer', 'themurmur', 'techrot', 'scaldra', 'anarchs', 'unaffiliated']

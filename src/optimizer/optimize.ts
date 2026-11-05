@@ -34,12 +34,13 @@ export interface OptimizedBuild {
 // mods and arcanes go in at max rank with conditionals at the scenario's stacks (src/calc/parseMod.ts triggerUptime):
 // max for most, off for headshot-hit triggers (body shots), half for melee kills on a gun and armor thresholds
 // noKills = the boss board: kill triggers sit at 0
-export const equipMod = (mod: Mod, isMelee: boolean, noKills = false): EquippedMod => ({
-  mod, rank: mod.fusionLimit, conditionalStacks: defaultConditionalStacks(mod.levelStats, mod.fusionLimit, { isMelee, bodyShots: true, noKills }),
+// bodyShots = false on a headshot target: headshot-hit triggers come on too
+export const equipMod = (mod: Mod, isMelee: boolean, noKills = false, bodyShots = true): EquippedMod => ({
+  mod, rank: mod.fusionLimit, conditionalStacks: defaultConditionalStacks(mod.levelStats, mod.fusionLimit, { isMelee, bodyShots, noKills }),
 })
-export const equipArcane = (arcane: Arcane, isMelee: boolean, noKills = false): EquippedArcane => {
+export const equipArcane = (arcane: Arcane, isMelee: boolean, noKills = false, bodyShots = true): EquippedArcane => {
   const rank = arcane.levelStats.length - 1
-  return { arcane, rank, conditionalStacks: defaultConditionalStacks(arcane.levelStats, rank, { isMelee, bodyShots: true, noKills }) }
+  return { arcane, rank, conditionalStacks: defaultConditionalStacks(arcane.levelStats, rank, { isMelee, bodyShots, noKills }) }
 }
 
 const isElementalMod = (equipped: EquippedMod) =>
@@ -95,13 +96,15 @@ export interface SeedBuild {
   bonusElement?: BonusElement | null
 }
 
-export function evaluateSeed(weapon: Weapon, attack: Attack, objective: Objective, heavyMode: HeavyMode, seed: SeedBuild): OptimizedBuild | null {
+export function evaluateSeed(weapon: Weapon, attack: Attack, objective: Objective, heavyMode: HeavyMode, seed: SeedBuild,
+  scenario = { target: SCENARIO_TARGET, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS }): OptimizedBuild | null {
   const isMelee = weapon.category === 'Melee'
+  const bodyShots = !scenario.target.headshot
   const compatible = new Map(getCompatibleMods(weapon).map((mod) => [mod.uniqueName, mod]))
   const mods = seed.mods.map((id) => compatible.get(id))
   // anything that no longer fits (data changed, wrong weapon) just means the seed is skipped
   if (mods.some((mod) => !mod) || mods.length > SLOT_COUNT) return null
-  const equipped = mods.map((mod) => equipMod(mod!, isMelee))
+  const equipped = mods.map((mod) => equipMod(mod!, isMelee, false, bodyShots))
   if (equipped.some((a, index) => equipped.some((b, other) => other > index && conflicts(a.mod, b.mod)))) return null
   const arcaneData = seed.arcane ? getCompatibleArcanes(weapon).find((option) => option.uniqueName === seed.arcane) : null
   if (seed.arcane && !arcaneData) return null
@@ -110,14 +113,14 @@ export function evaluateSeed(weapon: Weapon, attack: Attack, objective: Objectiv
   for (const { tier, name } of seed.perks) {
     const perk = tiers.find((candidate) => candidate.tier === tier)?.perks.find((option) => option.name === name)
     if (!perk) return null
-    perks.push({ perk, stacks: scenarioPerkStacks(perk, { isMelee, bodyShots: !SCENARIO_TARGET.headshot }) })
+    perks.push({ perk, stacks: scenarioPerkStacks(perk, { isMelee, bodyShots }) })
   }
-  const arcane = arcaneData ? equipArcane(arcaneData, isMelee) : null
+  const arcane = arcaneData ? equipArcane(arcaneData, isMelee, false, bodyShots) : null
   const passives = passivesFor(weapon.name).map((passive) => ({ passive, stacks: passive.condition ? passive.scenarioStacks ?? passive.maxStacks ?? 1 : 1 }))
   const bonusElement = hasBonusElement(weapon.name) ? seed.bonusElement ?? null : null
   const result = calculate({
     weapon, attack, mods: equipped, arcane, coBehavior: resolveCoBehavior(weapon, attack), incarnonPerks: perks, passives, bonusElement, heavyMode,
-    target: SCENARIO_TARGET, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS,
+    target: scenario.target, armor: scenario.armor, debuffs: scenario.debuffs, buffs: scenario.buffs,
   })
   return { weapon, attack, score: objective.score(result), result, mods: equipped, arcane, perks, passives, bonusElement }
 }
@@ -137,13 +140,13 @@ export function optimizeAttack(
     scenarioTarget ? { faction: scenarioTarget.faction, headshot: scenarioTarget.headshot } : undefined,
   )
     .filter((mod) => !constraints || (!excludedNames.has(mod.name) && !lockedNames.has(mod.name)))
-    .map((mod) => equipMod(mod, isMelee, constraints?.noKills))
+    .map((mod) => equipMod(mod, isMelee, constraints?.noKills, !constraints?.scenario?.target.headshot))
   // "no fire rate mods" rankings skip fire rate arcanes too
   const excludedArcanes = new Set(constraints?.excludedArcaneIds ?? [])
   const arcaneOptions = getCompatibleArcanes(weapon)
     .filter((option) => allowFireRateMods || !raisesFireRate(option.levelStats))
     .filter((option) => !excludedArcanes.has(option.uniqueName))
-    .map((option) => equipArcane(option, isMelee, constraints?.noKills))
+    .map((option) => equipArcane(option, isMelee, constraints?.noKills, !constraints?.scenario?.target.headshot))
   const excludedPerks = new Set(constraints?.excludedPerkNames ?? [])
   const lockedPerks = constraints?.lockedPerks ?? {}
   const incarnonTiers = (getIncarnonTiers(weapon.name) ?? []).map((tier) => ({ ...tier, perks: tier.perks.filter((perk) => !excludedPerks.has(perk.name)) }))

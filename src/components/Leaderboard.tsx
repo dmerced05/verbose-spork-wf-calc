@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { FULL_HEAVY_BOARD, TIME_WINDOWS, boardKey, objectiveById, type ObjectiveId } from '../optimizer/objectives'
+import { FULL_HEAVY_BOARD, TIME_WINDOWS, boardKey, objectiveById, ttkSeconds, type ObjectiveId } from '../optimizer/objectives'
 import { raisesFireRate } from '../calc/parseMod'
 import { nicheNote } from '../calc/nicheMods'
 import { Tip } from './Tip'
@@ -27,11 +27,20 @@ const RANK_BY: { id: RankBy; label: string }[] = [
   { id: 'window', label: 'Damage in a time window' },
   { id: 'single', label: 'Single damage instance' },
   { id: 'attack', label: 'Whole attack (hit + procs)' },
-  { id: 'boss', label: 'Boss damage' },
+  { id: 'boss', label: 'Boss time to kill' },
 ]
+// boss scores are 1 / seconds; past 10 minutes the time is extrapolated, so it reads "10+ min"
+const formatKillTime = (score: number) => {
+  const seconds = ttkSeconds(score)
+  return !Number.isFinite(seconds) || seconds > 600 ? '10+ min' : seconds >= 60 ? `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s` : `${seconds.toFixed(seconds < 10 ? 2 : 1)} s`
+}
 const SUSTAINED_SECONDS = 10 // damage.ts SUSTAINED_FIGHT_SECONDS (not imported: the calc stays out of this page's bundle)
-const BOSS_BOARD = 'boss' // src/optimizer/bossLeaderboard.ts (not imported: it pulls the optimizer into the page)
-const BOSS_BLURB = 'Sustained DPS on a boss: status capped at 4 stacks per type and no kills, so on-kill buffs (Deadhead, Galvanized stacks, Bladed Rounds...) never come up'
+// the bosses on src/optimizer/bossLeaderboard.ts's boards (not imported: it pulls the optimizer into the page)
+const BOSSES = [
+  { key: 'boss-janus-vor', label: 'Janus Captain Vor', blurb: 'Steel Path hardmode Vor, level 375, solo: 942k shields then 14.3M health behind 2,700 armor he can\'t lose ("immune to armor reduction")' },
+  { key: 'boss-fragmented-one', label: 'The Fragmented One', blurb: 'Steel Path hardmode Fragmented, level 225, solo: 80.8M health (200,000 base with the Steel Path bonus), no shields or armor, resists Viral and takes no Viral status' },
+]
+const BOSS_BLURB = 'Time to kill, solo: shields then health, reloads, Incarnon refills and DoT ticks as they land, status capped at 4 stacks per type and no kills (on-kill buffs never come up). Damage attenuation is a guess: Hemocyte\'s published caps (5% of max health per trigger, 20% per second) since no hardmode boss has numbers yet, so no build gets under ~5 s of health. Invulnerable phases, adds and movement aren\'t in it'
 
 interface Props {
   onLoadBuild: (entry: LeaderboardEntry) => void
@@ -47,6 +56,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
   const [bossError, setBossError] = useState<string | null>(null)
   const [rankBy, setRankBy] = useState<RankBy>('sustained')
   const [windowSeconds, setWindowSeconds] = useState<number>(3) // burst by default
+  const [bossKey, setBossKey] = useState(BOSSES[0].key)
   const [includeIncarnon, setIncludeIncarnon] = useState(true)
   const [allowFireRate, setAllowFireRate] = useState(true)
   const [bestPerWeapon, setBestPerWeapon] = useState(false)
@@ -87,11 +97,11 @@ export function Leaderboard({ onLoadBuild }: Props) {
 
   const boss = rankBy === 'boss'
   const data = boss ? bossData : mainData
-  const objectiveId: ObjectiveId = rankBy === 'window' ? (`window${windowSeconds}` as ObjectiveId) : boss ? 'sustained' : rankBy
+  const objectiveId: ObjectiveId = rankBy === 'window' ? (`window${windowSeconds}` as ObjectiveId) : boss ? 'ttk' : rankBy
   const objective = objectiveById(objectiveId)
   // DPS rankings were also optimized without fire rate / attack speed mods, single hit doesn't care about fire rate.
   // the boss board only has the fire-rate-allowed ranking
-  const key = boss ? BOSS_BOARD : boardKey(objectiveId, allowFireRate || !objective.usesFireRate)
+  const key = boss ? bossKey : boardKey(objectiveId, allowFireRate || !objective.usesFireRate)
 
   // every attack has its own entry (slam, heavy slam, heavy attack, alt-fire...). "Best attack per weapon" keeps one
   // per weapon instead. rank, then filter, so "#12" always means 12th overall
@@ -166,6 +176,19 @@ export function Leaderboard({ onLoadBuild }: Props) {
       <section className="panel">
         <div className="leaderboard-settings">
           {rankTabs}
+          {boss && (
+            <label>
+              Boss
+              <div className="board-tabs" role="tablist">
+                {BOSSES.map((option) => (
+                  <button key={option.key} role="tab" aria-selected={bossKey === option.key} className={bossKey === option.key ? 'active' : ''}
+                    onClick={() => { setBossKey(option.key); resetPaging() }}>
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </label>
+          )}
           {rankBy === 'window' && (
             <label>
               Time window
@@ -183,7 +206,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
             </label>
           )}
         </div>
-        <p className="board-description">{boss ? BOSS_BLURB : objective.description}.</p>
+        <p className="board-description">{boss ? `${BOSSES.find((option) => option.key === bossKey)?.blurb}. ${BOSS_BLURB}` : objective.description}.</p>
         <div className="row board-filters">
           <select value={category} onChange={(event) => { setCategory(event.target.value); resetPaging() }}>
             {CATEGORIES.map((option) => <option key={option}>{option}</option>)}
@@ -278,7 +301,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
             </div>
             <div className="board-score">
               <span className="value">
-                {compact.format(entry.score)}
+                {boss ? formatKillTime(entry.score) : compact.format(entry.score)}
                 {/* an Incarnon form whose battery runs out inside this ranking's time: past that the number leans on the refill
                     (every normal-form shot a weak point / direct hit, plus the swaps), which in a real fight depends on your aim.
                     firing time from the stored stats: uptime = T / (T + reload), so T = uptime x reload / (1 - uptime) */}
@@ -286,8 +309,8 @@ export function Leaderboard({ onLoadBuild }: Props) {
                   const { reloadTime, uptime, magazineSize } = entry.stats
                   if (!entry.incarnonForm || reloadTime === null || magazineSize === null || uptime >= 1) return null
                   const firing = (uptime * reloadTime) / Math.max(1e-9, 1 - uptime)
-                  const span = rankBy === 'window' ? windowSeconds : rankBy === 'sustained' || rankBy === 'boss' ? SUSTAINED_SECONDS : null
-                  if (span === null || span <= firing) return null
+                  const span = rankBy === 'window' ? windowSeconds : rankBy === 'sustained' ? SUSTAINED_SECONDS : boss ? ttkSeconds(entry.score) : null
+                  if (span === null || !Number.isFinite(span) || span <= firing) return null
                   return (
                     <Tip className="niche-tag" text={`Refill assumed: the ${magazineSize}-shot battery is empty after ${firing.toFixed(1)} s, so this ${span} s number includes refilling it (${reloadTime.toFixed(1)} s of weak point / direct hits with the normal form, every shot counting, plus 2x reload swapping each way). How long that really takes depends on your aim.`}>
                       Refill
@@ -296,7 +319,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
                 })()}
               </span>
               <span className="label">
-                {rankBy === 'single' && fullHeavy && /^heavy attack$/i.test(entry.attack) && heavyComboFor(entry.weaponName) ? 'all hits' : objective.unit}
+                {rankBy === 'single' && fullHeavy && /^heavy attack$/i.test(entry.attack) && heavyComboFor(entry.weaponName) ? 'all hits' : boss ? 'to kill' : objective.unit}
               </span>
             </div>
             <div className="board-stats">

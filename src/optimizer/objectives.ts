@@ -3,7 +3,7 @@ import type { HeavyMode } from '../data/heavyAttacks'
 
 // what the leaderboard can rank by. each one is optimized separately, since the best build for sustained DPS
 // (magazine/reload mods matter) isn't the best one for a single hit (fire rate doesn't matter at all)
-export type ObjectiveId = 'sustained' | 'window3' | 'window10' | 'window30' | 'single' | 'attack'
+export type ObjectiveId = 'sustained' | 'window3' | 'window10' | 'window30' | 'single' | 'attack' | 'ttk'
 
 export interface Objective {
   id: ObjectiveId
@@ -37,7 +37,7 @@ export const OBJECTIVES: Objective[] = [
     id: 'single',
     label: 'Single damage instance',
     unit: 'per hit',
-    description: 'One hit from one projectile (or one melee swing, or one merged beam tick), crits averaged in, DoTs not included',
+    description: 'One hit from one projectile (or one melee swing, or one merged beam tick), crits averaged in, DoTs not included. Guns hit the head (weak point mods and Acuity in play, AoE can\'t headshot), melee hits the body',
     usesFireRate: false,
     // a beam's extra beams merge into one tick on the target, so its single instance is the whole merged tick
     score: (result) => result.hit.average * result.beamMerge,
@@ -54,7 +54,19 @@ export const OBJECTIVES: Objective[] = [
   },
 ]
 
-export const objectiveById = (id: ObjectiveId) => OBJECTIVES.find((objective) => objective.id === id)!
+// the Boss board's ranking: how fast one build kills a boss (target.pool). higher score = faster, so it's stored as 1 / seconds
+// (past 10 minutes the time is extrapolated, see damage.ts timeToReach). the page shows the seconds back
+export const TTK_OBJECTIVE: Objective = {
+  id: 'ttk',
+  label: 'Time to kill',
+  unit: 's to kill',
+  description: 'Seconds to strip the boss\'s shields and empty its health, solo: expected damage over time with reloads, Incarnon refills and DoT ticks as they land',
+  usesFireRate: true,
+  score: (result) => (result.timeToKill && Number.isFinite(result.timeToKill) && result.timeToKill > 0 ? 1 / result.timeToKill : 0),
+}
+export const ttkSeconds = (score: number) => (score > 0 ? 1 / score : Infinity)
+
+export const objectiveById = (id: ObjectiveId) => (id === 'ttk' ? TTK_OBJECTIVE : OBJECTIVES.find((objective) => objective.id === id)!)
 
 // every precomputed ranking. the DPS-type ones get a second board optimized without fire rate / attack speed mods
 export interface BoardSpec {
@@ -63,6 +75,7 @@ export interface BoardSpec {
   allowFireRateMods: boolean
   heavyMode?: HeavyMode
   heavyOnly?: boolean // only multi-hit Heavy Attacks get an entry, the page falls back to the normal board for the rest
+  headshot?: boolean // guns score this board on headshots (scenario.ts SCENARIO_HEADSHOT), melee doesn't
 }
 export const boardKey = (id: ObjectiveId, allowFireRateMods: boolean) => (allowFireRateMods ? id : `${id}-nofr`)
 // "Count the full heavy": multi-hit Heavy Attacks scored with every hit added up
@@ -73,6 +86,7 @@ export const BOARDS: BoardSpec[] = [
       key: boardKey(objective.id, allowFireRateMods),
       objective,
       allowFireRateMods,
+      headshot: objective.id === 'single',
     })),
   ),
   { key: FULL_HEAVY_BOARD, objective: objectiveById('single'), allowFireRateMods: true, heavyMode: 'fullCombo', heavyOnly: true },

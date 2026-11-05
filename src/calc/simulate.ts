@@ -192,3 +192,86 @@ export function timeToDeal(model: ShotModel, amount: number, maxSeconds = 600): 
   }
   return high
 }
+
+// ---- damage attenuation (bosses) ----
+// the wiki's model (Necramite / Archon "Damage Resistance Logic", Hemocyte's numbers): two layers on top of normal damage
+//  1. per trigger, Reinhard tone mapping: out = MDPT x DPT / (DPT + MDPT), DPT = the shot's damage x multishot (Hemocyte:
+//     "Attenuated Damage = Incoming Damage x Max Damage Per Hit / (Incoming Damage x Multishot + Max Damage Per Hit)" per pellet)
+//  2. a bucket B that follows Q, the mapped damage of the last 1 s: when Q > B, B = Q, otherwise B decays toward Q as a damped
+//     system with lambda = 2/3 ("B'' + 2 lambda B' + lambda^2 B = lambda^2 Q"). damage is multiplied by MDPS / B whenever B > MDPS
+// I step it in 0.05 s bins with the expected damage per shot (crits averaged), DoT ticks go into the bucket but skip layer 1
+// (they're far under the per-hit cap anyway)
+export interface Attenuation { mdpt: number; mdps: number }
+const BIN = 0.05
+const LAMBDA = 2 / 3
+const decay = (dt: number) => 1 / (0.235 * (LAMBDA * dt) ** 2 + 0.48 * LAMBDA * dt + 1) // the wiki's e^(-lambda dt) stand-in
+
+// mapped damage per bin for one layer, out to `seconds`
+function attenuationBins(model: ShotModel, seconds: number, mdpt: number): Float64Array {
+  const bins = new Float64Array(Math.ceil(seconds / BIN) + 1)
+  const trigger = model.hit.average * model.multishot
+  const mapped = mdpt > 0 ? (mdpt * trigger) / (trigger + mdpt) : trigger
+  for (const time of shotTimes(model, seconds)) {
+    bins[Math.floor(time / BIN)] += mapped
+    for (const dot of model.dots) {
+      const tick = dot.procsPerPellet * model.multishot * dot.tick.average
+      if (!(tick > 0)) continue
+      for (let k = 0; k < Math.max(1, dot.ticks); k++) {
+        const at = time + dot.firstTickAt + k
+        if (at >= seconds) break
+        bins[Math.floor(at / BIN)] += tick
+      }
+    }
+  }
+  return bins
+}
+
+// seconds to strip `shield` (with shieldModel's damage) and then `health` (healthModel), attenuated. Infinity if it can't in maxSeconds
+// a merged attack (Onos's beam + blast) passes each part's own model, so every part's hits are mapped as the hits they are
+export function attenuatedTimeToKill(shieldModels: ShotModel[] | null, shield: number, healthModels: ShotModel[], health: number, attenuation: Attenuation, maxSeconds = 600): number {
+  const binsFor = (models: ShotModel[], seconds: number) => {
+    const total = attenuationBins(models[0], seconds, attenuation.mdpt)
+    for (const model of models.slice(1)) {
+      const more = attenuationBins(model, seconds, attenuation.mdpt)
+      for (let index = 0; index < total.length; index++) total[index] += more[index]
+    }
+    return total
+  }
+  let horizon = 8
+  while (true) {
+    const seconds = Math.min(horizon, maxSeconds)
+    const shieldBins = shieldModels && shield > 0 ? binsFor(shieldModels, seconds) : null
+    const healthBins = binsFor(healthModels, seconds)
+    const window = Math.round(1 / BIN)
+    const recent = new Float64Array(window) // the 1 s queue, as a ring of bins
+    let queue = 0, bucket = 0, slope = 0, shieldLeft = shieldBins ? shield : 0, healthLeft = health
+    for (let index = 0; index < healthBins.length; index++) {
+      const onShield = shieldLeft > 0 && shieldBins
+      const incoming = onShield ? shieldBins![index] : healthBins[index]
+      // the queue: last 1 s of mapped damage
+      queue += incoming - recent[index % window]
+      recent[index % window] = incoming
+      if (queue >= bucket) { bucket = queue; slope = 0 }
+      else {
+        const e = decay(BIN)
+        const gamma = ((bucket - queue) * LAMBDA + slope) * BIN * e
+        bucket = gamma + (bucket - queue) * e + queue
+        slope = -LAMBDA * gamma + slope * e
+      }
+      const dealt = incoming * (bucket > attenuation.mdps ? attenuation.mdps / bucket : 1)
+      if (onShield) {
+        shieldLeft -= dealt
+        if (shieldLeft <= 0) shieldLeft = 0
+      } else {
+        healthLeft -= dealt
+        if (healthLeft <= 0) return (index + 1) * BIN
+      }
+    }
+    if (seconds >= maxSeconds) {
+      // past the limit, extrapolate at the average rate so weak builds still give the optimizer a slope
+      const dealtTotal = (shieldBins ? shield - shieldLeft : 0) + (health - healthLeft)
+      return dealtTotal > 0 ? (seconds * (shield + health)) / dealtTotal : Infinity
+    }
+    horizon *= 2
+  }
+}

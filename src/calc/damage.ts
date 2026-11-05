@@ -21,7 +21,7 @@ import { SHELL_BY_SHELL_RELOAD } from '../data/reloads'
 import { compressionFor } from '../data/compression'
 import { abilitiesById, abilityApplies, castStacks, effectsFor, scaledValue, strengthFor, type AbilityCast } from '../data/warframeAbilities'
 import { biggestHit, comboTotal, forcedProcShares, heavyComboFor, type HeavyCombo, type HeavyMode } from '../data/heavyAttacks'
-import { expectedDamage, simulateDamage, type DamageRange, type ShotModel } from './simulate'
+import { attenuatedTimeToKill, expectedDamage, simulateDamage, type DamageRange, type ShotModel } from './simulate'
 import { STANCES, applyStance, bestCombo, comboLabel, usesStance, type StanceChoice } from '../data/stances'
 
 // "sustained" = average DPS over a fight this long: reloads, DoT ramp-up and Heat stacking count, and DoT ticks
@@ -156,6 +156,8 @@ export interface CalcResult {
   reloadTime: number | null
   uptime: number // share of time spent firing
   sustainedDps: number // expected damage over a SUSTAINED_FIGHT_SECONDS fight / its length
+  partShotModels?: ShotModel[] // a merged attack's parts, each on its own timeline (attenuation maps each part's hits separately)
+  timeToKill: number | null // seconds to kill target.pool (shields then health), null without a pool, Infinity if it can't
   steadyStateDps: number // old formula: burst x uptime, every DoT tick counted, no Heat stacking
   shellByShell: boolean // reloads one shell at a time (reload time grows with magazine size)
   damageInWindow: (seconds: number) => number // expected damage in the first `seconds`
@@ -227,7 +229,76 @@ export function statusTrigger(trigger: string): string | null {
 // status-triggered buffs only count when the build actually lands that status. Primary Blight on a pure Electricity
 // Alternox never gets a stack, so the optimizer was picking it for free crit damage. I run the calc, and if a status
 // trigger's type never procs, run it again with that trigger off (turning it off can't add a status, so once is enough)
+// time to kill a boss pool (target.pool): shields first, then health, each off the expected damage over time (reloads,
+// Incarnon refills, DoTs as they land). "toxin skips shields" is left to the shield layer's own numbers
 export function calculate(rawInput: CalcInput): CalcResult {
+  const pool = rawInput.target.pool
+  if (!pool) return calculateLayers(rawInput)
+  const vsHealth = calculateLayers({ ...rawInput, target: { ...rawInput.target, layer: 'health' } })
+  const vsShield = pool.shield > 0 ? calculateLayers({ ...rawInput, target: { ...rawInput.target, layer: 'shield' } }) : null
+  // attenuated bosses: caps "proportional to Max Health" (Update 40), only health counts toward them
+  const attenuation = rawInput.target.attenuation
+  if (attenuation) {
+    const caps = { mdpt: attenuation.perTrigger * pool.health, mdps: attenuation.perSecond * pool.health }
+    if (rawInput.target.exactTimeToKill) {
+      const models = (result: CalcResult) => result.partShotModels ?? [result.shotModel]
+      return { ...vsHealth, timeToKill: attenuatedTimeToKill(vsShield ? models(vsShield) : null, pool.shield, models(vsHealth), pool.health, caps) }
+    }
+    // the search's estimate: each layer takes at least its unattenuated time, and at least pool / (its rate after the caps): the
+    // per-trigger map on the direct part, DoTs as they are, the total held to MDPS
+    const capped = (result: CalcResult) => {
+      // per part (a merged attack's blast is mapped as the blast, not spread over the beam ticks)
+      const firing = sum((result.partShotModels ?? [result.shotModel]).map((model) => {
+        const trigger = model.hit.average * model.multishot
+        const mapRatio = trigger > 0 ? caps.mdpt / (trigger + caps.mdpt) : 1
+        const dots = sum(model.dots.map((dot) => dot.procsPerPellet * model.multishot * dot.tick.average * Math.max(1, dot.ticks)))
+        return (trigger * mapRatio + dots) * model.fireRate
+      }))
+      // the cap bites while firing, so it goes on before the reload / refill share (a short Incarnon battery is capped, then idle)
+      return Math.min(caps.mdps, firing) * result.uptime
+    }
+    const layer = (result: CalcResult, amount: number) => (amount > 0 ? Math.max(timeToReach(result, amount), amount / Math.max(1e-9, capped(result))) : 0)
+    return { ...vsHealth, timeToKill: (vsShield ? layer(vsShield, pool.shield) : 0) + layer(vsHealth, pool.health) }
+  }
+  const shieldSeconds = vsShield ? timeToReach(vsShield, pool.shield) : 0
+  return { ...vsHealth, timeToKill: shieldSeconds + timeToReach(vsHealth, pool.health) }
+}
+
+// when damageInWindow reaches the amount: start from the steady rate and correct a few times (damage over time is close to a
+// straight line once reloads and DoTs settle in), then halve the bracket. cheap enough for the optimizer
+const TTK_LIMIT = 600
+function timeToReach(result: CalcResult, amount: number): number {
+  if (amount <= 0) return 0
+  const rate = result.steadyStateDps
+  if (!(rate > 0)) return Infinity
+  let time = amount / rate
+  for (let step = 0; step < 6; step++) {
+    // past 10 minutes it's extrapolated at the 10-minute rate instead of Infinity, so a weak build still scores something and
+    // the optimizer has a slope to climb (an unmodded weapon vs a level 375 boss would otherwise score 0 everywhere)
+    if (time >= TTK_LIMIT) {
+      const capped = result.damageInWindow(TTK_LIMIT)
+      return capped >= amount ? TTK_LIMIT : capped > 0 ? TTK_LIMIT * amount / capped : Infinity
+    }
+    const dealt = result.damageInWindow(time)
+    if (dealt <= 0) { time = time * 2 + 0.5; continue }
+    const next = Math.max(0.01, time * amount / dealt)
+    if (Math.abs(next - time) < 0.005 * time + 0.002) { time = next; break }
+    time = next
+  }
+  // damage comes in steps (one shot at a time), so the secant lands on the far side of the killing shot's step. a few halvings
+  // over the last shot interval pull it back to when that shot lands
+  const interval = 1 / Math.max(1e-6, result.shotModel.fireRate)
+  let low = Math.max(0, time - interval), high = time
+  if (result.damageInWindow(high) < amount) return Math.min(time, TTK_LIMIT)
+  for (let step = 0; step < 5; step++) {
+    const middle = (low + high) / 2
+    if (result.damageInWindow(middle) >= amount) high = middle
+    else low = middle
+  }
+  return Math.min(high, TTK_LIMIT)
+}
+
+function calculateLayers(rawInput: CalcInput): CalcResult {
   const input = withStance(rawInput)
   // a whole shot: every part with the same build, each on its own rules, then added up per shot
   const parts = partsOf(input)
@@ -345,6 +416,8 @@ function combineParts(results: CalcResult[], names: string[]): CalcResult {
     dotDps: add((result) => result.dotDps),
     totalDps: add((result) => result.totalDps),
     sustainedDps: add((result) => result.sustainedDps),
+    timeToKill: null,
+    partShotModels: results.map((result) => result.shotModel),
     steadyStateDps: add((result) => result.steadyStateDps),
     damageInWindow: (seconds: number) => sum(results.map((result) => result.damageInWindow(seconds))),
     // luck ranges added part by part, so the spread comes out a bit wider than one roll of the whole shot would be
@@ -405,6 +478,8 @@ function calculateOnce({
       liftedOrKnockedDown: immune ? false : debuffs.liftedOrKnockedDown,
     }
   }
+  // status types the target never takes (The Fragmented One: Viral) have no stacks on it and the build's procs of them don't land
+  if (target.statusImmune?.length) debuffs = { ...debuffs, stacks: Object.fromEntries(Object.entries(debuffs.stacks).map(([statusType, count]) => [statusType, target.statusImmune!.includes(statusType) ? 0 : count])) }
   const stacks = (statusType: string) => debuffs.stacks[statusType] ?? 0
   // CO counts status *types*, not stacks. Lifted/knocked down is a hidden status that also counts
   const debuffStatusTypes = Object.values(debuffs.stacks).filter((count) => count > 0).length
@@ -1036,7 +1111,7 @@ function calculateOnce({
   // (base physical + modded elements), so a gun can't count statuses it never applies
   // the build's own status types, plus (in a whole shot) the ones the other parts put on the same enemy
   const ownStatusTypes = attack.statusChance > 0
-    ? Object.entries(proportions).filter(([damageType, proportion]) => damageType !== 'true' && quantize(proportion) > 0).map(([damageType]) => damageType)
+    ? Object.entries(proportions).filter(([damageType, proportion]) => damageType !== 'true' && quantize(proportion) > 0 && !target.statusImmune?.includes(damageType)).map(([damageType]) => damageType)
     : []
   const buildStatusTypes = statusMode === 'immune' ? 0 : new Set([...ownStatusTypes, ...otherPartStatusTypes]).size
   const activeStatusTypes =
@@ -1172,7 +1247,8 @@ function calculateOnce({
 
   // ---- 4. target modifiers ----
   // Latron's Flensing Spikes: each Puncture stack strips another 20% of armor
-  const armorAfter = effectiveArmor(armor, debuffs) * Math.max(0, 1 - armorStripPerPuncture * Math.min(stacks('puncture'), 5))
+  // Janus Captain Vor "is immune to armor reduction": Heat, Corrosive, auras and Flensing Spikes don't touch it
+  const armorAfter = target.armorStripImmune ? armor : effectiveArmor(armor, debuffs) * Math.max(0, 1 - armorStripPerPuncture * Math.min(stacks('puncture'), 5))
   const armorMultiplier = armorDamageMultiplier(armorAfter)
   const factionWeakness = FACTION_DAMAGE_MODIFIERS[target.faction] ?? {}
 
@@ -1269,6 +1345,7 @@ function calculateOnce({
 
   // an immune target takes no procs at all, forced ones included
   if (statusMode === 'immune') for (const damageType of Object.keys(procRates)) procRates[damageType] = 0
+  for (const damageType of target.statusImmune ?? []) if (damageType in procRates) procRates[damageType] = 0
   const procTypes = Object.keys(procRates).filter((damageType) => procRates[damageType] > 0)
 
   // procs inherit the crit of the hit that applied them, so I keep the normal/crit/average split.
@@ -1576,6 +1653,7 @@ function calculateOnce({
     uptime,
     sustainedDps,
     steadyStateDps,
+    timeToKill: null,
     shellByShell: Boolean(shellReload) && reloads,
     damageInWindow,
     simulateWindows,

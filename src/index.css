@@ -729,3 +729,27 @@ select { max-width: 100%; }
 .stat-table th.sortable:hover { color: var(--accent); }
 .chart-tip .tip-extra { color: var(--muted); }
 .chart-tip .tip-extra:first-of-type { margin-top: 4px; }
+
+/* About: algorithm write-ups */
+.algo-list { display: grid; gap: 6px; margin-top: 12px; }
+.algo { border: 1px solid var(--border); border-radius: 6px; }
+.algo > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.algo > summary::-webkit-details-marker, .algo-eq > summary::-webkit-details-marker { display: none; }
+.algo > summary::before, .algo-eq > summary::before { content: '▸'; color: var(--muted); transition: transform 0.12s; }
+.algo[open] > summary::before, .algo-eq[open] > summary::before { transform: rotate(90deg); }
+.algo-rank { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 1.2em; }
+.algo-title { font-weight: 600; flex: 1 1 200px; }
+.algo-cost { color: var(--muted); font-size: 0.85rem; overflow-x: auto; max-width: 100%; }
+.algo-status { font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.algo-status.ok { color: #6fcf97; background: rgba(25, 158, 112, 0.12); }
+.algo-status.stale { color: #e0a84a; background: rgba(224, 168, 74, 0.14); }
+.algo-body { padding: 0 14px 12px 34px; font-size: 0.9rem; line-height: 1.5; }
+.algo-where { margin-top: 0; }
+.algo-warning { color: #e0a84a; font-size: 0.85rem; }
+.algo-steps { padding-left: 18px; display: grid; gap: 4px; }
+.algo-eq { border-left: 2px solid var(--border); margin: 6px 0; padding: 2px 0 2px 10px; }
+.algo-eq > summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; cursor: pointer; list-style: none; }
+.algo-eq .formula-tex { overflow-x: auto; padding: 6px 0; }
+.algo-sources { font-size: 0.75rem; }
+.algo .katex .accent, .algo .katex .accent * { color: inherit; }
+.untested-tag { font-size: 0.7rem; color: #e0a84a; background: rgba(224, 168, 74, 0.14); border-radius: 10px; padding: 2px 8px; margin-left: 6px; }

@@ -22,7 +22,11 @@ import type { TargetSettings, Weapon } from '../types'
 //  - damage attenuation (simulate.ts attenuatedTimeToKill): Update 40 made it "proportional to Max Health" for "True Bosses /
 //    HUD Health Bar enemies", but no boss's new numbers are published. the only post-rework ones on the wiki are Hemocyte's
 //    ("Max Damage Per Hit = 0.05 x Maximum Health", "DPS Damage Attenuation that is based on 20% of the Hemocyte's maximum
-//    health"), so both bosses get those: 5% of max health per trigger, 20% per second. a guess until someone measures them
+//    health"), so both bosses get those: 5% of max health per trigger, 20% per second. Lephantis's page backs the per-trigger
+//    part ("Damage Attenuation that is based on 5% of its maximum health", MaxPeakDamageHealthPercent), the per-second one is
+//    still Hemocyte's alone. multi-pellet weapons get 0.7x the per-trigger cap (damage.ts SHOTGUN_COMPENSATION).
+//    Janus Vor is a judgment call: Update 42 "Removed the old damage attenuation (that we no longer use) from Captain Vor",
+//    and he isn't on the standardized list, but he has a HUD health bar. he keeps attenuation and the boards say untested
 // not modeled: invulnerable phases (Vor's shielded phases, the turrets), adds, movement
 export const BOSS_ATTENUATION = { perTrigger: 0.05, perSecond: 0.2 }
 export interface BossTarget { key: string; name: string; note: string; target: TargetSettings; armor: number }

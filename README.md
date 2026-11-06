@@ -50,7 +50,8 @@ them). `node scripts/compare-wiki-data.mjs` lists every attack whose damage / cr
     leaderboard's best builds pick (mods, arcanes, damage mix, Incarnon share, and how well each base stat predicts the
     score, as a Spearman rank correlation). Charts are hand-rolled SVG (src/components/charts.tsx), no chart library
 - **Status Guide**: how each status scales and what it does, with the numbers the calc uses
-- **About**: empty for now
+- **About**: what the site is, then every algorithm it runs (biggest first) with its steps, equations in KaTeX and time
+  complexity in dropdowns. Kept in sync with the code, see "Keeping About honest" below
 
 ## How the math works
 
@@ -476,6 +477,15 @@ Cards show on the Warframe panel for your own and subsumed abilities. The Experi
 says it scales with (`src/data/abilityBuilds.ts`: Max Strength 420% / Strength + Duration 321% Str 199% Dur / Max Duration 332%,
 real mods at max rank plus Crimson shards, augments swapped in for filler mods) against a picked target, with Roar and UWB
 (Valence Formation, Nourish, Eclipse, Arcane Avenger, a crit multiplier bonus, Arcane Arachne) as settings.
+
+## Keeping About honest (`src/about/`)
+The About page's write-ups (`src/about/algorithms.ts`) each cite the functions / constants they describe. `src/about/verified.json`
+holds a hash of that code (comment lines and whitespace ignored) from the last time the write-up was checked against it:
+- change cited code and the page flags that write-up "⚠ code changed", and `npm run check` (scripts/check-about.ts) fails
+- reread the code, fix the write-up, then `npm run about:stamp`
+- numbers written as `{{src/optimizer/optimize.ts#BEAM_WIDTH}}` are read out of the source when the page renders, so they
+  can't go stale; a renamed constant fails the check
+- a new algorithm (new page, new search) gets its own entry with its sources
 
 ## Layout
 

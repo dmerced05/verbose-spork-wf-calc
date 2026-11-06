@@ -11,7 +11,8 @@
     "build": "node scripts/build-data.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "check": "tsx scripts/check-calc.ts && tsx scripts/smoke-render.tsx",
+    "check": "tsx scripts/check-calc.ts && tsx scripts/check-about.ts && tsx scripts/smoke-render.tsx",
+    "about:stamp": "tsx scripts/check-about.ts --stamp",
     "deploy": "npm run build && gh-pages -d dist",
     "leaderboard": "tsx scripts/build-leaderboard.ts"
   },

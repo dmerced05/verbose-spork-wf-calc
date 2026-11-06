@@ -3,13 +3,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { mods, weapons } from '../data'
 import introducedJson from '../data/introduced.json'
-import { enervateAverageCrit } from '../calc/damage'
+import { calculate, enervateAverageCrit } from '../calc/damage'
+import { passivesFor } from '../data/passives'
+import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from '../optimizer/scenario'
 import { loadLeaderboard } from '../optimizer/leaderboardLoader'
 import type { Leaderboard, LeaderboardEntry } from '../optimizer/leaderboardTypes'
 import { Bars, Histogram, Lines, Scatter, SERIES, Tile } from './charts'
 import type { Attack, Weapon } from '../types'
 import { subtypeOf } from '../calc/weaponProfile'
-import { getIncarnonTiers, perkAppliesTo, scenarioPerkStacks } from '../calc/incarnon'
+import { getIncarnonTiers, perkAppliesTo, scenarioPerkStacks, type SelectedPerk } from '../calc/incarnon'
 
 const modsByName = new Map(mods.map((mod) => [mod.name, mod]))
 const weaponsByName = new Map(weapons.map((weapon) => [weapon.name, weapon]))
@@ -31,7 +33,7 @@ const median = (values: number[]) => {
 
 // one row per weapon: its first attack (the plain fire / Normal Attack; merged "A + B" rows and heavies come later in the list).
 // exalted weapons are abilities, not something you pick, so they're out
-interface Row { name: string; attack: string; evolutions: string[]; category: Category; type: string; subtype: string; crit: number; critMultiplier: number; status: number; damage: number; fireRate: number; incarnon: boolean; era: number | null }
+interface Row { name: string; attack: string; evolutions: string[]; baseDps: number; category: Category; type: string; subtype: string; crit: number; critMultiplier: number; status: number; damage: number; fireRate: number; incarnon: boolean; era: number | null }
 const totalDamage = (damage: Record<string, unknown>) => Object.values(damage).reduce<number>((sum, value) => sum + (typeof value === 'number' ? value : 0), 0)
 
 // the wiki's Introduced is an update number ("19.0.7", "Vanilla"), a few old ones are named instead ("Update: The Silver Grove 2").
@@ -87,9 +89,9 @@ function pickShot(weapon: Weapon, mode: AttackMode): Shot | null {
 // (Braton's +crit, Latron's +base damage...). only the base-stat lines count here (base, "set to", and the native Incarnons'
 // flat crit/status), the mod-like ones (+% damage, multishot) are mods, not base stats. conditional lines at the
 // leaderboard's scenario stacks (body shots, kills on)
-interface Evolved { crit: number; critMultiplier: number; status: number; damageScale: number; picked: string[] }
+interface Evolved { crit: number; critMultiplier: number; status: number; damageScale: number; picked: string[]; perks: SelectedPerk[] }
 function applyEvolutions(weapon: Weapon, attack: Attack, entry: LeaderboardEntry | undefined): Evolved {
-  const out: Evolved = { crit: attack.critChance, critMultiplier: attack.critMultiplier, status: attack.statusChance, damageScale: 1, picked: [] }
+  const out: Evolved = { crit: attack.critChance, critMultiplier: attack.critMultiplier, status: attack.statusChance, damageScale: 1, picked: [], perks: [] }
   const tiers = getIncarnonTiers(weapon.name)
   if (!tiers || !entry?.perks?.length) return out
   const isMelee = weapon.category === 'Melee'
@@ -101,6 +103,7 @@ function applyEvolutions(weapon: Weapon, attack: Attack, entry: LeaderboardEntry
     if (!perk) continue
     out.picked.push(`${tier}: ${name}`)
     const stacks = scenarioPerkStacks(perk, { isMelee, bodyShots: true })
+    out.perks.push({ perk, stacks })
     for (const statement of perk.statements) {
       const effect = statement.effect
       if (!effect || !perkAppliesTo(statement.mode, isIncarnonAttack, isMelee)) continue
@@ -126,11 +129,19 @@ function rowsFor(list: Weapon[], mode: AttackMode, board: Leaderboard | null | u
     const attack = shot.attack
     const update = updateNumber(INTRODUCED[weapon.name])
     const evolved = applyEvolutions(weapon, attack, entries.get(`${weapon.name}|${attack.name}`))
+    // the weapon's own sustained DPS: no mods, no arcane, only its innate passives and the evolutions above, neutral target.
+    // what the weapon brings, not what a build does with it. heavies don't have a sustained number, so it's one whole heavy
+    const unmodded = calculate({
+      weapon, attack, mods: [], arcane: null, incarnonPerks: evolved.perks, bonusElement: null,
+      passives: passivesFor(weapon.name).map((passive) => ({ passive, stacks: passive.condition ? passive.scenarioStacks ?? passive.maxStacks ?? 1 : 1 })),
+      target: SCENARIO_TARGET, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS,
+    })
+    const baseDps = mode === 'heavy' ? unmodded.attackTotal : unmodded.sustainedDps
     return [{
       name: weapon.name, attack: attack.name, evolutions: evolved.picked, category: weapon.category as Category, type: weapon.type, subtype: subtypeOf(weapon) ?? `Other ${weapon.category.toLowerCase()}`,
       crit: evolved.crit, critMultiplier: evolved.critMultiplier, status: evolved.status, damage: shotDamage(weapon, attack) * evolved.damageScale,
       fireRate: attack.fireRate, incarnon: weapon.attacks.some((other) => other.name.includes('Incarnon Form')),
-      era: update === null ? null : Math.floor(update / ERA_SIZE) * ERA_SIZE,
+      era: update === null ? null : Math.floor(update / ERA_SIZE) * ERA_SIZE, baseDps: Number.isFinite(baseDps) ? baseDps : 0,
     }]
   })
 }
@@ -184,7 +195,7 @@ export function DataExplorer() {
         <p className="muted">Showing {modeInfo.blurb}: {rows.length} weapons. The Enervate section always uses normal fire.</p>
       </section>
       <ArsenalFacts rows={rows} />
-      <Subtypes rows={rows} board={board} />
+      <Subtypes rows={rows} mode={mode} />
       <Enervate rows={normalRows} />
       <Trends rows={rows} />
       <PrimeUplift rows={rows} />
@@ -239,25 +250,22 @@ function CategoryPicker({ value, onChange }: { value: Category; onChange: (categ
 interface SubtypeStats { name: string; category: Category; members: Row[]; crit: number; critMultiplier: number; status: number; damage: number; fireRate: number }
 type SortKey = 'name' | 'count' | 'crit' | 'critMultiplier' | 'status' | 'damage' | 'fireRate' | 'score'
 const SORT_COLUMNS: { key: SortKey; label: string }[] = [{ key: 'name', label: 'Subtype' }, { key: 'count', label: 'Weapons' }, { key: 'crit', label: 'Crit' },
-  { key: 'critMultiplier', label: 'Crit multi' }, { key: 'status', label: 'Status' }, { key: 'damage', label: 'Damage' }, { key: 'fireRate', label: 'Fire rate' }, { key: 'score', label: 'Median score' }]
-function Subtypes({ rows, board }: { rows: Row[]; board: Leaderboard | null | undefined }) {
+  { key: 'critMultiplier', label: 'Crit multi' }, { key: 'status', label: 'Status' }, { key: 'damage', label: 'Damage' }, { key: 'fireRate', label: 'Fire rate' }, { key: 'score', label: 'Median DPS (unmodded)' }]
+function Subtypes({ rows, mode }: { rows: Row[]; mode: AttackMode }) {
   const [picked, setPicked] = useState('Shotgun')
   // click a header to sort by it (biggest first), again to flip, a third time back to the category grouping
   const [sort, setSort] = useState<{ key: SortKey; descending: boolean } | null>(null)
-  const [chosenKey, setBoardKey] = useState('sustained')
-  const boardKey = usableBoard(board, chosenKey)
-  const best = useMemo(() => bestPerWeapon(board, boardKey), [board, boardKey])
-  const scoreByName = new Map(best.map((entry) => [entry.weaponName, entry]))
-  const scoreName = BOARD_CHOICES.find((choice) => choice.key === boardKey)!.label
+  // the weapons' own numbers only: no mods anywhere in this section (the leaderboard section at the bottom has the builds)
+  const scoreName = mode === 'heavy' ? 'unmodded heavy damage' : 'unmodded sustained DPS'
   const groups: SubtypeStats[] = [...new Set(rows.map((row) => `${row.category}/${row.subtype}`))].map((key) => {
     const members = rows.filter((row) => `${row.category}/${row.subtype}` === key)
     return { name: members[0].subtype, category: members[0].category, members, crit: median(members.map((row) => row.crit)),
       critMultiplier: median(members.map((row) => row.critMultiplier)), status: median(members.map((row) => row.status)),
       damage: median(members.map((row) => row.damage)), fireRate: median(members.map((row) => row.fireRate)) }
   }).sort((a, b) => CATEGORIES.indexOf(a.category) - CATEGORIES.indexOf(b.category) || b.members.length - a.members.length)
-  const medianScore = (group: SubtypeStats) => median(group.members.map((row) => scoreByName.get(row.name)?.score).filter((score): score is number => score !== undefined))
+  const medianScore = (group: SubtypeStats) => median(group.members.map((row) => row.baseDps))
   const group = groups.find((one) => one.name === picked) ?? groups[0]
-  const sortValue = (one: SubtypeStats, key: SortKey): number | string => key === 'name' ? one.name : key === 'count' ? one.members.length : key === 'score' ? (board ? medianScore(one) : 0) : one[key]
+  const sortValue = (one: SubtypeStats, key: SortKey): number | string => key === 'name' ? one.name : key === 'count' ? one.members.length : key === 'score' ? medianScore(one) : one[key]
   const sorted = !sort ? groups : [...groups].sort((a, b) => {
     const left = sortValue(a, sort.key)
     const right = sortValue(b, sort.key)
@@ -266,22 +274,14 @@ function Subtypes({ rows, board }: { rows: Row[]; board: Leaderboard | null | un
   })
   const categoryRows = rows.filter((row) => row.category === group.category)
   const versus = (value: number, overall: number, format: (v: number) => string) => `${value >= overall ? '+' : ''}${format(value - overall)} vs all ${group.category.toLowerCase()}`
-  const entries = group.members.map((row) => ({ row, entry: scoreByName.get(row.name) })).filter((pair): pair is { row: Row; entry: LeaderboardEntry } => !!pair.entry)
-  const tally = (names: string[]) => {
-    const counts = new Map<string, number>()
-    for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1)
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])
-  }
-  const share = (count: number) => count / Math.max(1, entries.length)
   return (
     <section className="panel">
       <div className="row spread">
         <h2>By weapon subtype</h2>
-        <select value={boardKey} onChange={(event) => setBoardKey(event.target.value)}>{BOARD_CHOICES.map((choice) => <option key={choice.key} value={choice.key}>Scores: {choice.label}</option>)}</select>
       </div>
       <p className="muted">
         Guns split by type (rifles, shotguns, bows, snipers, launchers, spearguns, pistols, dual pistols, thrown), melee by the wiki's weapon classes
-        (glaives, heavy blades, nikanas...). Medians throughout. Click a column header to sort by it, click a row to dig into that subtype.
+        (glaives, heavy blades, nikanas...). Medians throughout, and no mods: DPS is each weapon's own (innate passives and its Incarnon evolutions only). Click a column header to sort by it, click a row to dig into that subtype.
       </p>
       <Scatter title="Every subtype: median crit vs median status" xLabel="median crit chance" yLabel="median status chance" xFmt={(value) => pct(value)} yFmt={(value) => pct(value)}
         series={CATEGORIES.map((one) => ({ name: one, color: COLOR[one], points: groups.filter((one2) => one2.category === one).map((one2) => ({ x: one2.crit, y: one2.status, label: `${one2.name} (${one2.members.length})` })) }))}
@@ -291,14 +291,14 @@ function Subtypes({ rows, board }: { rows: Row[]; board: Leaderboard | null | un
           <thead><tr>{SORT_COLUMNS.map((column) => (
             <th key={column.key} className="sortable" onClick={() => setSort(sort?.key !== column.key ? { key: column.key, descending: column.key !== 'name' }
               : sort.descending === (column.key !== 'name') ? { key: column.key, descending: !sort.descending } : null)}>
-              {column.label}{sort?.key === column.key ? (sort.descending ? ' ▼' : ' ▲') : ''}
+              {column.key === 'score' && mode === 'heavy' ? 'Median heavy (unmodded)' : column.label}{sort?.key === column.key ? (sort.descending ? ' ▼' : ' ▲') : ''}
             </th>))}<th>Best weapon</th></tr></thead>
           <tbody>{sorted.map((one) => {
-            const top = one.members.map((row) => scoreByName.get(row.name)).filter((entry): entry is LeaderboardEntry => !!entry).sort((a, b) => b.score - a.score)[0]
+            const top = [...one.members].sort((a, b) => b.baseDps - a.baseDps)[0]
             return (
               <tr key={`${one.category}${one.name}`} className={one === group ? 'picked' : ''} onClick={() => setPicked(one.name)}>
                 <td><i className="swatch" style={{ background: COLOR[one.category] }} />{one.name}</td><td>{one.members.length}</td><td>{pct(one.crit)}</td><td>{one.critMultiplier.toFixed(1)}x</td>
-                <td>{pct(one.status)}</td><td>{big(one.damage)}</td><td>{one.fireRate.toFixed(2)}</td><td>{board ? big(medianScore(one)) : '…'}</td><td>{top?.weaponName ?? '–'}</td>
+                <td>{pct(one.status)}</td><td>{big(one.damage)}</td><td>{one.fireRate.toFixed(2)}</td><td>{big(medianScore(one))}</td><td>{top?.name ?? '–'}</td>
               </tr>
             )
           })}</tbody>
@@ -311,7 +311,7 @@ function Subtypes({ rows, board }: { rows: Row[]; board: Leaderboard | null | un
         <Tile label="median crit multiplier" value={`${group.critMultiplier.toFixed(1)}x`} sub={versus(group.critMultiplier, median(categoryRows.map((row) => row.critMultiplier)), (value) => `${value.toFixed(1)}x`)} />
         <Tile label="median status chance" value={pct(group.status)} sub={versus(group.status, median(categoryRows.map((row) => row.status)), (value) => `${(value * 100).toFixed(0)} pts`)} />
         <Tile label="median base damage" value={big(group.damage)} sub={`all ${group.category.toLowerCase()}: ${big(median(categoryRows.map((row) => row.damage)))}`} />
-        <Tile label={`median ${scoreName}`} value={board ? big(medianScore(group)) : '…'} sub={`all ${group.category.toLowerCase()}: ${board ? big(median(best.filter((entry) => entry.category === group.category).map((entry) => entry.score))) : '…'}`} />
+        <Tile label={`median ${scoreName}`} value={big(medianScore(group))} sub={`all ${group.category.toLowerCase()}: ${big(median(categoryRows.map((row) => row.baseDps)))}`} />
         <Tile label="Incarnon available" value={`${group.members.filter((row) => row.incarnon).length} / ${group.members.length}`} />
       </div>
       <div className="chart-grid">
@@ -320,18 +320,8 @@ function Subtypes({ rows, board }: { rows: Row[]; board: Leaderboard | null | un
       </div>
       <Scatter title={`${group.name}: crit vs status`} xLabel="crit chance" yLabel="status chance" xFmt={(value) => pct(value)} yFmt={(value) => pct(value)} xMax={0.6} yMax={0.6}
         series={[{ name: group.name, color: COLOR[group.category], points: group.members.map((row) => ({ x: row.crit, y: row.status, label: rowLabel(row), extra: evolutionLines(row) })) }]} />
-      {board && entries.length > 0 && (
-        <>
-          <Bars title={`Top ${group.name.toLowerCase()} weapons, ${scoreName}`} fmt={big} labelWidth={180}
-            rows={[...entries].sort((a, b) => b.entry.score - a.entry.score).slice(0, 12).map(({ entry }) => ({ label: entry.weaponName, value: entry.score, detail: entry.incarnonForm ? 'Incarnon form' : entry.attack }))} />
-          <div className="chart-grid">
-            <Bars title="Most picked mods (share of builds)" fmt={(value) => pct(value)}
-              rows={tally(entries.flatMap(({ entry }) => [...new Set(entry.mods.map((mod) => mod.name))])).slice(0, 10).map(([label, count]) => ({ label, value: share(count), detail: `${count} of ${entries.length} builds` }))} />
-            <Bars title="Arcane picks" fmt={(value) => pct(value)}
-              rows={tally(entries.map(({ entry }) => entry.arcane?.name ?? 'No arcane')).slice(0, 6).map(([label, count]) => ({ label, value: share(count), detail: `${count} of ${entries.length} builds` }))} />
-          </div>
-        </>
-      )}
+      <Bars title={`Top ${group.name.toLowerCase()} weapons, ${scoreName}`} fmt={big} labelWidth={180}
+        rows={[...group.members].sort((a, b) => b.baseDps - a.baseDps).slice(0, 12).map((row) => ({ label: rowLabel(row), value: row.baseDps, detail: row.evolutions.length ? `Evolutions: ${row.evolutions.join(', ')}` : undefined }))} />
     </section>
   )
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Calculator, type BuildToLoad } from './Calculator'
 import { Leaderboard } from './components/Leaderboard'
 import { Compare } from './components/Compare'
@@ -8,6 +8,8 @@ import { RivenPage } from './components/RivenPage'
 import { StatusGuide } from './components/StatusGuide'
 import { AbilityDamagePage } from './components/DataAnalysis'
 import { DataExplorer } from './components/DataExplorer'
+// About carries the source text its write-ups are checked against, so it's its own chunk
+const About = lazy(() => import('./components/About'))
 import type { CompareScenario } from './optimizer/compare'
 import type { RivenConfig } from './calc/riven'
 
@@ -172,7 +174,7 @@ export default function App() {
       {/* static text, so it just mounts when shown */}
       {tab === 'status' && <StatusGuide />}
       {/* empty for now */}
-      {tab === 'about' && <section className="panel"><h2>About</h2><p className="muted">Nothing here yet.</p></section>}
+      {tab === 'about' && <Suspense fallback={<section className="panel"><p className="muted">Loading…</p></section>}><About /></Suspense>}
     </main>
   )
 }

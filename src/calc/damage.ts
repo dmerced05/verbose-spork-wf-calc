@@ -231,6 +231,7 @@ export function statusTrigger(trigger: string): string | null {
 // trigger's type never procs, run it again with that trigger off (turning it off can't add a status, so once is enough)
 // time to kill a boss pool (target.pool): shields first, then health, each off the expected damage over time (reloads,
 // Incarnon refills, DoTs as they land). "toxin skips shields" is left to the shield layer's own numbers
+export const SHOTGUN_COMPENSATION = 0.7
 export function calculate(rawInput: CalcInput): CalcResult {
   const pool = rawInput.target.pool
   if (!pool) return calculateLayers(rawInput)
@@ -239,7 +240,11 @@ export function calculate(rawInput: CalcInput): CalcResult {
   // attenuated bosses: caps "proportional to Max Health" (Update 40), only health counts toward them
   const attenuation = rawInput.target.attenuation
   if (attenuation) {
-    const caps = { mdpt: attenuation.perTrigger * pool.health, mdps: attenuation.perSecond * pool.health }
+    // multi-pellet weapons get a smaller per-trigger cap: the standardized model's "ShotgunCompensation = 0.7 if base multishot > 0"
+    // (wiki Archon, Damage Resistance Parameters). the page doesn't say what it multiplies, I'm putting it on the per-trigger cap
+    const baseMultishot = rawInput.attack.multishot ?? rawInput.weapon.multishot ?? 1
+    const shotgunCompensation = baseMultishot > 1 ? SHOTGUN_COMPENSATION : 1
+    const caps = { mdpt: attenuation.perTrigger * pool.health * shotgunCompensation, mdps: attenuation.perSecond * pool.health }
     if (rawInput.target.exactTimeToKill) {
       const models = (result: CalcResult) => result.partShotModels ?? [result.shotModel]
       return { ...vsHealth, timeToKill: attenuatedTimeToKill(vsShield ? models(vsShield) : null, pool.shield, models(vsHealth), pool.health, caps) }
@@ -976,7 +981,13 @@ function calculateOnce({
   for (const { perk, stacks: perkStacks } of incarnonPerks) {
     for (const statement of perk.statements) {
       if (!statement.effect || !perkAppliesTo(statement.mode, isIncarnonAttack, weapon.category === 'Melee')) continue
-      const times = statement.condition ? Math.min(perkStacks, statement.maxStacks) : 1
+      // Felarx's Mounting Momentum: "On Shell Reload: +10% Fire Rate; Stacks up to 99x". one stack per shell loaded, so a reload
+      // gives at most the base form's (modded) magazine of stacks, not 99: a 6-shell Felarx gets +60%. the Incarnon form has
+      // no shells of its own, its stacks come from the base form's reloads too
+      const shellCap = statement.condition && /shell reload/i.test(statement.condition) && weapon.magazineSize
+        ? Math.max(1, Math.round(weapon.magazineSize * (1 + bonus.magazineCapacity) * magazineMultiplier)) : Infinity
+      const times = statement.condition ? Math.min(perkStacks, statement.maxStacks, shellCap) : 1
+      if (Number.isFinite(shellCap) && times > 0) requirements.push(`${perk.name} (Incarnon): ${times} stacks, one per shell of the base form's ${shellCap}-round magazine`)
       if (times <= 0) continue
       // status-triggered perks get the same check as mods (Latron's Riddled Target needs Puncture procs: a -100% Puncture
       // riven used to keep its +100% multishot)
@@ -1493,12 +1504,18 @@ function calculateOnce({
   // magazine mods don't touch the charges (Underframe: Vasto Prime's 24 stay 24 with Slip Magazine)
   const magazineSize = !reloads ? null : incarnonCharges ?? Math.max(1, Math.round(weapon.magazineSize! * (1 + bonus.magazineCapacity) * magazineMultiplier))
   // shell-by-shell weapons (Felarx, Strun, Corinth...): (start/end delay + per shell x magazine) / (1 + reload speed),
-  // so magazine mods make the reload longer
-  const shellReload = incarnonCharges ? undefined : SHELL_BY_SHELL_RELOAD[weapon.name]
+  // so magazine mods make the reload longer. the Incarnon form's refill reloads are base form reloads too, shell by shell
+  // with the base form's magazine (they used to be the flat listed reload whatever the magazine). the form swap stays on the
+  // listed reload stat, the wiki only says it's "equal to the weapon's reload speed"
+  const shellReload = SHELL_BY_SHELL_RELOAD[weapon.name]
+  const baseFormMagazine = weapon.magazineSize ? Math.max(1, Math.round(weapon.magazineSize * (1 + bonus.magazineCapacity) * magazineMultiplier)) : null
+  // unmodded reload speed (the form swap) or the build's (normal-form reloads)
+  const baseFormReload = (speedScale: number) =>
+    (shellReload && baseFormMagazine ? shellReload.delay + shellReload.perShell * baseFormMagazine : weapon.reloadTime ?? 0) / speedScale
   const reloadSpeedScale = Math.max(0.01, 1 + bonus.reloadSpeed)
   const normalReload = !reloads
     ? null
-    : reloadOverride ?? (shellReload ? (shellReload.delay + shellReload.perShell * magazineSize!) : weapon.reloadTime!) / reloadSpeedScale
+    : reloadOverride ?? baseFormReload(reloadSpeedScale)
   // the Incarnon form's "reload" is filling the gauge again with the normal form (wiki: "Incarnon Form is charged by filling
   // the Incarnon Transmutation gauge ... by achieving weakpoint hits", "each charge producing 3 rounds to a maximum of 24" on
   // Vasto, "Individual Multishot bullets can build charges"). so a full form takes charges / rounds-per-hit weak point hits,
@@ -1509,8 +1526,8 @@ function calculateOnce({
     if (!normal) return null
     const pullRate = normal.fireRate * Math.max(0.01, 1 + fireRateBonus) * fireRateMultiplier
     const projectiles = (normal.multishot ?? 1) * (1 + bonus.multishot)
-    const normalMagazine = weapon.magazineSize ? Math.max(1, weapon.magazineSize * (1 + bonus.magazineCapacity)) : null
-    const normalReloadTime = weapon.reloadTime ? weapon.reloadTime / reloadSpeedScale : 0
+    const normalMagazine = baseFormMagazine
+    const normalReloadTime = baseFormReload(reloadSpeedScale)
     const pullsPerSecond = normalMagazine ? normalMagazine / (normalMagazine / pullRate + normalReloadTime) : pullRate
     const hits = incarnonCharges / attack.incarnonRefill.roundsPerHit / (1 + incarnonChargeBonus)
     const filling = hits / (pullsPerSecond * projectiles)
@@ -1527,7 +1544,10 @@ function calculateOnce({
   const reloadTime = refill ?? normalReload
   // Ammo Efficiency: that share of shots is free, so a magazine fires magazine / (1 - efficiency) shots. capped at 75% in
   // total since Hotfix 44.1.3 ("only 1 in 4 shots uses ammo"); what used to be 100% is now "Infinite Ammo", which ignores it
-  const ammoEfficiency = (infiniteAmmo as boolean) ? 0.99 : Math.min(AMMO_EFFICIENCY_CAP, bonus.ammoEfficiency)
+  // ...but never on an Incarnon form: its charges aren't ammo, so no source of Ammo Efficiency (mods, arcanes, evolutions like
+  // Felarx's Ruptured Plentitude) stretches them
+  const ammoEfficiency = incarnonCharges ? 0 : (infiniteAmmo as boolean) ? 0.99 : Math.min(AMMO_EFFICIENCY_CAP, bonus.ammoEfficiency)
+  if (incarnonCharges && (bonus.ammoEfficiency > 0 || (infiniteAmmo as boolean))) requirements.push('Ammo Efficiency: does nothing on the Incarnon form (charges aren\'t ammo)')
   // rounds per magazine: ammo per round from the wiki (Tenet Tetra's grenade "consumes all ammo", 80 of 80), at least 1
   // a cost of the whole base magazine means it always takes everything that's left, so bigger magazines still give one
   // (against the Incarnon charges for a form: Onos's 57-round cycle isn't "the whole magazine" of a 350-round form)
@@ -1654,7 +1674,7 @@ function calculateOnce({
     sustainedDps,
     steadyStateDps,
     timeToKill: null,
-    shellByShell: Boolean(shellReload) && reloads,
+    shellByShell: Boolean(shellReload) && reloads && !incarnonCharges,
     damageInWindow,
     simulateWindows,
     shotModel,

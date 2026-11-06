@@ -40,7 +40,7 @@ const BOSSES = [
   { key: 'boss-janus-vor', label: 'Janus Captain Vor', blurb: 'Steel Path hardmode Vor, level 375, solo: 942k shields then 14.3M health behind 2,700 armor he can\'t lose ("immune to armor reduction")' },
   { key: 'boss-fragmented-one', label: 'The Fragmented One', blurb: 'Steel Path hardmode Fragmented, level 225, solo: 80.8M health (200,000 base with the Steel Path bonus), no shields or armor, resists Viral and takes no Viral status' },
 ]
-const BOSS_BLURB = 'Time to kill, solo: shields then health, reloads, Incarnon refills and DoT ticks as they land, status capped at 4 stacks per type and no kills (on-kill buffs never come up). Damage attenuation is a guess: Hemocyte\'s published caps (5% of max health per trigger, 20% per second) since no hardmode boss has numbers yet, so no build gets under ~5 s of health. Invulnerable phases, adds and movement aren\'t in it'
+const BOSS_BLURB = 'Time to kill, solo: shields then health, reloads, Incarnon refills and DoT ticks as they land, status capped at 4 stacks per type and no kills (on-kill buffs never come up). Untested: damage attenuation uses the standardized model\'s published caps from Hemocyte and Lephantis (5% of max health per trigger, 0.7x that for multi-pellet weapons, 20% per second) since no hardmode boss has numbers yet, so no build gets under ~5 s of health. Whether Janus Vor is attenuated at all is unconfirmed (Update 42 removed Captain Vor\'s old attenuation). Invulnerable phases, adds and movement aren\'t in it'
 
 interface Props {
   onLoadBuild: (entry: LeaderboardEntry) => void
@@ -187,6 +187,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
                   </button>
                 ))}
               </div>
+              <span className="untested-tag" title="Damage attenuation numbers for these bosses aren't published or measured, see the description below">untested</span>
             </label>
           )}
           {rankBy === 'window' && (

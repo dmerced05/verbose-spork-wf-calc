@@ -1,4 +1,4 @@
-import{n as e,r as t,t as n}from"./index-CWJUA-T_.js";var r=`// precomputes the leaderboard: runs the optimizer on every weapon attack for every ranking (objective) and
+import{n as e,r as t,t as n}from"./index-6xY0tdg4.js";var r=`// precomputes the leaderboard: runs the optimizer on every weapon attack for every ranking (objective) and
 // writes public/leaderboard.json, which the Leaderboard tab just reads. run with: npm run leaderboard
 //
 // it's incremental: each weapon's entries are stored with a fingerprint of everything that weapon depends on

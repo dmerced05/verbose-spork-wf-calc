@@ -8,6 +8,7 @@ import { RivenPage } from './components/RivenPage'
 import { StatusGuide } from './components/StatusGuide'
 import { AbilityDamagePage } from './components/DataAnalysis'
 import { DataExplorer } from './components/DataExplorer'
+import { Home } from './components/Home'
 // About carries the source text its write-ups are checked against, so it's its own chunk
 const About = lazy(() => import('./components/About'))
 import type { CompareScenario } from './optimizer/compare'
@@ -15,9 +16,10 @@ import type { RivenConfig } from './calc/riven'
 
 // pages, grouped into the top tabs. a page id is what goes in the URL hash (#weapons, #abilities...), and a tab with more than one
 // page shows them as a second row of subtabs
-type Tab = 'calculator' | 'leaderboard' | 'compare' | 'weapons' | 'rivens' | 'cap' | 'abilities' | 'analysis' | 'status' | 'about'
+type Tab = 'home' | 'calculator' | 'leaderboard' | 'compare' | 'weapons' | 'rivens' | 'cap' | 'abilities' | 'analysis' | 'status' | 'about'
 interface Section { id: string; label: string; pages: { id: Tab; label: string }[] }
 const SECTIONS: Section[] = [
+  { id: 'home', label: 'Home', pages: [{ id: 'home', label: 'Home' }] },
   { id: 'calculator', label: 'Calculator', pages: [{ id: 'calculator', label: 'Calculator' }] },
   { id: 'leaderboard', label: 'Leaderboard', pages: [{ id: 'leaderboard', label: 'Leaderboard' }] },
   { id: 'compare', label: 'Compare', pages: [{ id: 'compare', label: 'Build Paths' }, { id: 'weapons', label: 'Weapons' }] },
@@ -31,9 +33,9 @@ const SECTIONS: Section[] = [
 const TABS: Tab[] = SECTIONS.flatMap((section) => section.pages.map((page) => page.id))
 const sectionOf = (tab: Tab) => SECTIONS.find((section) => section.pages.some((page) => page.id === tab))!
 const tabFromHash = (): Tab => {
-  if (typeof window === 'undefined') return 'calculator'
+  if (typeof window === 'undefined') return 'home'
   const fromHash = window.location.hash.slice(1) as Tab
-  return TABS.includes(fromHash) ? fromHash : 'calculator'
+  return TABS.includes(fromHash) ? fromHash : 'home'
 }
 
 export default function App() {
@@ -45,6 +47,7 @@ export default function App() {
   const [rivensOpened, setRivensOpened] = useState(tab === 'rivens')
   const [abilitiesOpened, setAbilitiesOpened] = useState(tab === 'abilities')
   const [buildToLoad, setBuildToLoad] = useState<BuildToLoad | null>(null)
+  const [frameToLoad, setFrameToLoad] = useState<{ frame: string; nonce: number } | null>(null) // Home's "Use in Calculator"
   // the calculator's setup, so Compare can run against it and reuse its riven
   const [calculatorScenario, setCalculatorScenario] = useState<CompareScenario | null>(null)
   const [calculatorRiven, setCalculatorRiven] = useState<{ weaponId: string; config: RivenConfig } | null>(null)
@@ -74,7 +77,7 @@ export default function App() {
     if (next === 'rivens') setRivensOpened(true)
     if (next === 'abilities') setAbilitiesOpened(true)
     setTab(next)
-    window.history.replaceState(null, '', next === 'calculator' ? '#' : `#${next}`)
+    window.history.replaceState(null, '', next === 'home' ? window.location.pathname : `#${next}`)
   }
 
   return (
@@ -106,9 +109,23 @@ export default function App() {
         <p className="experimental-note">⚠ Experimental: these pages are for testing and number-crunching, results may not be accurate.</p>
       )}
 
+      {tab === 'home' && (
+        <Home
+          onLoadBuild={(entry) => {
+            setBuildToLoad({ entry, nonce: Date.now() })
+            openTab('calculator')
+            window.scrollTo({ top: 0 })
+          }}
+          onUseFrame={(frame) => {
+            setFrameToLoad({ frame, nonce: Date.now() })
+            openTab('calculator')
+            window.scrollTo({ top: 0 })
+          }}
+        />
+      )}
       {/* both stay mounted so switching tabs doesn't wipe the calculator setup */}
       <div hidden={tab !== 'calculator'}>
-        <Calculator buildToLoad={buildToLoad} onScenarioChange={setCalculatorScenario} onRivenChange={setCalculatorRiven} />
+        <Calculator buildToLoad={buildToLoad} frameToLoad={frameToLoad} onScenarioChange={setCalculatorScenario} onRivenChange={setCalculatorRiven} />
       </div>
       {leaderboardOpened && (
         <div hidden={tab !== 'leaderboard'}>

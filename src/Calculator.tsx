@@ -82,11 +82,12 @@ const DEFAULT_DEBUFFS: Debuffs = {
 
 interface CalculatorProps {
   buildToLoad: BuildToLoad | null
+  frameToLoad?: { frame: string; nonce: number } | null // just pick this Warframe, no mods or abilities on
   onScenarioChange?: (scenario: CompareScenario) => void
   onRivenChange?: (riven: { weaponId: string; config: RivenConfig }) => void
 }
 
-export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: CalculatorProps) {
+export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRivenChange }: CalculatorProps) {
   const [weaponId, setWeaponId] = useState(defaultWeaponId)
   const [attackIndex, setAttackIndex] = useState(0)
   const [slots, setSlots] = useState(emptySlots)
@@ -156,6 +157,10 @@ export function Calculator({ buildToLoad, onScenarioChange, onRivenChange }: Cal
     }
     setLoadedFrom(keepScenario ? null : `${entry.weaponName} (${entry.attack})`)
   }, [buildToLoad])
+  useEffect(() => {
+    if (!frameToLoad) return
+    setFrameLoad({ nonce: frameToLoad.nonce, load: { frame: frameToLoad.frame, allyStrength: 1, casts: [], subsume: null, arcaneIds: [], mods: { regular: [], aura: [], exilus: null } } })
+  }, [frameToLoad])
 
   const weapon = weaponsById.get(weaponId)!
   const attack = weapon.attacks[attackIndex] ?? weapon.attacks[0]

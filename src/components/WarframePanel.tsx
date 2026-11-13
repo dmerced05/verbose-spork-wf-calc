@@ -29,6 +29,30 @@ interface Props {
   loadRequest?: { nonce: number; load: FrameLoad | 'clear' } | null
   // the Calculator's target, for the damaging abilities' numbers
   abilityTarget?: AbilityContext['target'] | null
+  // loadout codes: the panel's whole setup goes up on every change, and a pasted one comes back down to restore
+  onSnapshot?: (snapshot: FrameSnapshot) => void
+  restoreRequest?: { nonce: number; snapshot: Partial<FrameSnapshot> } | null
+}
+
+// everything you can set in the panel, as-is, for loadout codes
+export interface FrameSnapshot {
+  frameId: string
+  slots: (ModSlot | null)[]
+  polarities: SlotPolarity[]
+  hasReactor: boolean
+  extraStrength: number
+  extraDuration: number
+  extraArmor: number
+  teammateStrength: number
+  helminth: { slot: number; key: string } | null
+  activeOwn: Record<string, boolean>
+  variantPick: Record<string, string>
+  abilityStacks: Record<string, number>
+  allies: string[]
+  arcaneSlots: (ArcaneSlot | null)[]
+  shieldInnateDr: boolean
+  otherDr: number
+  shards: (ShardSlot | null)[]
 }
 
 const percent = (fraction: number) => `${Math.round(fraction * 1000) / 10}%`
@@ -121,7 +145,7 @@ const subsumeByKey = new Map(SUBSUME_OPTIONS.map((option) => [option.key, option
 // abilities an ally can bring (passives can't be shared)
 const ALLY_OPTIONS = WARFRAME_ABILITIES.filter(helpsAllies)
 
-export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, abilityTarget }: Props) {
+export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, abilityTarget, onSnapshot, restoreRequest }: Props) {
   const [frameId, setFrameId] = useState(defaultFrameId)
   const frame = warframesById.get(frameId)!
   const baseName = warframeBaseName(frame.name)
@@ -301,6 +325,40 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, 
     setArcaneSlots([load.arcaneIds[0] ? arcaneSlot(load.arcaneIds[0]) : null, load.arcaneIds[1] ? arcaneSlot(load.arcaneIds[1]) : null])
     setShards(Array.from({ length: SHARD_SLOTS }, (_, index) => load.shards?.[index] ?? null))
   }, [loadRequest?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // loadout codes, out: the raw setup, keyed so it only goes up when something really changed
+  const snapshot: FrameSnapshot = {
+    frameId, slots, polarities, hasReactor, extraStrength, extraDuration, extraArmor, teammateStrength, helminth, activeOwn,
+    variantPick, abilityStacks, allies, arcaneSlots, shieldInnateDr, otherDr, shards,
+  }
+  const snapshotKey = JSON.stringify(snapshot)
+  useEffect(() => onSnapshot?.(snapshot), [snapshotKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // and in: a pasted code. anything this version's data doesn't know (a renamed mod, a frame that's gone) is just dropped
+  useEffect(() => {
+    if (!restoreRequest) return
+    const saved = restoreRequest.snapshot
+    const next = (saved.frameId && warframesById.get(saved.frameId)) || warframesById.get(frameId)!
+    const known = (slot: ModSlot | null | undefined) => (slot && modsById.has(slot.modId) ? slot : null)
+    const fit = <T,>(list: T[] | undefined, length: number, fill: T) => Array.from({ length }, (_, index) => list?.[index] ?? fill)
+    setFrameId(next.uniqueName)
+    setSlots(fit(saved.slots, slotCountFor(next), null).map(known))
+    setPolarities(saved.polarities?.length === slotCountFor(next) ? saved.polarities : polaritiesFor(next))
+    setHasReactor(saved.hasReactor ?? true)
+    setExtraStrength(saved.extraStrength ?? 0)
+    setExtraDuration(saved.extraDuration ?? 0)
+    setExtraArmor(saved.extraArmor ?? 0)
+    setTeammateStrength(saved.teammateStrength ?? 1)
+    setHelminth(saved.helminth && subsumeByKey.has(saved.helminth.key) ? saved.helminth : null)
+    setActiveOwn(saved.activeOwn ?? {})
+    setVariantPick(saved.variantPick ?? {})
+    setAbilityStacks(saved.abilityStacks ?? {})
+    setAllies((saved.allies ?? []).filter((id) => abilitiesById.has(id)))
+    setArcaneSlots(fit(saved.arcaneSlots, 2, null).map((slot) => (slot && arcanesById.has(slot.arcaneId) ? slot : null)))
+    setShieldInnateDr(saved.shieldInnateDr ?? true)
+    setOtherDr(saved.otherDr ?? 0)
+    setShards(fit(saved.shards, SHARD_SLOTS, null))
+  }, [restoreRequest?.nonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const pickFrame = (id: string | null) => {
     if (!id) return

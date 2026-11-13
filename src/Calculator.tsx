@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { STATUS_TYPES, factionLabel, hitsPerComboTier, maxComboFor } from './calc/constants'
 import { calculate } from './calc/damage'
 import { arcanesById, enemies, getCompatibleArcanes, getCompatibleMods, modsById, weapons, weaponsById } from './data'
@@ -9,7 +9,8 @@ import { IncarnonPanel } from './components/IncarnonPanel'
 import { getIncarnonTiers, scenarioPerkStacks, type SelectedPerk } from './calc/incarnon'
 import { DebuffsPanel } from './components/DebuffsPanel'
 import { PassivesPanel } from './components/PassivesPanel'
-import { WarframePanel } from './components/WarframePanel'
+import { WarframePanel, type FrameSnapshot } from './components/WarframePanel'
+import { decodeLoadout, encodeLoadout } from './calc/loadoutCode'
 import { BaseStats } from './components/BaseStats'
 import { hasBonusElement, passivesFor, type BonusElement } from './data/passives'
 import { heavyComboFor, type HeavyMode } from './data/heavyAttacks'
@@ -80,6 +81,29 @@ const DEFAULT_DEBUFFS: Debuffs = {
   statusTypeSource: 'build',
 }
 
+// what a loadout code holds (calc/loadoutCode.ts packs it). v is the shape's version, for if it ever changes
+interface CalcSnapshot {
+  v: 1
+  weaponId: string
+  attackIndex: number
+  slots: (ModSlot | null)[]
+  polarities: SlotPolarity[]
+  hasCatalyst: boolean
+  arcaneSlot: ArcaneSlot | null
+  coOverride: CoMode | 'auto'
+  incarnonSelection: Record<string, string | null>
+  incarnonStacks: Record<string, number>
+  target: TargetSettings
+  debuffs: Debuffs
+  buffs: Buffs
+  passiveStacks: Record<string, number>
+  bonusElement: BonusElement | null
+  heavyMode: HeavyMode
+  stancePick: string
+  rivenConfig: RivenConfig
+  frame: FrameSnapshot | null
+}
+
 interface CalculatorProps {
   buildToLoad: BuildToLoad | null
   frameToLoad?: { frame: string; nonce: number } | null // just pick this Warframe, no mods or abilities on
@@ -113,6 +137,12 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
   const [rivenConfig, setRivenConfig] = useState(emptyRiven)
   // passed down to the Warframe panel when a loaded build brings (or clears) a Warframe setup
   const [frameLoad, setFrameLoad] = useState<{ nonce: number; load: FrameLoad | 'clear' } | null>(null)
+  // loadout codes: the Warframe panel's latest setup (a ref, it only matters when copying), a pasted one going back down,
+  // and the little "copied / loaded / that's not a code" note next to the buttons
+  const frameSnapshot = useRef<FrameSnapshot | null>(null)
+  const [frameRestore, setFrameRestore] = useState<{ nonce: number; snapshot: Partial<FrameSnapshot> } | null>(null)
+  const [codeNote, setCodeNote] = useState<string | null>(null)
+  const [shownCode, setShownCode] = useState<string | null>(null) // the fallback box when the clipboard won't take it
 
   // "Load build" on the leaderboard: set the weapon, attack, mods, arcane and perks, and switch the target/debuffs
   // to the leaderboard scenario so the numbers match what the leaderboard showed
@@ -269,6 +299,68 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
     setRivenConfig(emptyRiven()) // a riven belongs to one weapon
   }
 
+  // loadout codes. what goes in is the raw state, the same thing the panels themselves hold, so pasting it back is just
+  // setting it all again. the weapon must exist; mods/arcanes this version doesn't know are dropped, missing fields get defaults
+  const copyCode = async () => {
+    const setup: CalcSnapshot = {
+      v: 1, weaponId, attackIndex, slots, polarities, hasCatalyst, arcaneSlot, coOverride, incarnonSelection, incarnonStacks,
+      target, debuffs, buffs, passiveStacks, bonusElement, heavyMode, stancePick, rivenConfig, frame: frameSnapshot.current,
+    }
+    const code = encodeLoadout(setup)
+    setShownCode(null)
+    try {
+      // Safari only lets the click itself write, and packing the code takes a moment, so the write starts right away
+      // with the code as a promise. older browsers without ClipboardItem get the plain write
+      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+        await navigator.clipboard.write([new ClipboardItem({ 'text/plain': code.then((text) => new Blob([text], { type: 'text/plain' })) })])
+      } else {
+        await navigator.clipboard.writeText(await code)
+      }
+      setCodeNote(`Copied (${(await code).length} characters)`)
+    } catch {
+      // clipboard blocked (or not there at all on a plain http:// address): show it to copy by hand
+      setShownCode(await code)
+      setCodeNote('Your browser blocked the clipboard, copy the code from the box')
+    }
+  }
+  const pasteCode = async () => {
+    let text: string | null = null
+    try { text = await navigator.clipboard.readText() } catch { /* blocked or unsupported: ask instead */ }
+    if (!text?.trim().startsWith('VS1.')) text = window.prompt('Paste a loadout code')
+    if (!text) return
+    setShownCode(null)
+    try {
+      applySnapshot((await decodeLoadout(text)) as Partial<CalcSnapshot>)
+    } catch (error) {
+      setCodeNote((error as Error).message)
+    }
+  }
+  const applySnapshot = (saved: Partial<CalcSnapshot>) => {
+    const loaded = saved.weaponId ? weaponsById.get(saved.weaponId) : undefined
+    if (!loaded) throw new Error("That code's weapon isn't in this version's data")
+    const known = (slot: ModSlot | null | undefined) => (slot && (modsById.has(slot.modId) || slot.modId === RIVEN_MOD_ID) ? slot : null)
+    setWeaponId(loaded.uniqueName)
+    setAttackIndex(Math.min(saved.attackIndex ?? 0, loaded.attacks.length - 1))
+    setSlots(Array.from({ length: TOTAL_SLOTS }, (_, index) => known(saved.slots?.[index])))
+    setPolarities(saved.polarities?.length === TOTAL_SLOTS ? saved.polarities : defaultPolarities(loaded.polarities))
+    setHasCatalyst(saved.hasCatalyst ?? true)
+    setArcaneSlot(saved.arcaneSlot && arcanesById.has(saved.arcaneSlot.arcaneId) ? saved.arcaneSlot : null)
+    setCoOverride(saved.coOverride ?? 'auto')
+    setIncarnonSelection(saved.incarnonSelection ?? {})
+    setIncarnonStacks(saved.incarnonStacks ?? {})
+    setTarget({ ...DEFAULT_TARGET, ...saved.target })
+    setDebuffs({ ...DEFAULT_DEBUFFS, ...saved.debuffs })
+    setBuffs({ roar: 0, combo: 1, gladiatorWarframePieces: 0, ...saved.buffs })
+    setPassiveStacks(saved.passiveStacks ?? defaultPassiveStacks(loaded.name))
+    setBonusElement(saved.bonusElement ?? null)
+    setHeavyMode(saved.heavyMode ?? 'biggestHit')
+    setStancePick(saved.stancePick ?? 'auto')
+    setRivenConfig(saved.rivenConfig ?? emptyRiven())
+    if (saved.frame) setFrameRestore({ nonce: Date.now(), snapshot: saved.frame })
+    setLoadedFrom(null)
+    setCodeNote(`Loaded ${loaded.name} from a code`)
+  }
+
   // every box folds up: click its title to collapse/expand it. done on the DOM (one class on the panel) so the panels
   // themselves don't need to know, nested ones (the Warframe's mod grid) fold on their own
   const togglePanel = (event: React.MouseEvent) => {
@@ -288,6 +380,17 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
           <button className="link-button" onClick={() => setLoadedFrom(null)}>dismiss</button>
         </div>
       )}
+      <div className="loadout-code">
+        <button onClick={copyCode} title="The whole setup, weapon and Warframe, as one code on your clipboard">Copy loadout code</button>
+        <button onClick={pasteCode} title="Load a setup from a code on your clipboard">Paste loadout code</button>
+        {codeNote && <span className="muted-inline" role="status">{codeNote}</span>}
+        {shownCode && (
+          <input
+            className="loadout-code-box" readOnly value={shownCode} aria-label="Loadout code" autoFocus
+            onFocus={(event) => event.target.select()} onClick={(event) => event.currentTarget.select()}
+          />
+        )}
+      </div>
       <div className="layout" onClick={togglePanel}>
         <ResultsBar
           result={result}
@@ -471,6 +574,8 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
             isMelee={isMelee} weapon={weapon}
             onWarframeChange={(state, corrosive) => { setWarframeState(state); setWarframeCorrosive(corrosive) }}
             loadRequest={frameLoad}
+            onSnapshot={(snapshot) => { frameSnapshot.current = snapshot }}
+            restoreRequest={frameRestore}
             abilityTarget={{
               faction: target.faction, armor: resolveArmor(target),
               debuffs: { ...debuffs, corrosiveProjections: Math.min(4, debuffs.corrosiveProjections + warframeCorrosive) },

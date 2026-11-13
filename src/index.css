@@ -806,3 +806,7 @@ select { max-width: 100%; }
   .home-loadout, .home-versus { grid-template-columns: minmax(0, 1fr); }
   .home-slot { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Copy / Paste loadout code, above the calculator */
+.loadout-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.loadout-code-box { flex: 1 1 320px; min-width: 0; font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; }

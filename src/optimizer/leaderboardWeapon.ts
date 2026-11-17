@@ -7,6 +7,7 @@ import { SCENARIO_HEADSHOT } from './scenario'
 import { heavyComboFor } from '../data/heavyAttacks'
 import type { LeaderboardStats, StoredEntry } from './leaderboardTypes'
 import type { Weapon } from '../types'
+import { isIncarnonAttackName } from '../calc/incarnonForm'
 
 // guns on a headshot board aim for the head, melee keeps the body-shot scenario
 const scenarioFor = (weapon: Weapon, headshot?: boolean) => (headshot && weapon.category !== 'Melee' ? SCENARIO_HEADSHOT : null)
@@ -27,7 +28,7 @@ export function toEntry(build: OptimizedBuild): WeaponEntry {
     category: build.weapon.category,
     type: build.weapon.type,
     attack: build.attack.name,
-    incarnonForm: /incarnon/i.test(build.attack.name),
+    incarnonForm: isIncarnonAttackName(build.attack.name),
     // time-to-kill scores are 1 / seconds (0.02 for 50 s), so small ones keep significant digits instead of 2 decimals
     score: Math.abs(build.score) < 100 ? Number(build.score.toPrecision(5)) : round(build.score, 2),
     stats: {

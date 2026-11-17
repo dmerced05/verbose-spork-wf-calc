@@ -2,6 +2,7 @@
 // version 2 (current): mods, arcanes and weapons are indexes into shared tables, stats are a short tuple of only what the
 // rows show (rounded to 4 significant digits), and short keys. ~3x smaller than version 1, which is still readable.
 // the rebuild's fingerprints live in scripts/leaderboard-state.json, the site never needed them
+import { isIncarnonAttackName } from '../calc/incarnonForm'
 
 export interface LeaderboardUpgrade {
   id: string // uniqueName
@@ -135,7 +136,7 @@ export function expandLeaderboard(file: LeaderboardFile | LeaderboardFileV1): Le
       const [weaponId, weaponName, category, type] = file.weapons[entry.w]
       const [critChance, critMultiplier, statusChance, multishot, magazineSize, reloadTime, uptime, singleHit, damageTypes] = entry.st
       return {
-        weaponId, weaponName, category, type, attack: entry.a, incarnonForm: /incarnon/i.test(entry.a), score: entry.s,
+        weaponId, weaponName, category, type, attack: entry.a, incarnonForm: isIncarnonAttackName(entry.a), score: entry.s,
         stats: { critChance, critMultiplier, statusChance, multishot, magazineSize, reloadTime, uptime, singleHit, damageTypes: damageTypes.map(([damageType, share]) => ({ type: damageType, share })) },
         mods: entry.m.map(upgrade),
         arcane: entry.ar ? upgrade(entry.ar) : null,

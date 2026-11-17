@@ -7,6 +7,7 @@ import { resolveCoBehavior } from './conditionOverload'
 import { PHYSICAL_TYPES } from './constants'
 import type { CalcResult } from './damage'
 import type { Attack, Weapon } from '../types'
+import { isIncarnonAttackName } from './incarnonForm'
 
 export interface AttackMetrics {
   damage: number // one pellet, every type added up
@@ -37,7 +38,7 @@ export function attackMetrics(weapon: Weapon, attack: Attack): AttackMetrics {
   const multishot = weapon.category === 'Melee' ? 1 : attack.multishot ?? weapon.multishot ?? 1
   const hit = damage * multishot
   const averageCrit = 1 + Math.min(attack.critChance, 10) * (attack.critMultiplier - 1)
-  const incarnon = /incarnon/i.test(attack.name)
+  const incarnon = isIncarnonAttackName(attack.name)
   const reloads = weapon.category !== 'Melee' && !incarnon
   return {
     damage, hit, critChance: attack.critChance, critMultiplier: attack.critMultiplier, statusChance: attack.statusChance,
@@ -63,7 +64,7 @@ export function metricsFromResult(weapon: Weapon, attack: Attack, result: CalcRe
 
 // who a stat is ranked against: every weapon's normal attack, or (for an Incarnon form) every other Incarnon form
 export type PoolKind = 'normal' | 'incarnon'
-export const isIncarnonAttack = (attack: Attack) => /incarnon/i.test(attack.name)
+export const isIncarnonAttack = (attack: Attack) => isIncarnonAttackName(attack.name)
 
 // each weapon counts once per category, by its first attack (the normal fire / normal swing), or by its first Incarnon
 // attack for the Incarnon pool. exalted weapons and ones with nothing in that attack are left out so they don't skew it

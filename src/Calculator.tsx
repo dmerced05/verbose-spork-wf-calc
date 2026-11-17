@@ -33,6 +33,7 @@ import type { Buffs, Debuffs, EquippedMod, TargetSettings } from './types'
 import type { LeaderboardEntry } from './optimizer/leaderboardTypes'
 import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from './optimizer/scenario'
 import { STANCES, bestCombo, comboLabel, stancesFor, usesStance } from './data/stances'
+import { isIncarnonAttackName } from './calc/incarnonForm'
 
 // a leaderboard build to load into the calculator. the nonce lets the same entry be loaded twice in a row
 export interface BuildToLoad {
@@ -505,7 +506,7 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
               tiers={incarnonTiers}
               selection={incarnonSelection}
               stacks={perkStacks}
-              isIncarnonAttack={/incarnon/i.test(attack.name)}
+              isIncarnonAttack={isIncarnonAttackName(attack.name)}
               isMelee={weapon.category === 'Melee'}
               onSelectionChange={setIncarnonSelection}
               onStacksChange={setIncarnonStacks}

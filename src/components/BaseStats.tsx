@@ -6,6 +6,7 @@ import { mechanicTags } from '../calc/mechanicTags'
 import { Tip } from './Tip'
 import { biggestHit, comboTotal, heavyBreakdownText, multiHitHeavyFor } from '../data/heavyAttacks'
 import type { Attack, Weapon } from '../types'
+import { isIncarnonAttackName } from '../calc/incarnonForm'
 
 const fixed = (value: number, digits = 2) => value.toLocaleString(undefined, { maximumFractionDigits: digits })
 const percent = (fraction: number) => `${fixed(fraction * 100, 1)}%`
@@ -24,7 +25,7 @@ export function BaseStats({ weapon, attack }: { weapon: Weapon; attack: Attack }
   const shellReload = SHELL_BY_SHELL_RELOAD[weapon.name]
   const exalted = exaltedRuleFor(weapon)
   const tags = mechanicTags(weapon, attack)
-  const reloads = !isMelee && !/incarnon/i.test(attack.name) && weapon.magazineSize && weapon.reloadTime
+  const reloads = !isMelee && !isIncarnonAttackName(attack.name) && weapon.magazineSize && weapon.reloadTime
 
   const stats: [string, string][] = [
     [heavyCombo ? 'Biggest hit' : multishot > 1 && !isMelee ? 'Damage per pellet' : 'Total damage', fixed(total, 1)],

@@ -7,6 +7,7 @@ import { scaleArmor, scaleHealth } from '../src/calc/target'
 import { estimateKill } from '../src/calc/kill'
 import { resolveCoBehavior } from '../src/calc/conditionOverload'
 import { getIncarnonTiers } from '../src/calc/incarnon'
+import { isIncarnonAttackName } from '../src/calc/incarnonForm'
 import { INCARNON_FAMILIES } from '../src/data/incarnon'
 import { passivesFor } from '../src/data/passives'
 import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from '../src/optimizer/scenario'
@@ -1076,6 +1077,23 @@ expectClose('riven disposition is x1.2 for all', RIVEN_DISPOSITION, 1.2)
   expectClose('two sources adding past 100% still cap at 75%', efficient(['+60% Ammo Efficiency', '+65% Ammo Efficiency']), efficient(['+75% Ammo Efficiency']))
   expectClose('a single 100% source is Infinite Ammo', efficient(['+100% Ammo Efficiency']) > efficient(['+75% Ammo Efficiency']) ? 1 : 0, 1)
   expectClose('under the cap it still counts', efficient(['+50% Ammo Efficiency']) < efficient(['+75% Ammo Efficiency']) ? 1 : 0, 1)
+}
+
+// Laetum's Auto Radial Attack only fires in the Incarnon form (it has no "Incarnon" in its name), so it runs on the form's
+// charges and Feather of Justice (+60% Ammo Efficiency, [Normal only]) does nothing to it, on its own or merged with the form
+{
+  const laetum = weapons.find((weapon) => weapon.name === 'Laetum')!
+  const feather = perkFor('Laetum', 'III', 'Feather of Justice')
+  const laetumRun = (attackName: string, withFeather: boolean) => calculate({
+    weapon: laetum, attack: laetum.attacks.find((attack) => attack.name === attackName)!, mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 },
+    incarnonPerks: withFeather ? [{ perk: feather, stacks: 1 }] : [], target: { ...grineerTarget, faction: 'None' },
+  })
+  expectClose('Auto Radial Attack counts as the Incarnon form', isIncarnonAttackName('Auto Radial Attack') ? 1 : 0, 1)
+  expectClose('Auto Radial Attack runs on the 216 form charges', laetumRun('Auto Radial Attack', false).battery?.rounds ?? 0, 216)
+  for (const attackName of ['Incarnon Form', 'Auto Radial Attack', 'Incarnon Form + Auto Radial Attack']) {
+    expectClose(`Feather of Justice does nothing on ${attackName}`, laetumRun(attackName, true).sustainedDps, laetumRun(attackName, false).sustainedDps)
+  }
+  expectClose('Feather of Justice still works on the normal form', laetumRun('Normal Attack', true).sustainedDps > laetumRun('Normal Attack', false).sustainedDps ? 1 : 0, 1)
 }
 
 // ---- finishers: Blade Storm (Shadow Clones) ----

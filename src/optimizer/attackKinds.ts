@@ -2,6 +2,7 @@
 // weapon category + the data's AoE flag (explosions, radial hits) + the attack name. names are free text, so the
 // alt-fire list is a best guess: anything that isn't recognised as alt-fire on a gun counts as primary fire
 import type { Attack, Weapon } from '../types'
+import { isIncarnonAttackName } from '../calc/incarnonForm'
 
 export type AttackKind = 'normal' | 'heavy' | 'slam' | 'meleeOther' | 'primaryFire' | 'altFire' | 'aoe' | 'incarnon'
 
@@ -27,7 +28,7 @@ export function attackKind(weapon: Weapon, attack: Pick<Attack, 'name' | 'isAoE'
     if (/^normal attack$/i.test(name)) return 'normal'
     return 'meleeOther'
   }
-  if (/incarnon/i.test(name)) return 'incarnon'
+  if (isIncarnonAttackName(name)) return 'incarnon'
   if (attack.isAoE || /explosion|detonation|radial|\baoe\b|cloud|blast|collapse|merging/i.test(name)) return 'aoe'
   if (ALT_FIRE.test(name)) return 'altFire'
   return 'primaryFire'

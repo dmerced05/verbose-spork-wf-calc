@@ -395,11 +395,12 @@ export const ALGORITHMS: Algorithm[] = [
     where: 'Calculator, Leaderboard',
     summary: 'Incarnon forms fire a fixed battery of charges, then have to be refilled from the normal form with weak point hits. The refill counts as the form\'s "reload".',
     complexity: 'O(1)',
-    sources: [{ file: DMG, symbol: 'INCARNON_SWAP_RELOADS' }, { file: DMG, symbol: 'calculateOnce' }, { file: 'src/data/reloads.ts', symbol: 'SHELL_BY_SHELL_RELOAD' }],
+    sources: [{ file: DMG, symbol: 'INCARNON_SWAP_RELOADS' }, { file: DMG, symbol: 'calculateOnce' }, { file: 'src/data/reloads.ts', symbol: 'SHELL_BY_SHELL_RELOAD' }, { file: 'src/calc/incarnonForm.ts', symbol: 'isIncarnonAttackName' }],
     steps: [
       'Charges come back per weak point hit (wiki: "each charge producing 3 rounds" on Vasto). Every normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits): the best case.',
       'Hits land at the normal form\'s own rate (its fire rate mods count) times its projectiles, reloads included.',
       'Switching forms takes {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}× the base form\'s reload each way (reload speed mods don\'t shorten it).',
+      'An attack is the Incarnon form when its name says so, plus Laetum\'s Auto Radial Attack (the burst every form shot sets off), which runs on the form\'s charges too. [Normal only] evolutions skip all of them.',
       'Ammo Efficiency (mods, arcanes, evolutions) never stretches the charges: they aren\'t ammo.',
       'The refill\'s reloads are the base form\'s: shell-by-shell weapons (Felarx, Strun) reload shell by shell with the base form\'s modded magazine. The swap uses the listed reload stat.',
     ],

@@ -2,6 +2,7 @@
 // everything here comes from flags the calc already uses, so a tag means the calc is treating it that way
 import { resolveCoBehavior } from './conditionOverload'
 import type { Attack, Weapon } from '../types'
+import { isIncarnonAttackName } from './incarnonForm'
 
 export interface MechanicTag {
   label: string
@@ -14,7 +15,7 @@ const pct = (fraction: number) => `${Math.round(fraction * 100)}%`
 export function mechanicTags(weapon: Weapon, attack: Attack): MechanicTag[] {
   const tags: MechanicTag[] = []
   const isMelee = weapon.category === 'Melee'
-  const isIncarnon = /incarnon/i.test(attack.name)
+  const isIncarnon = isIncarnonAttackName(attack.name)
 
   // Vinquibus: a rifle and a bayonet in one, each half modded on its own (the melee half is its own entry here)
   if (/^Vinquibus/.test(weapon.name)) {

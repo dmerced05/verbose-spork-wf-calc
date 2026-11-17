@@ -532,7 +532,9 @@ for (const weapon of [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons])
 // (Despair's Radial Attack was scored as never reloading next to a direct hit that did)
 for (const weapon of [...regularWeapons, ...exaltedWeapons, ...handMadeWeapons]) {
   const charges = weapon.attacks.find((attack) => attack.incarnonCharges)?.incarnonCharges
-  if (charges) for (const attack of weapon.attacks) if (/incarnon/i.test(attack.name) && !attack.incarnonCharges) attack.incarnonCharges = charges
+  // Laetum's Auto Radial Attack is the one form-only attack without "Incarnon" in its name: it goes off with every form shot,
+  // so it runs on the form's charges too (same check as src/calc/incarnonForm.ts)
+  if (charges) for (const attack of weapon.attacks) if (/incarnon|^Auto Radial Attack$/i.test(attack.name) && !attack.incarnonCharges) attack.incarnonCharges = charges
   incarnonRefill(weapon)
 }
 

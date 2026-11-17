@@ -12,6 +12,7 @@ import { Bars, Histogram, Lines, Scatter, SERIES, Tile } from './charts'
 import type { Attack, Weapon } from '../types'
 import { subtypeOf } from '../calc/weaponProfile'
 import { getIncarnonTiers, perkAppliesTo, scenarioPerkStacks, type SelectedPerk } from '../calc/incarnon'
+import { isIncarnonAttackName } from '../calc/incarnonForm'
 
 const modsByName = new Map(mods.map((mod) => [mod.name, mod]))
 const weaponsByName = new Map(weapons.map((weapon) => [weapon.name, weapon]))
@@ -95,7 +96,7 @@ function applyEvolutions(weapon: Weapon, attack: Attack, entry: LeaderboardEntry
   const tiers = getIncarnonTiers(weapon.name)
   if (!tiers || !entry?.perks?.length) return out
   const isMelee = weapon.category === 'Melee'
-  const isIncarnonAttack = /incarnon/i.test(attack.name)
+  const isIncarnonAttack = isIncarnonAttackName(attack.name)
   const base = { damage: 0, critChance: 0, critMultiplier: 0, statusChance: 0, multishot: 0 }
   const set: Partial<Record<'critChance' | 'statusChance' | 'critMultiplier', number>> = {}
   for (const { tier, name } of entry.perks) {

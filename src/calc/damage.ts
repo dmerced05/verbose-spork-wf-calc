@@ -34,6 +34,7 @@ export const SUSTAINED_FIGHT_SECONDS = 10 // about how long one tough enemy live
 const GAS_MAX_INSTANCES = 10
 const BEAM_MERGED_DOTS = ['slash', 'heat', 'toxin', 'electricity', 'blast', 'gas'] // wiki Multishot's list, Blast included
 import type { Attack, Buffs, Debuffs, EquippedArcane, EquippedMod, TargetSettings, Weapon } from '../types'
+import { isIncarnonAttackName } from './incarnonForm'
 
 export interface CalcInput {
   weapon: Weapon
@@ -951,7 +952,7 @@ function calculateOnce({
   // such as Serration", off the modded magazine (a 25-round magazine = +167.71%, "Matches ... Serration"). primaries only,
   // not battery magazines (no flag for those in the data) or Incarnon charges. it lasts 10 s, so it covers a whole magazine
   // only if you empty it in 10 s: the wiki's "Ideal Fire Rate" = magazine / 10
-  if (platedRound > 0 && weapon.category === 'Primary' && weapon.magazineSize && !/incarnon/i.test(attack.name)) {
+  if (platedRound > 0 && weapon.category === 'Primary' && weapon.magazineSize && !isIncarnonAttackName(attack.name)) {
     const rounds = Math.max(1, Math.round(weapon.magazineSize * (1 + bonus.magazineCapacity) * magazineMultiplier))
     const plated = platedRound * Math.sqrt(5 * rounds)
     bonus.damage += plated
@@ -966,7 +967,7 @@ function calculateOnce({
 
   // ---- Incarnon evolution perks ----
   // base stats go onto the weapon before mods, mod-like lines go through applyEffect like any mod
-  const isIncarnonAttack = /incarnon/i.test(attack.name)
+  const isIncarnonAttack = isIncarnonAttackName(attack.name)
   const perkBase = { damage: 0, critChance: 0, critMultiplier: 0, statusChance: 0, multishot: 0 }
   const perkFlat = { critChance: 0, statusChance: 0 }
   let nonCritChanceBonus = 0 // expected extra damage on non-crits (chance x bonus)
@@ -1522,7 +1523,7 @@ function calculateOnce({
   // landed at the normal form's own rate: its fire rate (same fire rate mods) x its projectiles, reloads included. every
   // normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits instead), so this is the best case
   const refill = incarnonCharges && attack.incarnonRefill ? (() => {
-    const normal = weapon.attacks.find((candidate) => !/incarnon/i.test(candidate.name) && !candidate.parts && !candidate.heavy)
+    const normal = weapon.attacks.find((candidate) => !isIncarnonAttackName(candidate.name) && !candidate.parts && !candidate.heavy)
     if (!normal) return null
     const pullRate = normal.fireRate * Math.max(0.01, 1 + fireRateBonus) * fireRateMultiplier
     const projectiles = (normal.multishot ?? 1) * (1 + bonus.multishot)

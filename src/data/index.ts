@@ -6,6 +6,7 @@ import warframesJson from './warframes.json'
 import helminthJson from './helminth.json'
 import { allowedOnExalted, bannedOnExalted } from './exalted'
 import type { Arcane, Enemy, Mod, Warframe, WarframeAbilityInfo, Weapon } from '../types'
+import { isIncarnonAttackName } from '../calc/incarnonForm'
 
 // these JSON files come from scripts/build-data.mjs (runs on npm install / dev / build)
 export const weapons = weaponsJson as Weapon[]
@@ -81,7 +82,7 @@ const namedFor = (weapon: Weapon, compatName: string) => {
 //   (rifle), Strun (shotgun) and Bronco / Lato / Lex (pistol) qualify
 // - pistols with an alt-fire need both modes semi too ("Fixed the EFV-8 Mars being able to equip the Semi-Pistol Cannonade")
 const SEMI_INCARNONS = /^(latron|vectis|strun|bronco|lato|lex)(\s|$)/
-const isIncarnonAttack = (name: string) => /incarnon/i.test(name)
+const isIncarnonAttack = isIncarnonAttackName
 function fitsCannonade(weapon: Weapon): boolean {
   if (weapon.trigger !== 'Semi' || weapon.type === 'Launcher') return false
   const name = weapon.name.toLowerCase().replace(VARIANT_PREFIX, '')

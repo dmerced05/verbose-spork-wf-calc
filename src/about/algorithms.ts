@@ -25,6 +25,7 @@ export interface Algorithm {
 const OPT = 'src/optimizer/optimize.ts'
 const SIM = 'src/calc/simulate.ts'
 const DMG = 'src/calc/damage.ts'
+const FIGHT = 'src/calc/fight.ts'
 
 export const ALGORITHMS: Algorithm[] = [
   {
@@ -326,7 +327,7 @@ export const ALGORITHMS: Algorithm[] = [
     steps: [
       'Collect every mod, arcane, passive, Warframe ability, combo and Incarnon effect into stat buckets. Conditionals at the scenario\'s stacks (per-shell stacks like Felarx\'s Mounting Momentum capped at the base form\'s magazine).',
       'Damage types: physical types scaled by their own mods, elements added in slot order and combined two at a time, each final type quantized to 1/32 of base damage.',
-      'Crit (tiers above 100%, headcrit, Cold\'s crit damage), faction, multishot, fire rate.',
+      'Crit (tiers above 100%, headcrit, Cold\'s crit damage, Melee Doughty\'s extra multiplier on the Puncture part only), faction, multishot, fire rate.',
       'Target: armor (scaled by level, clamped, stripped by Heat / Corrosive / Corrosive Projection), faction weaknesses, headshot, vulnerability.',
       'Status: procs per second split by each type\'s share of damage, DoT ticks per proc, Heat stacks refreshing together.',
       'Magazine and reload (shell-by-shell where it applies), Incarnon battery and refill, then the sustained and time-window numbers via the shot simulator.',
@@ -390,6 +391,46 @@ export const ALGORITHMS: Algorithm[] = [
     ],
   },
   {
+    id: 'fight',
+    title: 'Damage simulator',
+    where: 'Calculator (Damage simulator button)',
+    summary: 'One build against one enemy, shot by shot, until it dies, a few hundred seeded times. The enemy keeps state (overguard, shields, health, status stacks, Heat\'s armor strip), so the kill time comes with its good-luck / bad-luck spread and the armor strip shows up over time.',
+    complexity: String.raw`O\big(R\cdot (N_{shots}\,\bar p + N_{ticks})\log Q \;+\; |S|\cdot C\big)`,
+    sources: [
+      { file: FIGHT, symbol: 'runFight' },
+      { file: FIGHT, symbol: 'makePricer' },
+      { file: FIGHT, symbol: 'simulateFight' },
+      { file: FIGHT, symbol: 'overguardMultiplier' },
+      { file: FIGHT, symbol: 'EXIMUS_BASE_OVERGUARD' },
+      { file: FIGHT, symbol: 'HEAT_STAGES' },
+      { file: FIGHT, symbol: 'OVERGUARD_COLD_CAP' },
+    ],
+    steps: [
+      'Shot times come from the same shot model as the time windows (fire rate, magazine, reload, charge). Each pellet rolls head or body (the aim setting), its crit tier and its procs with a seeded mulberry32 RNG, seed + run index. Reloads come off the same clock (a shot interval after the last shot in a magazine, then the reload) and are shaded on the charts.',
+      'Every pellet and DoT tick is priced by the normal damage calc against the enemy\'s state at that moment: layer, head or body, stacks of each status and the Heat strip stage. Prices are cached per state, so a fight only runs the calc for the few dozen states it reaches.',
+      'Damage goes overguard, then shields, then health. When a layer breaks mid-hit, what\'s left of the hit is priced again against the next layer. Toxin goes around shields. Overguard takes no armor and no damage reduction, but Magnetic and Secondary Fortifier still count. Cascadia Empowered lands one flat hit on every real proc.',
+      'A shot\'s procs count from the next shot on. Corrosive stacks last 8 s, the others 6 s, each on its own timer, at most 10 (the oldest is replaced). Heat strips {{src/calc/fight.ts#HEAT_STAGES}} of armor one step every {{src/calc/fight.ts#HEAT_UP_STEP}} s, and falls back a step every {{src/calc/fight.ts#HEAT_DOWN_STEP}} s once Heat ends. Status Duration stretches all of it.',
+      'Eximus overguard = {{src/calc/fight.ts#EXIMUS_BASE_OVERGUARD}} × the level multiplier below. While it\'s up the enemy ignores crowd control (no lifted / knocked down bonus) and holds at most {{src/calc/fight.ts#OVERGUARD_COLD_CAP}} Cold stacks.',
+      'Incarnon forms (experimental toggle, never the leaderboard): instead of idling through the refill, the form fires its battery, drops straight back to the normal form with a full magazine (no switch when the battery runs out), the normal form fires while the charges come back (its hits count), and it switches back in; switching in is 2x the base reload, the same guess as the refill estimate. Switches, normal-form stretches and reloads are shaded on the charts.',
+      'Every fight is also run again with DoT ticks dealing nothing (the procs still land, so strips and Viral still help the hits). The gap between the two is the status damage, and the two kill times show when the hits alone would have killed.',
+      'Checked against the averages: with nothing changing on the enemy, the mean damage of 1,000 runs at 10 s is within 1% of the expected damage on a sample of leaderboard guns, and the 10th / 90th percentiles within 2% of the Monte Carlo range. Bosses are experimental: attenuation isn\'t applied.',
+    ],
+    equations: [
+      {
+        name: 'Overguard level multiplier',
+        tex: String.raw`m(L) = \mathrm{f32}\big(f_1 + \mathrm{f32}(\mathrm{f32}(f_2 - f_1)\cdot s)\big),\quad f_1 = 1 + 0.0015\,(L-1)^4,\quad f_2 = 1 + 260\,(L-1)^{0.9},\quad s = \mathrm{smoothstep}\big(\tfrac{L - 45}{5}\big)`,
+        complexity: 'O(1)',
+        note: 'f32 = round to a 32-bit float. L is the level the enemy spawns at (Steel Path adds 100).',
+      },
+      {
+        name: 'Overflow into the next layer',
+        tex: String.raw`d_{next} = \Big(1 - \frac{P_{layer}}{d_{layer}}\Big)\, d_{next}^{\,full}`,
+        complexity: 'O(1)',
+        note: 'd_layer = the hit priced against the layer it broke, P_layer = what that layer had left.',
+      },
+    ],
+  },
+  {
     id: 'incarnon',
     title: 'Incarnon battery and refill',
     where: 'Calculator, Leaderboard',
@@ -399,7 +440,7 @@ export const ALGORITHMS: Algorithm[] = [
     steps: [
       'Charges come back per weak point hit (wiki: "each charge producing 3 rounds" on Vasto). Every normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits): the best case.',
       'Hits land at the normal form\'s own rate (its fire rate mods count) times its projectiles, reloads included.',
-      'Switching forms takes {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}× the base form\'s reload each way (reload speed mods don\'t shorten it).',
+      'Switching back into the form takes {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}× the base form\'s reload (reload speed mods don\'t shorten it). Getting out is free: when the battery runs out the gun drops back to its normal form already reloaded.',
       'An attack is the Incarnon form when its name says so, plus Laetum\'s Auto Radial Attack (the burst every form shot sets off), which runs on the form\'s charges too. [Normal only] evolutions skip all of them.',
       'Ammo Efficiency (mods, arcanes, evolutions) never stretches the charges: they aren\'t ammo.',
       'The refill\'s reloads are the base form\'s: shell-by-shell weapons (Felarx, Strun) reload shell by shell with the base form\'s modded magazine. The swap uses the listed reload stat.',
@@ -407,7 +448,7 @@ export const ALGORITHMS: Algorithm[] = [
     equations: [
       {
         name: 'Refill time',
-        tex: String.raw`t_{refill} = \frac{Q / \rho}{(1 + g)\; r_{norm}\; n_{proj}} + t_{reloads} + 2\cdot {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}\cdot R_{base}`,
+        tex: String.raw`t_{refill} = \frac{Q / \rho}{(1 + g)\; r_{norm}\; n_{proj}} + t_{reloads} + {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}\cdot R_{base}`,
         complexity: 'O(1)',
         note: 'Q = charges, ρ = rounds per hit, g = charge gain bonus (Incarnon Efficiency), t_reloads = the base form\'s own reloads while filling (shell by shell where it applies), R_base = the listed reload.',
       },

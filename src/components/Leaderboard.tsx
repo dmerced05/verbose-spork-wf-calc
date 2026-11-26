@@ -213,7 +213,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
             {CATEGORIES.map((option) => <option key={option}>{option}</option>)}
           </select>
           <input placeholder="Search weapons or attacks (e.g. heavy slam)" value={search} onChange={(event) => { setSearch(event.target.value); resetPaging() }} />
-          <label className="inline-check" title="Incarnon forms fire their wiki Incarnon Charges, then refill: weak point (or direct) hits with the normal form, plus 2x the base reload to swap each way. A Refill tag means the ranking runs past the battery">
+          <label className="inline-check" title="Incarnon forms fire their wiki Incarnon Charges, then refill: weak point (or direct) hits with the normal form, plus 2x the base reload to swap back in (dropping out when the battery runs out is free). A Refill tag means the ranking runs past the battery">
             <input type="checkbox" checked={includeIncarnon} onChange={(event) => { setIncludeIncarnon(event.target.checked); resetPaging() }} />
             Include Incarnon forms
           </label>
@@ -254,7 +254,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
         </div>
         <p className="muted">
           Every weapon attack, each optimized on its own, in one fixed scenario: {data.scenario}
-          Incarnon forms fire their wiki Incarnon Charges, then refill with weak point (or direct) hits from the normal form, every shot counting, plus 2x the base reload to swap each way (Refill tag: the ranking runs past the battery, so that part depends on your aim). Burst weapons fire their wiki burst, and ammo costs come from the wiki (Tenet Tetra's grenade uses the whole magazine). Shell-by-shell weapons (Felarx, Struns, Corinth, Zarr)
+          Incarnon forms fire their wiki Incarnon Charges, then refill with weak point (or direct) hits from the normal form, every shot counting, plus 2x the base reload to swap back in, no swap out (Refill tag: the ranking runs past the battery, so that part depends on your aim). Burst weapons fire their wiki burst, and ammo costs come from the wiki (Tenet Tetra's grenade uses the whole magazine). Shell-by-shell weapons (Felarx, Struns, Corinth, Zarr)
           reload longer with magazine mods. Precomputed {new Date(data.generatedAt).toLocaleDateString()} from {data.dataVersion}.
         </p>
       </section>
@@ -313,7 +313,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
                   const span = rankBy === 'window' ? windowSeconds : rankBy === 'sustained' ? SUSTAINED_SECONDS : boss ? ttkSeconds(entry.score) : null
                   if (span === null || !Number.isFinite(span) || span <= firing) return null
                   return (
-                    <Tip className="niche-tag" text={`Refill assumed: the ${magazineSize}-shot battery is empty after ${firing.toFixed(1)} s, so this ${span} s number includes refilling it (${reloadTime.toFixed(1)} s of weak point / direct hits with the normal form, every shot counting, plus 2x reload swapping each way). How long that really takes depends on your aim.`}>
+                    <Tip className="niche-tag" text={`Refill assumed: the ${magazineSize}-shot battery is empty after ${firing.toFixed(1)} s, so this ${span} s number includes refilling it (${reloadTime.toFixed(1)} s of weak point / direct hits with the normal form, every shot counting, plus 2x reload swapping back in). How long that really takes depends on your aim.`}>
                       Refill
                     </Tip>
                   )

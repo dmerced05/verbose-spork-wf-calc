@@ -3,7 +3,7 @@ import { calculate, enervateAverageCrit, type CalcInput } from '../src/calc/dama
 import { STATUS_TYPES } from '../src/calc/constants'
 import { arcanes, enemies, getCompatibleArcanes, getCompatibleMods, mods, warframes, weapons } from '../src/data'
 import { warframeTotals } from '../src/calc/warframeStats'
-import { scaleArmor, scaleHealth } from '../src/calc/target'
+import { armorDamageMultiplier, scaleArmor, scaleHealth } from '../src/calc/target'
 import { estimateKill } from '../src/calc/kill'
 import { resolveCoBehavior } from '../src/calc/conditionOverload'
 import { getIncarnonTiers } from '../src/calc/incarnon'
@@ -24,6 +24,10 @@ type EquippedModList = EquippedMod[]
 import { RIVEN_DISPOSITION, RIVEN_MOD_ID, applySplice, availableSplices, emptyRiven, rivenIssues, rivenMod, rivenPool, rivenRange, rivenRoll, type RivenConfig, type RivenStat } from '../src/calc/riven'
 import { emptyPath, runPath, type ComparePath, type CompareRequest } from '../src/optimizer/compare'
 import { INT_LIMIT, onScreen } from '../src/calc/damageCap'
+import { cycleSchedule, frozenDamage, incarnonCycle, makePricer, overguardMultiplier, runFight, simulateFight, type FightEvent, type FightSetup } from '../src/calc/fight'
+import { expectedDamage, simulateDamage } from '../src/calc/simulate'
+import { expandLeaderboard } from '../src/optimizer/leaderboardTypes'
+import { readFileSync } from 'node:fs'
 import { elementCombos, maxedDebuffs, ownStatusTypes, primedDebuffs } from '../src/optimizer/damageCap'
 import { evaluateFrame, optimizeFrameMods, type FrameSpec } from '../src/optimizer/frameBuild'
 import { rank30Energy, shardTotals } from '../src/data/archonShards'
@@ -260,10 +264,11 @@ expectClose('Daring Reverie channeled', bratonCalc([{ perk: perkFor('Braton Prim
   expectClose("Wiseman's Regard adds 30% of crit as base status", perkCalc('Vectis', 'IV', "Wiseman's Regard").statusChance, vectis.statusChance + 0.3 * vectis.critChance)
   // with Point Strike (+150%) crit is 62.5%, 30% of it is 18.75%, still under the 40% cap
   expectClose("Wiseman's Regard uses modded crit", perkCalc('Vectis', 'IV', "Wiseman's Regard", ['Point Strike']).statusChance, vectis.statusChance + 0.3 * vectis.critChance * 2.5)
-  // Decisive Stature (Destreza): +25% of modded status as base crit, max 35%. Piercing Stature 5 stacks = +100% flat status -> capped
+  // Decisive Stature (Destreza): +25% of modded status as base crit, max 35%. Piercing Stature 5 stacks = +100% status, added in
+  // with the mods (wiki: "additive to ... Melee Prowess"), so it doubles the 14% base
   const destreza = weapons.find((weapon) => weapon.name === 'Destreza')!.attacks[0]
   expectClose('Decisive Stature adds 25% of status as base crit', perkCalc('Destreza', 'IV', 'Decisive Stature').critChance, destreza.critChance + 0.25 * destreza.statusChance)
-  expectClose('Piercing Stature is flat status', perkCalc('Destreza', 'II', 'Piercing Stature', [], 5).statusChance, destreza.statusChance + 1)
+  expectClose('Piercing Stature adds in with status mods', perkCalc('Destreza', 'II', 'Piercing Stature', [], 5).statusChance, destreza.statusChance * 2)
 }
 // mode tags: Strun's Elemental Balance is +11% base status on normal fire, +132% on the Incarnon form
 const strun = weapons.find((weapon) => weapon.name === 'Strun')!
@@ -782,14 +787,18 @@ expectClose('Power Throw not on the explosion', runGlaive(detonation, { mods: [p
 const slam = glaivePrime.attacks.find((attack) => attack.name === 'Slam Attack')!
 expectClose('Seismic Wave x3 on slams, x Pressure Point',
   runGlaive(slam, { mods: [meleeMod('Seismic Wave'), meleeMod('Primed Pressure Point')] }).hit.normal / runGlaive(slam).hit.normal, 3 * 2.65)
-// Melee Duplicate: crits strike a second time. at 100%+ crit every hit doubles, the single hit stays one instance
+// Melee Duplicate (wiki): only base (yellow) crits strike a second time. yellow share = c under 100%, 2 - c from 100-200%
+// (the rest go orange), 0 past 200%. the duplicate is one more average hit, the single hit stays one instance
 const duplicate = arcanes.find((arcane) => arcane.name === 'Melee Duplicate')!
-const withDuplicate = runGlaive(detonation, {
-  mods: [meleeMod('Sacrificial Steel'), meleeMod('Blood Rush')], buffs: { roar: 0, combo: 12 },
+const duplicateAt = (critChance: number) => runGlaive({ ...detonation, critChance }, {
   arcane: { arcane: duplicate, rank: duplicate.levelStats.length - 1, conditionalStacks: 1 },
 })
-expectClose('Melee Duplicate doubles a 100%+ crit detonation', withDuplicate.averageShot / withDuplicate.hit.average, 2)
-expectClose('whole attack = 2 strikes + their procs', withDuplicate.attackTotal > withDuplicate.averageShot ? 1 : 0, 1)
+expectClose('Melee Duplicate at 50% crit: half the hits strike twice', duplicateAt(0.5).duplicateStrikes, 1.5)
+expectClose('Melee Duplicate at 140% crit: only the 60% that stay yellow', duplicateAt(1.4).duplicateStrikes, 1.6)
+expectClose('Melee Duplicate at 250% crit: no yellow crits, no duplicate', duplicateAt(2.5).duplicateStrikes, 1)
+const withDuplicate = duplicateAt(0.5)
+expectClose('Melee Duplicate: average shot = strikes x average hit', withDuplicate.averageShot / withDuplicate.hit.average, 1.5)
+expectClose('whole attack = every strike + their procs', withDuplicate.attackTotal > withDuplicate.averageShot ? 1 : 0, 1)
 
 // ---- beams (wiki Multishot) ----
 // +100% multishot on a beam: 2 beams merge into one tick. direct damage x2 like anything else, procs x2 from the
@@ -1178,6 +1187,26 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
   expectClose('Nightwatch Napalm ticks', fire?.ticks ?? 0, 6)
 }
 
+// Destreza Prime Piercing Stature (wiki Destreza Incarnon Genesis): "+20% Status Chance ... Stacks 5x", "additive to other
+// sources of Status Chance such as Melee Prowess and Weeping Wounds", so it scales the 20% base like a mod: 5 stacks = 40%,
+// with Melee Prowess (+90%) 58%. the wiki's Decisive Stature chain (Piercing 100% + Galvanized Elementalist 120% + Jugulus
+// Barbs 60% + Weeping Wounds) hits its 140% status cap at 9x combo (Weeping Wounds is x (combo - 1)), for 67% base crit
+{
+  const destreza = named('Destreza Prime')
+  const normal = destreza.attacks.find((attack) => attack.name === 'Normal Attack')!
+  const piercing = perkFor('Destreza Prime', 'II', 'Piercing Stature')
+  const decisive = perkFor('Destreza Prime', 'IV', 'Decisive Stature')
+  const stacked = (mods: CalcInput['mods'], combo = 1, extraPerks: { perk: typeof piercing; stacks: number }[] = []) => run(normal, {
+    weapon: destreza, mods, buffs: { roar: 0, combo }, incarnonPerks: [{ perk: piercing, stacks: 5 }, ...extraPerks],
+  })
+  expectClose('Piercing Stature x5 scales the base: 20% -> 40%', stacked([]).statusChance, 0.4)
+  expectClose('Piercing Stature x5 + Melee Prowess: 58%', stacked([meleeMod('Melee Prowess')]).statusChance, 0.58)
+  const chain = [meleeMod('Galvanized Elementalist'), meleeMod('Jugulus Barbs'), meleeMod('Weeping Wounds')].map((mod) => ({ ...mod, conditionalStacks: 99 }))
+  const atNine = stacked(chain, 9, [{ perk: decisive, stacks: 1 }])
+  expectClose('Decisive Stature chain: 140% status at 9x combo', atNine.statusChance, 1.4)
+  expectClose('Decisive Stature chain: 67% crit at its cap', atNine.critChance, 0.67)
+}
+
 // Melee Doughty (wiki): +0.1 x rank value per 1% Puncture status chance as crit multiplier, Puncture part only.
 // pure Puncture, 50% status -> +5x: 100 x (1 + 0.5 x (2 + 5 - 1)) = 400. half Heat: Puncture status 25% -> +2.5x on the
 // 50 Puncture only: 100 x 1.5 + 50 x 0.5 x 2.5 = 212.5
@@ -1186,6 +1215,20 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
   const withDoughty = (damage: Record<string, number>) => run(testAttack(damage, { critChance: 0.5, critMultiplier: 2, statusChance: 0.5 }), { arcane: { arcane: doughty, rank: 5, conditionalStacks: 0 } })
   expectClose('Melee Doughty pure Puncture', withDoughty({ puncture: 100 }).hit.average, 400)
   expectClose('Melee Doughty half Heat', withDoughty({ puncture: 50, heat: 50 }).hit.average, 212.5)
+  // the readouts: critMultiplier stays the weapon's k, the report has the Puncture part's k + bonus
+  const pure = withDoughty({ puncture: 100 })
+  expectClose('Melee Doughty report: bonus', pure.doughty?.bonus ?? 0, 5)
+  expectClose('Melee Doughty report: Puncture part crit multiplier', pure.doughty?.punctureCritMultiplier ?? 0, 7)
+  expectClose('Melee Doughty report: crit multiplier unchanged', pure.critMultiplier, 2)
+  expectClose('no Doughty, no report', run(testAttack({ puncture: 100 }, { critChance: 0.5, critMultiplier: 2, statusChance: 0.5 })).doughty === null ? 1 : 0, 1)
+  // status chance feeds it: 30% status -> +3x
+  const lowStatus = run(testAttack({ puncture: 100 }, { critChance: 0.5, critMultiplier: 2, statusChance: 0.3 }), { arcane: { arcane: doughty, rank: 5, conditionalStacks: 0 } })
+  expectClose('Melee Doughty scales with status chance', lowStatus.doughty?.bonus ?? 0, 3)
+  // the formula panel's pieces add back up to the hit: base x K + D
+  const b = withDoughty({ puncture: 50, heat: 50 }).breakdown
+  const sumValue = b.types.reduce((total, row) => total + row.share * row.type, 0)
+  const formulaHit = (b.baseDamage * b.damageScale * b.heavyCombo * sumValue + b.extraHit) * b.faction * (1 + b.vulnerability) * b.headshot * (b.critAverage + b.attrition) + b.doughtyExtra.average
+  expectClose('Melee Doughty formula adds up', formulaHit, 212.5)
 }
 
 // Primary Plated Round (wiki table): 25-round magazine = +167.71% ("Matches ... Serration"), 80 = +300%. additive with Serration
@@ -1206,6 +1249,32 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
   const row = dotOf(result, 'cascadia')
   expectClose('Cascadia Empowered per proc', row.tick.average, 1125)
   expectClose('Cascadia Empowered procs/s', row.procsPerSecond, 1)
+}
+// Cascadia Empowered rides on procs/s, so it scales with status chance, fire rate and multishot (one hit per proc that lands)
+{
+  const cascadia = arcanes.find((arcane) => arcane.name === 'Cascadia Empowered')!
+  const procsPerSecond = (extra: Partial<Attack>, multishot = 1) => {
+    const attack = testAttack({ impact: 100 }, { statusChance: 0.5, ...extra })
+    return dotOf(run(attack, { weapon: { ...testWeapon(attack), multishot }, arcane: { arcane: cascadia, rank: 5, conditionalStacks: 1 } }), 'cascadia').procsPerSecond
+  }
+  expectClose('Cascadia: 50% status at 1/s = 0.5 hits/s', procsPerSecond({}), 0.5)
+  expectClose('Cascadia: doubles with status chance', procsPerSecond({ statusChance: 1 }), 1)
+  expectClose('Cascadia: doubles with fire rate', procsPerSecond({ fireRate: 2 }), 1)
+  expectClose('Cascadia: doubles with multishot', procsPerSecond({}, 2), 1)
+}
+// Longbow Sharpshot (bows only): "+300% damage on your next shot" multiplies Serration, but additive CO / Galvanized isn't
+// multiplied by it (wiki: "Damage bonus% = [(1 + Serration) x (1 + Longbow Sharpshot)] + Galvanized Aptitude").
+// Serration +165%, Galvanized 2 stacks x 1 status (+80%): additive 100 x (2.65 x 4 + 0.8) = 1140, multiplicative 100 x 2.65 x 1.8 x 4
+{
+  const sharpshot = arcanes.find((arcane) => arcane.name === 'Longbow Sharpshot')!
+  const withSharpshot = { ...coInput, arcane: { arcane: sharpshot, rank: 5, conditionalStacks: 1 } }
+  expectClose('Longbow Sharpshot: additive CO left out of the multiplier', run(slashAttack, { ...withSharpshot, coBehavior: { mode: 'add', scale: 1, source: 'override' } }).hit.average, 1140)
+  expectClose('Longbow Sharpshot: multiplicative CO', run(slashAttack, { ...withSharpshot, coBehavior: { mode: 'multiply', scale: 1, source: 'override' } }).hit.average, 100 * 2.65 * 1.8 * 4)
+  const takes = (weaponName: string) => getCompatibleArcanes(weapons.find((weapon) => weapon.name === weaponName)!).some((arcane) => arcane.name === 'Longbow Sharpshot') ? 1 : 0
+  expectClose('Longbow Sharpshot fits a bow (Daikyu)', takes('Daikyu'), 1)
+  expectClose('Longbow Sharpshot fits a bow (Lenz)', takes('Lenz'), 1)
+  expectClose('... not a rifle (Braton Prime)', takes('Braton Prime'), 0)
+  expectClose('... not a shotgun (Hek)', takes('Hek'), 0)
 }
 // Secondary Outburst: 20% per combo, 12x -> +240% crit chance and crit damage: 20% x 3.4 = 68%, 2 x 3.4 = 6.8
 {
@@ -1331,7 +1400,8 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
 }
 
 // Incarnon form refill: Vasto Prime's 24 rounds = 8 weak point hits ("each charge producing 3 rounds") with the normal form
-// (2.5/s, 6-round magazine, 1 s reload: 6 / 3.4 = 1.76 hits/s) = 4.53 s, plus a 2-reload swap each way = 8.53 s
+// (2.5/s, 6-round magazine, 1 s reload: 6 / 3.4 = 1.76 hits/s) = 4.53 s, plus a 2-reload swap back in = 6.53 s (no swap out:
+// the gun drops back to normal, reloaded, when the battery runs out)
 // Onos: a 57-round charge cycle (7 beam ticks + the 50-round blast) is 6 per 350-round form, and the blast lands 4 s in
 {
   const run1 = (name: string, attackName: string) => {
@@ -1339,7 +1409,7 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
     return calculate({ weapon, attack: weapon.attacks.find((attack) => attack.name === attackName)!, mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 },
       target: { ...grineerTarget, faction: 'None' } })
   }
-  expectClose('Vasto Prime Incarnon refill + switching', run1('Vasto Prime', 'Incarnon Form').shotModel.reloadTime ?? 0, 8 / (6 / (6 / 2.5 + 1)) + 4)
+  expectClose('Vasto Prime Incarnon refill + switching', run1('Vasto Prime', 'Incarnon Form').shotModel.reloadTime ?? 0, 8 / (6 / (6 / 2.5 + 1)) + 2)
   const blast = run1('Onos', 'Incarnon Form Charge Attack')
   expectClose('Onos 6 charge cycles per form', blast.shotModel.magazineSize ?? 0, 6)
   // battery: 6 blasts, so 6 x (blast + its Heat DoT), fired 4 s apart
@@ -1423,6 +1493,119 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
   }
   // Miasma: the cast's Viral proc doubles the ticks after it: 150 + 5 x 300 at 100%
   expectClose('Miasma own Viral', runAbility(abilityDef('miasma').build(at(1), { spored: 0 }), at(1)).direct, 150 + 5 * 300)
+}
+// ---- damage simulator (src/calc/fight.ts) ----
+{
+  const within = (label: string, actual: number, expected: number, tolerance: number) => {
+    const ok = Math.abs(actual - expected) <= tolerance * Math.max(1e-9, Math.abs(expected))
+    if (!ok) failures++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}: got ${actual}, expected ${expected} (within ${tolerance * 100}%)`)
+  }
+  const fightInput = (attack: Attack, armor = 0, faction = 'None'): CalcInput => ({
+    weapon: testWeapon(attack), attack, mods: [], armor, debuffs: noDebuffs(), buffs: { roar: 0 },
+    target: { faction, layer: 'health', enemyId: null, baseLevel: 1, level: 1, steelPath: false, manualArmor: armor, headshot: false, headshotMultiplier: 3, headcrit: false },
+  })
+  const oneFight = (input: CalcInput, pools: FightSetup['pools'], seconds = 30) => {
+    const setup: FightSetup = { input, pools, runs: 1, seconds, headshotShare: 0 }
+    const log: FightEvent[] = []
+    const result = runFight(setup, 0, makePricer(input, false), log)
+    return { result, hits: log.filter((event) => event.kind === 'hit') }
+  }
+
+  // Enemy Level Scaling, Daniel's overguard formula: f32(f1 + f32(f32(f2 - f1) x s)), f1 below 45, f2 above 50
+  expectClose('Overguard multiplier Lv 1', overguardMultiplier(1), 1)
+  expectClose('Overguard multiplier Lv 45 (f1 only)', overguardMultiplier(45), Math.fround(1 + 0.0015 * 44 ** 4))
+  expectClose('Overguard multiplier Lv 50 (f2 only)', overguardMultiplier(50), 8633.7626953125)
+  expectClose('Overguard multiplier Lv 100', overguardMultiplier(100), 16258.1748046875)
+  expectClose('Overguard multiplier Lv 200', overguardMultiplier(200), 30475.80078125)
+
+  // by hand: 100 Impact a shot at 1 shot/s, no crit, no status, no armor vs 1,000 health -> 10th shot at t = 9 kills
+  const dummy = oneFight(fightInput(testAttack({ impact: 100 })), { overguard: 0, shield: 0, health: 1000 })
+  expectClose('Sim: 100 dmg rifle vs 1,000 HP dummy dies at 9 s', dummy.result.killTime, 9)
+  expectClose('Sim: ... on the 10th shot', dummy.result.shots, 10)
+
+  // Toxin skips shields (wiki Toxin: "bypasses Shield"): 100 Toxin vs 500 shields + 300 health -> dead on shot 3, shields untouched
+  const toxin = oneFight(fightInput(testAttack({ toxin: 100 })), { overguard: 0, shield: 500, health: 300 })
+  expectClose('Sim: Toxin through shields kills at 2 s', toxin.result.killTime, 2)
+  expectClose('Sim: ... shields never touched', toxin.result.samples.shield[0], 500)
+
+  // Corrosive (wiki): "degrades the armor of the afflicted target by 26%" and the strip counts from the next hit (Daniel's call).
+  // 300 armor: shot 1 = 100 x (1 - 0.9 sqrt(300/2700)) = 70, shot 2 vs 222 armor
+  const corrosive = oneFight(fightInput(testAttack({ corrosive: 100 }, { statusChance: 1 }), 300), { overguard: 0, shield: 0, health: 1e9 }, 3)
+  expectClose('Sim: Corrosive proc hit isn\'t stripped yet', corrosive.hits[0].damage!, 100 * armorDamageMultiplier(300))
+  expectClose('Sim: Corrosive strip lands on the next hit', corrosive.hits[1].damage!, 100 * armorDamageMultiplier(300 * (1 - 0.26)))
+
+  // Heat (wiki Heat_Damage): "Every 0.5 seconds after the initial proc, the enemy will have 15%, then 30%, 40%, and finally 50% of
+  // its armor stripped." 4 shots/s, a Heat proc every shot, 300 armor
+  const heat = oneFight(fightInput(testAttack({ heat: 100 }, { statusChance: 1, fireRate: 4 }), 300), { overguard: 0, shield: 0, health: 1e9 }, 2.6)
+  const heatHit = (time: number) => heat.hits.find((event) => Math.abs(event.t - time) < 1e-6)!.damage!
+  expectClose('Sim: Heat strip 0% at 0.25 s', heatHit(0.25), 100 * armorDamageMultiplier(300))
+  expectClose('Sim: Heat strip 15% at 0.5 s', heatHit(0.5), 100 * armorDamageMultiplier(300 * 0.85))
+  expectClose('Sim: Heat strip 30% at 1 s', heatHit(1), 100 * armorDamageMultiplier(300 * 0.7))
+  expectClose('Sim: Heat strip 40% at 1.5 s', heatHit(1.5), 100 * armorDamageMultiplier(300 * 0.6))
+  expectClose('Sim: Heat strip 50% at 2 s', heatHit(2), 100 * armorDamageMultiplier(300 * 0.5))
+
+  // overguard takes full damage (no armor, no damage reduction), what's left of a hit carries into health at health's price:
+  // 150 overguard, 2,700 armor: shot 1 = 100 to overguard, shot 2 = 50 breaks it, the other half = 50 x 10% = 5 to health
+  const overguard = oneFight(fightInput(testAttack({ impact: 100 }), 2700), { overguard: 150, shield: 0, health: 1000 }, 2.5)
+  expectClose('Sim: overguard takes the full hit through 2,700 armor', overguard.hits[0].damage!, 100)
+  expectClose('Sim: overflow into health at health\'s armor', overguard.hits[2].damage!, 5)
+
+  // vs today's engine on real builds: frozen target (nothing changes), 1,000 runs. a sample of the sustained board's guns
+  const board = expandLeaderboard(JSON.parse(readFileSync('public/leaderboard.json', 'utf8')))
+  const sample = board.boards.sustained.filter((entry) => entry.category !== 'Melee').filter((_, index) => index % 5 === 0).slice(0, 8)
+  for (const entry of sample) {
+    const weapon = weapons.find((candidate) => candidate.uniqueName === entry.weaponId)!
+    const attack = weapon.attacks.find((candidate) => candidate.name === entry.attack) ?? weapon.attacks[0]
+    const input: CalcInput = {
+      weapon, attack, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS, target: SCENARIO_TARGET, bonusElement: entry.bonusElement ?? null,
+      mods: entry.mods.flatMap((upgrade) => { const mod = mods.find((one) => one.uniqueName === upgrade.id); return mod ? [{ mod, rank: upgrade.rank, conditionalStacks: upgrade.conditionalStacks }] : [] }),
+      arcane: entry.arcane ? { arcane: arcanes.find((one) => one.uniqueName === entry.arcane!.id)!, rank: entry.arcane.rank, conditionalStacks: entry.arcane.conditionalStacks } : null,
+    }
+    const model = calculate(input).shotModel
+    const [tenSeconds] = frozenDamage({ input, runs: 1000, seconds: 10, headshotShare: 0 }, [10])
+    within(`Sim frozen mean = expectedDamage at 10 s, ${entry.weaponName} ${entry.attack}`, tenSeconds.reduce((a, b) => a + b, 0) / tenSeconds.length, expectedDamage(model, 10), 0.01)
+    // the band only for single-part attacks: the sim rolls every proc type (floor + chance on the whole status chance, then the
+    // type by weight, like the game), simulateDamage only rolls the DoT share. on merged attacks with lots of non-DoT procs
+    // (Latron / Zylok Incarnon + AoE) that makes the sim's band a few % wider, which is the sim being closer to the game
+    if (attack.parts) continue
+    const sorted = [...tenSeconds].sort((a, b) => a - b)
+    const [range] = simulateDamage(model, [10], 1000)
+    within(`Sim frozen 10th pct = simulateDamage's, ${entry.weaponName}`, sorted[Math.floor(0.1 * sorted.length)], range.low, 0.02)
+    within(`Sim frozen 90th pct = simulateDamage's, ${entry.weaponName}`, sorted[Math.floor(0.9 * sorted.length)], range.high, 0.02)
+  }
+
+  // direct hits vs status damage: no status -> no gap; a status-heavy build dies earlier with its DoTs than without
+  const plain = simulateFight({ input: fightInput(testAttack({ impact: 100 })), pools: { overguard: 0, shield: 0, health: 1000 }, runs: 20, seconds: 30, headshotShare: 0 })
+  expectClose('Sim: no status means 0% status damage', plain.statusShare, 0)
+  expectClose('Sim: ... and direct-only dies at the same time', plain.direct.ttk.median, plain.ttk.median)
+  const bleed = simulateFight({ input: fightInput(testAttack({ slash: 100 }, { statusChance: 1, fireRate: 2 })), pools: { overguard: 0, shield: 0, health: 3000 }, runs: 20, seconds: 60, headshotShare: 0 })
+  expectClose('Sim: Slash bleed kills before the hits alone would', bleed.ttk.median < bleed.direct.ttk.median ? 1 : 0, 1)
+  expectClose('Sim: ... status share is between 0 and 1', bleed.statusShare > 0 && bleed.statusShare < 1 ? 1 : 0, 1)
+  // experimental Incarnon cycle (Vasto Prime, unmodded): 24-round battery at the form's fire rate, straight back to the normal
+  // form (no switch when the battery runs out), the normal form for the fill time, switch back in (2x the 1 s base reload)
+  {
+    const vasto = weapons.find((weapon) => weapon.name === 'Vasto Prime')!
+    const input: CalcInput = { weapon: vasto, attack: vasto.attacks.find((attack) => attack.name === 'Incarnon Form')!, mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 },
+      target: { faction: 'None', layer: 'health', enemyId: null, baseLevel: 1, level: 1, steelPath: false, manualArmor: 0, headshot: false, headshotMultiplier: 3, headcrit: false } }
+    const incarnon = calculate(input)
+    const cycle = incarnonCycle(input, incarnon)!
+    const schedule = cycleSchedule(incarnon.shotModel, calculate(cycle.normalInput).shotModel, cycle.swapSeconds, cycle.fillSeconds, 60)
+    const firstNormal = schedule.shots.findIndex((shot) => shot.normal)
+    const battery = 24 / incarnon.shotModel.fireRate
+    expectClose('Sim cycle: Vasto switching in takes 2x its 1 s reload', cycle.swapSeconds, 2)
+    expectClose('Sim cycle: fill = the refill minus switching back in', cycle.fillSeconds, incarnon.battery!.refillSeconds! - 2)
+    expectClose('Sim cycle: one cycle = battery + the refill estimate', schedule.shots.find((shot, index) => index > firstNormal && !shot.normal)!.t, battery + incarnon.shotModel.reloadTime!)
+    expectClose('Sim cycle: the whole 24-round battery fires first', firstNormal, 24)
+    expectClose('Sim cycle: normal form right when the battery runs out', schedule.shots[firstNormal].t, battery)
+    expectClose('Sim cycle: back in the form after battery + fill + one switch', schedule.shots.find((shot, index) => index > firstNormal && !shot.normal)!.t, battery + cycle.fillSeconds + 2)
+    expectClose('Sim cycle: only switching in is shaded as a switch', schedule.windows.filter((shade) => shade.kind === 'switch' && shade.start < battery + cycle.fillSeconds + 2).length, 1)
+    expectClose('Sim cycle: a normal attack has no cycle', incarnonCycle({ ...input, attack: cycle.normalInput.attack }, calculate(cycle.normalInput)) === null ? 1 : 0, 1)
+  }
+
+  // same seed, same fight
+  const repeat = () => simulateFight({ input: fightInput(testAttack({ corrosive: 60, heat: 40 }, { statusChance: 0.6, critChance: 0.4 }), 900), pools: { overguard: 300, shield: 400, health: 3000 }, runs: 50, seconds: 60, headshotShare: 0.4 })
+  expectClose('Sim: same seed gives the same kill times', JSON.stringify(repeat().killTimes) === JSON.stringify(repeat().killTimes) ? 1 : 0, 1)
 }
 if (failures) throw new Error(`${failures} check(s) failed`)
 console.log('\nall checks passed')

@@ -3,11 +3,11 @@ import { STATUS_TYPES, factionLabel, hitsPerComboTier, maxComboFor } from './cal
 import { calculate } from './calc/damage'
 import { arcanesById, enemies, getCompatibleArcanes, getCompatibleMods, modsById, weapons, weaponsById } from './data'
 import { estimateKill } from './calc/kill'
+import { FightDialog } from './components/FightDialog'
 import { CO_MODE_LABELS, resolveCoBehavior, type CoMode } from './calc/conditionOverload'
-import { EnemyPanel } from './components/EnemyPanel'
 import { IncarnonPanel } from './components/IncarnonPanel'
 import { getIncarnonTiers, scenarioPerkStacks, type SelectedPerk } from './calc/incarnon'
-import { DebuffsPanel } from './components/DebuffsPanel'
+import { TargetBox } from './components/TargetBox'
 import { PassivesPanel } from './components/PassivesPanel'
 import { WarframePanel, type FrameSnapshot } from './components/WarframePanel'
 import { decodeLoadout, encodeLoadout } from './calc/loadoutCode'
@@ -28,7 +28,7 @@ import { FormulaPanel } from './components/FormulaPanel'
 import { StatsPanel } from './components/StatsPanel'
 import { ResultsBar } from './components/ResultsBar'
 import { Thumb } from './components/Thumb'
-import { TargetPanel, resolveArmor, resolveEnemy } from './components/TargetPanel'
+import { resolveArmor, resolveEnemy } from './components/TargetPanel'
 import type { Buffs, Debuffs, EquippedMod, TargetSettings } from './types'
 import type { LeaderboardEntry } from './optimizer/leaderboardTypes'
 import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from './optimizer/scenario'
@@ -144,6 +144,7 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
   const [frameRestore, setFrameRestore] = useState<{ nonce: number; snapshot: Partial<FrameSnapshot> } | null>(null)
   const [codeNote, setCodeNote] = useState<string | null>(null)
   const [shownCode, setShownCode] = useState<string | null>(null) // the fallback box when the clipboard won't take it
+  const [simOpen, setSimOpen] = useState(false) // the damage simulator box
 
   // "Load build" on the leaderboard: set the weapon, attack, mods, arcane and perks, and switch the target/debuffs
   // to the leaderboard scenario so the numbers match what the leaderboard showed
@@ -261,7 +262,7 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
     const vsShield = calculate({ ...calcInput, target: { ...target, headshot, layer: 'shield' } })
     return { vsHealth, kill: estimateKill(scaledEnemy.health, scaledEnemy.shield, vsHealth, vsShield) }
   }
-  // what the closed Target / Debuffs drawers say about themselves
+  // what the closed Target drawer says about itself (target + debuffs)
   const targetSummary = [
     scaledEnemy ? `${scaledEnemy.enemy.name} Lv ${scaledEnemy.effectiveLevel}` : `${factionLabel(target.faction)}, ${resolveArmor(target)} armor`,
     target.steelPath ? 'Steel Path' : null,
@@ -271,7 +272,6 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
   const activeDebuffs = Object.values(debuffs.stacks).filter((stacks) => stacks > 0).length +
     (debuffs.heatArmorStrip > 0 ? 1 : 0) + (debuffs.corrosiveProjections + warframeCorrosive > 0 ? 1 : 0) + (debuffs.otherArmorReduction > 0 ? 1 : 0) +
     (debuffs.damageVulnerability > 0 ? 1 : 0) + (debuffs.liftedOrKnockedDown ? 1 : 0) + (buffs.tenaciousBond ? 1 : 0)
-  const debuffSummary = activeDebuffs ? `${activeDebuffs} active` : 'none'
   const bodyKill = killFor(false)
   const headKill = killFor(true)
 
@@ -377,13 +377,14 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
       {loadedFrom && (
         <div className="load-banner">
           Loaded the leaderboard build for <b>{loadedFrom}</b>. Target and debuffs were switched to the leaderboard scenario
-          (no faction, no armor, status types from the build) so the numbers match. Change them in the Target and Debuffs drawers at the top to test it against something else.
+          (no faction, no armor, status types from the build) so the numbers match. Change them in the Target drawer at the top to test it against something else.
           <button className="link-button" onClick={() => setLoadedFrom(null)}>dismiss</button>
         </div>
       )}
       <div className="loadout-code">
         <button onClick={copyCode} title="The whole setup, weapon and Warframe, as one code on your clipboard">Copy loadout code</button>
         <button onClick={pasteCode} title="Load a setup from a code on your clipboard">Paste loadout code</button>
+        <button onClick={() => setSimOpen(true)} title="Fight the target shot by shot, a few hundred times, in a floating box">Damage simulator</button>
         {codeNote && <span className="muted-inline" role="status">{codeNote}</span>}
         {shownCode && (
           <input
@@ -392,6 +393,7 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
           />
         )}
       </div>
+      {simOpen && <FightDialog input={{ ...calcInput, target }} enemy={scaledEnemy} onClose={() => setSimOpen(false)} />}
       <div className="layout" onClick={togglePanel}>
         <ResultsBar
           result={result}
@@ -400,19 +402,19 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
           headKill={headKill?.kill ?? null}
           canHeadshot={!attack.isAoE}
           drawers={[
-            { id: 'target', label: 'Target', summary: targetSummary, group: 'setup' as const, content: <TargetPanel target={target} onChange={setTarget} /> },
-            { id: 'debuffs', label: 'Debuffs on target', summary: debuffSummary, group: 'setup' as const, content: <DebuffsPanel debuffs={debuffs} buffs={buffs} onDebuffsChange={setDebuffs} onBuffsChange={setBuffs} /> },
-            ...(scaledEnemy && bodyKill && headKill ? [{
-              id: 'enemy', label: 'Kill details', summary: 'shots, TTK, shields', group: 'output' as const,
+            {
+              // target, debuffs and kill details in one box (TargetBox)
+              id: 'target', label: 'Target', summary: `${targetSummary} · ${activeDebuffs ? `${activeDebuffs} debuffs` : 'no debuffs'}`,
               content: (
-                <EnemyPanel
-                  scaled={scaledEnemy} faction={target.faction} steelPath={target.steelPath}
-                  vsHealth={bodyKill.vsHealth} kill={bodyKill.kill} headKill={headKill.kill}
-                  canHeadshot={!attack.isAoE}
+                <TargetBox
+                  target={target} onTargetChange={setTarget}
+                  debuffs={debuffs} buffs={buffs} onDebuffsChange={setDebuffs} onBuffsChange={setBuffs}
+                  scaled={scaledEnemy} vsHealth={bodyKill?.vsHealth ?? result}
+                  kill={bodyKill?.kill ?? null} headKill={headKill?.kill ?? null} canHeadshot={!attack.isAoE}
                 />
               ),
-            }] : []),
-            { id: 'results', label: 'Full results', summary: 'DoT, head vs body, procs', group: 'output' as const, content: <StatsPanel result={result} body={bodyResult} head={headResult} arsenal={arsenalResult} unmodded={unmoddedResult} canHeadshot={!attack.isAoE} /> },
+            },
+            { id: 'results', label: 'Full results', summary: 'DoT, head vs body, procs', content: <StatsPanel result={result} body={bodyResult} head={headResult} arsenal={arsenalResult} unmodded={unmoddedResult} canHeadshot={!attack.isAoE} bodyKill={bodyKill?.kill ?? null} headKill={headKill?.kill ?? null} /> },
           ]}
         />
         {/* weapon side and Warframe side, 50/50 on wide screens, stacked otherwise */}

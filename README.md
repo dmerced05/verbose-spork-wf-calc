@@ -1,5 +1,5 @@
-# Verbose Spork Warframe Analysis
-calculator and analysis for warframe (repo: verbose-spork-wf-calc)
+# verbose-spork-wf-calc
+calculator for warframe
 
 React + Vite + TypeScript. Item data comes from [@wfcd/items](https://github.com/WFCD/warframe-items) (the package was renamed from `warframe-items`, which stopped updating in April 2025), trimmed at build time.
 
@@ -16,42 +16,21 @@ npm run deploy       # build + publish to GitHub Pages (gh-pages branch)
 
 Bump data after a patch with `npm update @wfcd/items` (dev/build regenerate the JSON automatically).
 
-Wiki data: `python3 scripts/pull-wiki-data.py` (needs `pip install lupa`) runs the wiki's Module:Weapons/data and
-Module:Enemies/data Lua tables and saves `scripts/wiki-weapons.json` / `scripts/wiki-enemies.json` (committed, build-data reads
-them). `node scripts/compare-wiki-data.mjs` lists every attack whose damage / crit / status / fire rate differs from the wiki.
-
 ## Tabs
 
 - **Calculator**: one weapon attack vs one target, with your Warframe, debuffs, buffs, a riven and the damage math written out
   (FormulaPanel). The Build Advisor under it says what each stat is worth to the build right now and which mod gets it cheapest
-- **Leaderboard**: precomputed best builds for every weapon attack, plus Boss time-to-kill boards (see Leaderboard)
-- **Compare** (two pages):
-  - **Build Paths**: one weapon, 2-4 build paths with their own rules (lock mods in/out, arcane, Incarnon perks, crit limits,
+- **Leaderboard**: precomputed best builds for every weapon attack, plus a Boss Damage board (see Leaderboard)
+- **Compare Build Paths**: one weapon, 2-4 build paths with their own rules (lock mods in/out, arcane, Incarnon perks, crit limits,
   a riven), each optimized and shown side by side. Runs in a worker, never writes to the leaderboard
-  - **Weapons**: two weapons of one category, base stats with where each sits in its category (evolved Incarnon numbers),
+- **Compare Weapons**: two weapons of one category, base stats with where each sits in its category (evolved Incarnon numbers),
   and what the leaderboard's best builds do with them
 - **Rivens**: roll ranges per stat and layout, why some stats suit the weapon, and a god-roll search (the optimizer rebuilt
   around each candidate riven)
 - **Damage Cap**: can one hit pass the 32-bit damage limit, and what it takes. A ladder of layers (mods, headshot, solo priming,
   Warframe arcanes, shards, your frame, enemy debuffs, allies), each optimized for the biggest single instance
-- **⚠ Experimental** (two pages, flagged as leaning on more guesses):
-  - **Ability Damage**: Warframe ability damage side by side against a real target (see Ability damage)
-  - **Data Analysis**: the whole arsenal in graphs. An Attack switch at the top swaps every section (except Enervate) between Normal fire, Normal + Incarnon (Incarnon form where a weapon has one),
-    Alt-fire & special (other fire modes, glaive throws, ranged melee attacks; the hardest-hitting one per weapon), Incarnon form
-    and Melee heavy, and filters the leaderboard rows the same way (Normal fire = best non-Incarnon build). Slams aren't counted. Incarnon weapons' base stats include the evolutions the leaderboard picked for
-    that attack (base-stat lines only: +base damage / crit / status / multiplier, "set to", native flat crit/status; conditionals at
-    scenario stacks), and every dot's tooltip lists those evolutions. The leaderboard only stores tiers that change damage. Average/median crit, crit multiplier, status and base damage per
-    category, crit and status histograms, a crit-vs-status scatter; a per-subtype breakdown
-    (gun types plus spearguns, melee by wiki class: table of medians and median leaderboard score, then a picked subtype's
-    histograms, scatter, top weapons and most picked mods/arcanes); the leaderboard section filters by subtype too; how much crit Secondary
-    Enervate really gives by base crit, no other crit mods (the calc's own cycle average: ~103% at 0% base, ~133% at 60%),
-    against Primed Pistol Gambit, Creeping Bullseye and Gambit + Galvanized Crosshairs; base stats
-    by release update (wiki "Introduced", bucketed by 5 updates); what a Prime changes over the original; and what the
-    leaderboard's best builds pick (mods, arcanes, damage mix, Incarnon share, and how well each base stat predicts the
-    score, as a Spearman rank correlation). Charts are hand-rolled SVG (src/components/charts.tsx), no chart library
+- **Data Analysis**: Warframe ability damage side by side against a real target (see Ability damage)
 - **Status Guide**: how each status scales and what it does, with the numbers the calc uses
-- **About**: what the site is, then every algorithm it runs (biggest first) with its steps, equations in KaTeX and time
-  complexity in dropdowns. Kept in sync with the code, see "Keeping About honest" below
 
 ## How the math works
 
@@ -94,18 +73,9 @@ collected by hand from the wiki since warframe-items doesn't have them. `src/cal
 - mod-like lines (+% Damage, +% Multishot, +% Fire Rate, CO-type per status, +% Headshot Damage) go through the mod parser
 - Devouring/Devastating Attrition = 50% chance for +2000% on non-crits (expected value), Latron's Flensing Spikes = 20% armor per Puncture stack
 - [Incarnon Form only] / [Normal only] restrict a statement to that attack, untagged applies to both. melee ignores the tags
-- conditional parts ("When Channeled Ability active:", "On Kill: ... Stacks up to 4x.") start where the leaderboard has them
-  (`scenarioPerkStacks` in src/calc/incarnon.ts), change them in the panel:
-  - the same rules as mod conditionals (max stacks, headshot hits off on body shots, kills off on the boss board), so Riddled
-    Target sits at 4 (+100% multishot), Furis's Stormburst at 3 (+1.2 base multishot), Haven Foray's Overshield +30 on, Daring
-    Reverie's channeled +38 on
-  - off when the scenario can't meet it: another weapon equipped (Stalker's perks), crowds / range (within 6 m), a hurt or fresh
-    target (below half health, undamaged, fewer than 3 statuses)
-  - status triggers ("On Puncture Status Effect", "On hitting Electricity-affected enemies") switch back off when the build never
-    applies that status: Stormburst does nothing on a Furis with no Electricity
-  - Prelude of Might's "When Critical Chance below 40%" is checked against the build's final crit chance
+- conditional parts ("When Channeled Ability active:", "On Kill: ... Stacks up to 4x.") start off, toggle them in the panel
 
-Enemy box: pick a preset (its wiki base level fills in), set base level + level (slider) and Steel Path. Health/shields/armor scale with the
+Enemy box: pick a preset, set base level + level (slider) and Steel Path. Health/shields/armor scale with the
 Enemy_Level_Scaling curves for the selected faction (smoothstep blend between 70-80 levels over base), armor clamps 200-2700.
 Steel Path = +100 levels and x2.5 health/shields (armor isn't multiplied since U36). Shows shots to kill and time to kill from
 average damage, toxin skips shields, no overflow from shields into health. "With DoTs" plays the fight out over time (procs tick
@@ -195,10 +165,7 @@ Tonkkatt, Pyrana Prime, Dual Coda Torxica, plus Tekko / Alternox / Epitaph signa
 
 What the leaderboard (and a freshly equipped mod/arcane) assumes for "On X:" bonuses:
 - most triggers (On Kill, On Status Effect...) at max stacks
-- Incarnon perk conditions too, with a few extra rules (see the Incarnon section above)
-- Secondary Outburst at the full 12x (Crescendo builds)
-- headshot / weak point *hit* triggers (Primary Crux, Longbow Sharpshot) off, since the scenario is body shots (on for guns on
-  the Single damage instance board, which is headshots).
+- headshot / weak point *hit* triggers (Primary Crux, Longbow Sharpshot) off, since the scenario is body shots.
   Headshot *kill* triggers (Primary/Secondary Deadhead) stay on, the buff works on every shot once it's up
 - melee-kill triggers on a gun (Primary/Secondary Dexterity) at half: you have to swap to melee and kill to keep them up
 - Primary Bulwark (+1% damage per armor past 1,000, max +500%) at half (+250%), it needs a tank frame. In the calculator
@@ -312,7 +279,7 @@ strength in with Serration. Pseudo-exalted (Shattered Lash, Landslide, Whipclaw,
 Storm has no numbers in the export: 1,500 Finisher (True) per hit with a guaranteed Bleed, from the wiki. Garuda's Talons are her
 innate claws, a normal weapon. The hold-to-cast elemental augments and Thermal Transfer don't apply to exalted weapons. Noctua's Active Attack needs a full
 meter (60 s, -1 s per primary hit), so it's one every 24 s while firing. Not modeled:
-Desert Wind's waves, Noctua's fragments, Chromatic Blade, Glory's alt-fire exceptions, Mass Vitrify/Splinter
+energy waves (Exalted Blade, Desert Wind), Noctua's fragments, Chromatic Blade, Glory's alt-fire exceptions, Mass Vitrify/Splinter
 Storm with Shattered Lash.
 
 Every box on the calculator folds up: click its title.
@@ -344,28 +311,11 @@ opens). After a data update: `npm run leaderboard`, then deploy.
 Rebuilds are incremental (`scripts/leaderboardFingerprint.ts`): one engine hash over the shared code (damage formula, optimizer,
 scenario, stances, weapon classes) and one hash per weapon over what the per-item lookups *return* for it (its mods, passives,
 Incarnon perks, heavy combo...). Engine change = full rebuild, a fixed augment only reruns the weapons that can equip it.
-Comment-only edits don't count. Flags: `--dry` (just say what's stale), `--only=<names>`, `--all`, `--boards=<keys>` (only re-optimize those boards, e.g. `single`; the rest are kept from the old file), `--adopt` (stamp fingerprints without rerunning), `--boss`.
+Comment-only edits don't count. Flags: `--dry` (just say what's stale), `--only=<names>`, `--all`, `--adopt` (stamp fingerprints without rerunning), `--boss`.
 
-Boss time-to-kill boards (`src/optimizer/bossLeaderboard.ts`, `--boss` into `public/boss-leaderboard.json`): each build is
-optimized to kill one Steel Path hardmode boss solo as fast as it can, ranked by seconds (stored as 1 / seconds):
-- Janus Captain Vor: wiki "Health = 7500, Shield = 2750, Armor = 250", "SpawnLevel = 375", Grineer, "Solo: 1x health", and
-  "immune to armor reduction" (Heat, Corrosive, auras, Flensing Spikes do nothing). Level 375 with Steel Path's x2.5: 942k shields,
-  14.3M health, 2,700 armor
-- The Fragmented One: "Health = 50000", "SpawnLevel = 225" solo, The Murmur, "Viral damage resistance and immunity to Viral
-  status", plus Update 40's "Steel Path / Deep Archimedea base health bonus: 150,000": 80.8M health, no shields or armor
-- damage attenuation (`attenuatedTimeToKill` in src/calc/simulate.ts), the wiki's two-layer model (Necramite / Archon "Damage
-  Resistance Logic"): each trigger is Reinhard-mapped, MDPT x DPT / (DPT + MDPT), then a bucket follows the last 1 s of damage and
-  decays toward it with lambda = 2/3, and damage is scaled by MDPS / bucket while the bucket is over MDPS. Update 40 made the caps
-  "proportional to Max Health" but no hardmode boss has published numbers, so both use Hemocyte's (the only post-rework ones on the
-  wiki): MDPT = 5% of max health, MDPS = 20% of max health. A guess, `BOSS_ATTENUATION` in bossLeaderboard.ts. It puts a floor of
-  ~5 s on any boss's health. The search uses a quick estimate (each layer at least pool / min(MDPS, mapped burst) x uptime), the
-  picked build is then timed on the full bucket model
-- time to kill = time to strip the shields (shield-layer damage) + time to deal the health, each off the expected damage over time
-  (reloads, Incarnon refills, DoT ticks as they land), found by a few secant steps and a short bisection over the killing shot.
-  Past 10 minutes it's extrapolated ("10+ min" on the page) so weak builds still give the search a slope
-- status capped at 4 stacks a type, on-kill conditionals off, Devouring Attrition off, gauge-gated alt-fires left out, heavies left
-  out, body shots
-- not modeled: invulnerable phases (Vor's shielded phases and turrets), adds, movement
+Boss Damage board (`src/optimizer/bossLeaderboard.ts`, `--boss` into `public/boss-leaderboard.json`): one target that doesn't
+die, status capped at 4 stacks a type, on-kill conditionals off (Deadhead, Galvanized, Merciless, kill passives), Devouring
+Attrition off, gauge-gated alt-fires left out, sustained DPS over a 10 s fight.
 
 Every attack (component) of every weapon gets its own listing (Normal Attack, Slam, Heavy Slam, Heavy Attack, alt-fire,
 Incarnon form...), each optimized on its own. "Best attack per weapon only" collapses it back to one row per weapon.
@@ -378,40 +328,17 @@ on a gun that isn't recognised counts as primary fire. The filter applies before
 One leaderboard, ranked by a setting (`src/optimizer/objectives.ts`, each one optimized separately):
 - Sustained DPS: average over a 60 s fight (see Damage over time above)
 - Damage in a time window (3 / 10 / 30 s): simulates shots from t = 0 with reloads, DoTs count the part that fits in the window
-- Single damage instance: one hit of one projectile / one melee swing, crits averaged, no DoTs. Guns score it on headshots
-  (weak point mods, Acuity and headshot-hit triggers in play; AoE can't headshot), melee stays on body hits
+- Single damage instance: one hit of one projectile / one melee swing, crits averaged, no DoTs
 - Whole attack (hit + procs): everything one attack does to one target, every pellet / Melee Duplicate strike plus the full DoT of
   each proc it lands (forced ones included). Made for heavies and glaive detonations, which live on their procs
 
 The DPS-type rankings are optimized twice, with and without fire rate / attack speed mods (and arcanes), switched by "Allow fire rate
 mods". If the search happens to find a better build without them, that build is used for the "allowed" board too.
 
-Settings on the page: Rank by, time window (3 s by default, the burst ranking), Primary/Secondary/Melee, search, "Allow fire rate
-mods" and "Include Incarnon forms".
+Settings on the page: Rank by, time window, Primary/Secondary/Melee, search, "Allow fire rate mods" and "Include Incarnon forms". Incarnon forms run on
+Incarnon charge which isn't in the data, so they never reload here, which is why they can be toggled off.
 
-Incarnon forms run on their charges, then have to be earned back (`incarnonRefill` in build-data, damage.ts):
-- each Genesis page: "each charge producing N rounds to a maximum of M" per weak point hit (Vasto 3 to 24 = 8 hits, Onos 30 to
-  350, Torid / Angstrum count direct hits), "Individual Multishot bullets can build charges"
-- refill time = hits / the normal form's hit rate (its fire rate with the same fire rate mods x its projectiles, its own magazine and
-  reloads included), every normal shot assumed to land on a weak point, Incarnon Efficiency's +50% charge counted
-- plus switching both ways, each 2x the base reload (`INCARNON_SWAP_RELOADS` in damage.ts). The Genesis pages say "Mode switching
-  is not instantaneous and has an animation equal to the weapon's reload speed", but in game the swap runs longer than a reload,
-  and no page gives a timing, so 2x is my call until there's a measured number. Reload mods don't shorten it (Phenmor's reload
-  perk "Does not affect transition from Incarnon back to base form")
-- the leaderboard tags an Incarnon form "Refill" on sustained / boss and on any time window longer than its battery takes to fire:
-  past that point the number leans on the refill assumption, and how long the refill really takes depends on your aim
-- the calculator's Full results show the battery on its own: rounds and shots, time to fire it all, damage per battery (DoTs
-  included), damage per second while it lasts, and the best-case refill
-- so a small battery (Vasto Prime's 24 rounds, ~1.2 s of fire) spends most of a fight refilling: still near the top in 3 s, much
-  lower in sustained. Unmodded Vasto Prime: 8 hits at 1.76/s = 4.5 s + 4 s switching per form
-
-Onos's Incarnon form (`onosIncarnon` in build-data): holding the trigger charges for 4 s (the module's 0.25/s) while the Radiation
-beam ticks 7 times, ramping "up to 2.5x" (Talk:Onos measured 36, 41 ... 69 off a 30 base: 30 x (1 + 1.5k/8)), then the Heat blast
-and its 3 m explosion. 1 round a tick + 50 for the blast = 57 rounds a cycle, 6 cycles a 350-round form. "Held Damage + Charge Attack
-+ Charge Radial Attack" is the whole cycle, and nothing lands at t = 0: the blast comes one charge in (4 s unmodded), so it misses
-a 3 s window without fire rate mods
-
-- Scenario (`src/optimizer/scenario.ts`): no faction, no armor, body shots (gun single hits: headshots), conditionals at max stacks with exceptions
+- Scenario (`src/optimizer/scenario.ts`): no faction, no armor, body shots, conditionals at max stacks with exceptions
   (`triggerUptime` in `src/calc/parseMod.ts`): headshot-hit triggers (Crux, Sharpshot) off, headshot-kill triggers (Deadhead) on,
   melee kills on a gun (Dexterity) and armor thresholds (Bulwark, +1%/armor past 1,000) at half. When two arcanes tie, the one with
   headshot multiplier / reload speed wins (reload counts half for single hit), so Deadhead and Merciless beat Dexterity,
@@ -420,9 +347,7 @@ a 3 s window without fire rate mods
   spend the combo they need
 - Search (`src/optimizer/optimize.ts`): mod pool = compatible mods with an effect that can raise that ranking (`modPool.ts`, fire rate /
   magazine / reload only for the DPS-type rankings), beam search over 8 slots (width 8), single-mod swaps, best Incarnon perk per tier,
-  best arcane, elemental slot order. Incarnon perks that need a status the build brings (Furis's Stormburst needs Electricity,
-  Latron's Riddled Target Puncture, 9 weapons in all) also get a full search with the perk locked in, since the perk pass runs on
-  finished mods and would never add the element for it (Furis: 619k -> 1.42M sustained). Heuristic, so check odd results in the calculator ("Load build" applies the scenario too)
+  best arcane, elemental slot order. Heuristic, so check odd results in the calculator ("Load build" applies the scenario too)
 - Conflicts: same rules as the mod browser, see Mod restrictions below
 - Not optimized: Exilus slot, polarities/capacity. Event-only attacks (reload explosions, turret expiry) are skipped
 - Each attack is scored on its own (an impact + its explosion aren't summed). Incarnon forms count as 1 projectile. Charged attacks use
@@ -473,26 +398,16 @@ target HP, kill time, and status notes (Viral x10, armor at its lowest).
   a storm tick every 0.25 s launches a mote each time, Strength-many Heat procs per mote (doubled with Archon Vitality) plus
   Strength-many procs of the melee's damage types per tick. At level cap that's Viral x10 and armor 2700 -> 270 in a second or two
 
-Cards show on the Warframe panel for your own and subsumed abilities. The Experimental > Ability Damage page runs every one on the build its page
+Cards show on the Warframe panel for your own and subsumed abilities. The Data Analysis tab runs every one on the build its page
 says it scales with (`src/data/abilityBuilds.ts`: Max Strength 420% / Strength + Duration 321% Str 199% Dur / Max Duration 332%,
 real mods at max rank plus Crimson shards, augments swapped in for filler mods) against a picked target, with Roar and UWB
 (Valence Formation, Nourish, Eclipse, Arcane Avenger, a crit multiplier bonus, Arcane Arachne) as settings.
-
-## Keeping About honest (`src/about/`)
-The About page's write-ups (`src/about/algorithms.ts`) each cite the functions / constants they describe. `src/about/verified.json`
-holds a hash of that code (comment lines and whitespace ignored) from the last time the write-up was checked against it:
-- change cited code and the page flags that write-up "⚠ code changed", and `npm run check` (scripts/check-about.ts) fails
-- reread the code, fix the write-up, then `npm run about:stamp`
-- numbers written as `{{src/optimizer/optimize.ts#BEAM_WIDTH}}` are read out of the source when the page renders, so they
-  can't go stale; a renamed constant fails the check
-- a new algorithm (new page, new search) gets its own entry with its sources
 
 ## Layout
 
 ```
 scripts/build-data.mjs    trims warframe-items to weapons/mods/arcanes/enemies JSON
 scripts/check-calc.ts     wiki example checks
-scripts/pull-wiki-data.py wiki weapon + enemy modules -> scripts/wiki-*.json (build-data also writes src/data/introduced.json from it: each weapon's release update, only Data Analysis reads it). compare-wiki-data.mjs diffs weapons against them
 src/calc/constants.ts     faction table, status effects, DoT fractions
 src/calc/parseMod.ts      stat lines -> effects, incl. "On Kill: ... Stacks up to 5x"
 src/calc/damage.ts        the pipeline above
@@ -522,19 +437,12 @@ src/components/           one per panel / tab. ModSlots is the in-game style 2x4
   only the first part, Daggers / Tonfas / Warfans / Sparring neither. The wiki's Weapon Comparison "Heavy" column is the same
   number as the export, so it's no independent check. In-game, Coda Hirudo's arsenal shows 500% + 5 x 300% (first hit 1,375
   = 5x of 274.9 with 57.1% Heat), not the wiki's Sparring row or the export's 6.5x
-- Weapon numbers vs the wiki's modules (`compare-wiki-data.mjs`): 1,566 attacks match, 5 differ and on purpose: Noctua's Active
-  Attack (the meter, see Exalted), Vectis / Vectis Prime Incarnon (the module has placeholder 5s, the numbers come from the
-  Genesis page's text). Cernos Prime's charged shot (165.6 Impact here and on the wiki, 289.8 in the arsenal) is still unexplained:
-  its built-in mod is the innate headshot bonus, which doesn't touch body damage
-- The export has no innate headshot bonuses. The wiki module's `ExtraHeadshotDmg` does: Kuva Chakkhurr / Cernos Prime +50%,
-  Synapse / Coda Synapse +20% ("additive to other sources of +bonus damage on headshot such as Primary Deadhead"), and -2 on
-  Alternox, Arca Plasmor, Fulmin's semi, Nataruk's Perfect Shot, read as no headshot multiplier at all
-- Enemies in the export are pre-Update 36: old health types, old numbers (Crewman 60 health / 150 shields, 90 / 120 on the wiki),
-  some with a weapon class for a faction (Lancer was "Rifle"), Techrot Babau missing. build-data takes the wiki's
-  Module:Enemies/data instead: health, shields, armor, faction, base level and head multiplier, matched by name (export ids are
-  kept so saved setups still work), plus ~550 enemies only the wiki has. Picking an enemy sets its base level and head multiplier
+- Some weapon base damage doesn't match in game, e.g. Cernos Prime charged shot is 165.6 impact in the export but 289.8 in the arsenal
+- Enemy health/armor types in the export are pre-Update 36, so only base stats + faction are used
 - The export files a few weapons under the wrong class (Coda Bubonico as a Rifle, Perigale Prime as a Rifle, Buzlok as a Sniper),
   build-data fixes them from the wiki's class lists. Melee classes aren't in the export at all (`src/data/weaponClasses.ts`)
+- Some enemies have a weapon class as their faction (plain "Lancer" is "Rifle"), so they drop out of the faction list.
+  The presets use Elite Lancer
 - About half the stance combos on the wiki have no "Length", so they're left out
 - The export has no ability numbers worth using, every ability number is from its wiki page by hand
 
@@ -545,9 +453,7 @@ Dual Swords, Machete, Sparring, Tonfa, Two-Handed Nikana, Warfan). Their hit lis
 arsenal readings overriding them per weapon (Coda Hirudo so far). The calc rescales the Heavy Attack from the hit list:
 - default / leaderboard: the biggest single hit (one damage instance)
 - "Full heavy (all hits)" in the calculator, "Count the full heavy" on the leaderboard: every hit added up, all at the current combo
-- forced damage procs per hit (Bleed, Impact, Puncture) are added: each as a share of a proc on the scored hit, weighted by
-  that hit's share of the damage (a Bleed from a 2.5x hit inside a 10x full heavy = 0.25 of a proc on the 10x hit, which ticks
-  the same as a whole Bleed off the 2.5x hit). Knockdown / Ragdoll / Lifted / Stagger do no damage and stay listed only
+- forced procs per hit (Bleed, Puncture, Lifted...) are listed in the breakdowns but not added to the damage
 - the calculator's results and each leaderboard row show the hit-by-hit damage (click "Multi-hit heavy" on a row)
 Classes not in the table hit once and keep the export's number
 
@@ -557,54 +463,26 @@ Classes not in the table hit once and keep the export's number
 - Faction weaknesses apply to shields, not overguard
 - Heat/Toxin/Electricity/Gas ticks are reduced by armor (the wiki pages don't say either way)
 - Heat stacks tick on their own 1 s clocks here, in game they merge into one tick per second (same total, slightly different timing)
-- Incarnon forms refill at 100% weak point accuracy with the normal form (the real number depends on your aim)
-- Head multiplier/headcrit defaults are per faction. Picking an enemy uses the wiki's head multiplier when it has its own
-  (about 80 do), the rest still follow the faction
+- Incarnon forms never reload (Felarx's form has its own 60-round pool that mods don't touch, the others' charge isn't in the data)
+- Head multiplier/headcrit defaults are per faction, specific enemies differ (Juggernaut 4x, Ropalolyst 0.2x, armored heads),
+  override them in the target panel
 - Incarnon Genesis per-status bonuses aren't in the data (Cedo's +60%/status is in the passives table)
 
 - Incarnon data: Burston Prime uses Burston's numbers and Soma Prime uses Soma's (their tables didn't come through),
   Untagged base damage perks are assumed to apply to the Incarnon form too
-- Incarnon perks: "Base X set to Y" (Survivor's Edge) replaces the base, King's Gambit zeroes body crit and adds +150% weak point
-  crit chance like Acuity, "Converts X% of current ... to Base ..." (High Ground) works like Wiseman's Regard. Not modeled:
-  Munitions Grit's multishot-projectile bonus, Kinetic Killer (slide attacks aren't in the calc), utility perks (shown greyed out)
-- "On last shot in magazine" (Torid's Final Fusillade, +3 multishot) and "On final magazine burst" (Burston's Forceful Finality, +5)
-  only hit one shot / burst per magazine, so they're averaged over it: value x rounds in that shot / shots per magazine. Torid's
-  5-round grenades get +0.6, its Incarnon form's 170 charges +0.018
-- Plentiful Mayhem (Torid, Miter): "Multishot consumes ammo directly from Capacity", so a shot costs its projectile count like an
-  ammo-hungry alt-fire (5 rounds at 1.9 multishot = 2.6 shots a magazine, the Incarnon form "pools directly from its magazine").
-  Torid's "+60%" goes on the extra projectiles only, "multiplicative to base damage bonuses like Serration": the average
-  projectile gets 1 + 0.6 x (M - 1) / M. In the Incarnon form "all multishot bonuses are increased by 60%" instead. Miter's
-  version (wiki "+20") has no damage part here, the number's unclear
+- Incarnon perks not modeled: Munitions Grit's multishot-projectile bonus, High Ground / Wiseman's Regard conversions,
+  King's Gambit, Kinetic Killer, "Base Status Chance set to X", plus all utility perks (shown greyed out)
 
 ## Not modeled yet
 
-- Arcanes that aren't stat lines: Secondary Encumber/Surge/Kinship, Melee Retaliation, Longbow Sharpshot treated as additive
-  damage (unverified)
+- Melee: slide attacks (Maiming Strike), the class-specific heavy splits (Nikana heavies being pure bleed,
+  Dagger 250% impact + 250% bleed, ...), combo duration / initial combo / combo count chance, Tennokai, a heavy-attack DPS loop
+  that rebuilds combo between heavies
+- Arcanes that aren't stat lines: Cascadia Empowered (+750 flat per proc), Secondary Encumber/Surge/Kinship/Outburst,
+  Melee Retaliation, Primary Plated Round, Longbow Sharpshot treated as additive damage (unverified). Secondary Enervate and
+  Melee Doughty are in
+- Electricity chain and Blast/Gas AoE on other enemies
 - Glaives: throw rate isn't changed by anything, the single-hit leaderboard shows a stance's average combo hit
-- Abilities: Elemental Sandstorm spreads its procs evenly over the melee's types (the game picks one at random each tick) and
-  doesn't work on enemies Sandstorm can't lift (bosses, some Eximus)
-
-### Bigger, not planned for now
-
-These need something the calc doesn't have yet, so they're parked:
-- A heavy-attack DPS loop that rebuilds combo between heavies, plus combo duration / initial combo / combo count chance / Tennokai
-- Anything that needs more than one enemy: Electricity chains, Blast/Gas spreading, on-death explosions (Acid Shells, Vulcan Blitz)
-- Slide attacks (Maiming Strike, Kinetic Killer): the export only has Stormpath's, the rest would come from the wiki per class
-
-## Arcanes and augments with their own rule (added Nov 2026)
-
-- Primary Plated Round: wiki "Max Damage Bonus = 15 x sqrt(5 x Magazine Size)" (%), "additive to base damage sources such as
-  Serration", off the modded magazine. 25 rounds = +167.7%, 80 = +300%. Full bonus assumed, with a note on the fire rate it needs
-  to last a whole magazine (magazine / 10 s, the wiki's "Ideal Fire Rate")
-- Secondary Outburst: +20% crit chance and crit damage per combo multiplier consumed, in with crit mods ("additive with mods like
-  Pistol Gambit"). Assumed at the full 12x (+240%): it's a Crescendo-build arcane that rides on a maxed combo
-- Cascadia Empowered: an extra hit per status proc worth 750 of the proc's type x faction x (1 + vulnerability) x the target's
-  armor/weakness for that type. "Not affected by damage, element, physical ... or critical mods", "Affected by faction mods and
-  bonuses once", "Not affected by weakspots". It's a row next to the DoTs, procs/s = every proc that lands
-- Meticulous Aim: "-45% Bodyshot Damage" multiplies everything off the head, and DoTs per the wiki: "always applied twice to
-  Slash, Heat, Toxin, and Blast, but will not apply to Electricity or Gas if they are from a headshot"
-- Ability cards on the Warframe panel now take your own casts as Universal Weapon Bonuses: Vex Armor / Deathbringer (base),
-  Eclipse (multiplier), Nourish (Viral), Empowered Quiver (crit damage), Arcane Avenger and Crepuscular from the frame's arcanes
-- Exalted Blade's energy waves: "Energy Wave" (the swing's damage, follows the stance), "Normal Attack + Energy Wave" (both hits
-  on one target, "considered separate entities and will both deal damage separately") and "Heavy Attack Energy Wave" (heavy base
-  damage, "does not scale off combo counter"). All point blank: waves fall "linearly with distance from 100% to 0% between 0 and 70m"
+- Abilities: the Warframe panel cards don't pick up your own Nourish/Eclipse casts as UWB yet (Data Analysis has them as settings),
+  Elemental Sandstorm spreads its procs evenly over the melee's types (the game picks one at random each tick) and doesn't work on
+  enemies Sandstorm can't lift (bosses, some Eximus)

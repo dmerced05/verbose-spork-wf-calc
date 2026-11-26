@@ -73,7 +73,11 @@ function parsePerkBody(body: string, native: boolean): PerkEffect | null {
     const statOf = (word: string) => (word === 'Critical' ? 'critChance' : 'statusChance')
     return { kind: 'convert', stat: statOf(convert[3]), from: statOf(convert[2]), ratio: percent(convert[1]), max: percent(convert[4]) }
   }
-  // timed genesis buffs whose wiki text has no "Base" (Prolific Perforation, Piercing Stature): I read them as flat after mods
+  // buffs the wiki says add in with status/crit mods (Piercing Stature: "additive to other sources of Status Chance such as
+  // Melee Prowess and Weeping Wounds"): mod-like, so they scale the base like Melee Prowess does
+  const withMods = body.match(/^([+-][\d.]+)% (Critical|Status) Chance, additive with mods$/)
+  if (withMods) return { kind: 'mod', effect: { kind: 'stat', stat: withMods[2] === 'Critical' ? 'critChance' : 'statusChance', value: percent(withMods[1]) } }
+  // timed genesis buffs whose wiki text has no "Base" (Prolific Perforation): I read them as flat after mods
   const flatChance = body.match(/^([+-][\d.]+)% Flat (Critical|Status) Chance$/)
   if (flatChance) return { kind: 'flat', stat: flatChance[2] === 'Critical' ? 'critChance' : 'statusChance', value: percent(flatChance[1]) }
 

@@ -90,7 +90,7 @@ export function expectedDamage(model: ShotModel, seconds: number): number {
 }
 
 // small seeded RNG (mulberry32) so the range doesn't jump around on every re-render
-function rng(seed: number) {
+export function rng(seed: number) {
   let state = seed >>> 0
   return () => {
     state = (state + 0x6d2b79f5) >>> 0

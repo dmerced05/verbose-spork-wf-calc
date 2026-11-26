@@ -559,10 +559,48 @@ select { max-width: 100%; }
 .drawer-tab.open { border-color: var(--accent); }
 .drawer-caret { color: var(--muted); }
 .drawer-summary { color: var(--muted); font-size: 0.75rem; }
-.drawers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 16px; align-items: start; }
-.drawers.split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.drawer-stack { display: grid; gap: 16px; align-content: start; min-width: 0; }
-@media (max-width: 1000px) { .drawers.split { grid-template-columns: minmax(0, 1fr); } }
+.drawers { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+/* the Target box (design B): enemy card | status tiles | kill numbers, the other debuffs in a row across the bottom.
+   fixed column counts per width so nothing gets squeezed into a sliver */
+.target-box { display: grid; grid-template-columns: 330px minmax(0, 1fr) 300px; gap: 10px 16px; align-items: start; padding: 12px 14px; }
+.target-box h2 { margin: 0; font-size: 1rem; }
+.target-box label { font-size: 0.78rem; color: var(--muted); }
+.target-card, .target-statuses, .target-kill { display: grid; gap: 8px; min-width: 0; align-content: start; }
+.target-pick { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 6px; }
+.target-box .level-row { margin-top: 0; gap: 8px; }
+.target-box .level-input { width: 62px; }
+.tiny-input { width: 46px; padding: 2px 4px; }
+.target-bars { display: grid; gap: 5px; }
+.target-bar { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; font-size: 0.75rem; color: var(--muted); }
+.target-bar > span:nth-child(2) { text-align: right; color: var(--text, #e6e8ec); font-variant-numeric: tabular-nums; }
+.target-bar i { grid-column: 1 / -1; height: 6px; border-radius: 3px; background: #232835; overflow: hidden; }
+.target-bar b { display: block; height: 100%; border-radius: 3px; transition: width 0.2s; }
+.bar-health { background: #ff6b6b; } .bar-shield { background: #6aa8ff; } .bar-armor { background: var(--accent); }
+.target-selects { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.target-selects label, .target-extras label { display: grid; gap: 2px; }
+.target-checks { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.target-box label.inline { display: flex; align-items: center; gap: 5px; }
+.status-pad { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.status-tile { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; min-width: 0; }
+.status-tile.active { border-color: var(--accent); background: rgba(212, 180, 106, 0.06); }
+.status-add { flex: 1; min-width: 0; display: grid; gap: 1px; text-align: left; border: 0; border-radius: 0; background: none; padding: 5px 8px; font-size: 0.78rem; text-transform: capitalize; }
+.status-add b { font-size: 1rem; font-variant-numeric: tabular-nums; }
+.status-remove { border: 0; border-left: 1px solid var(--border); border-radius: 0; background: rgba(255, 255, 255, 0.03); width: 26px; padding: 0; color: var(--muted); }
+.status-remove:disabled { opacity: 0.35; cursor: default; }
+.target-kill .kill-table { margin: 0; }
+.target-kill .muted { margin: 0; }
+.target-extras { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: end; gap: 8px 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+.target-extras input[type='number'] { width: 64px; }
+/* narrower: the card on the left runs down two rows, statuses then kill numbers stack beside it */
+@media (max-width: 1180px) {
+  .target-box { grid-template-columns: 320px minmax(0, 1fr); grid-template-areas: 'card statuses' 'card kill' 'extras extras'; }
+  .target-card { grid-area: card; } .target-statuses { grid-area: statuses; } .target-kill { grid-area: kill; } .target-extras { grid-area: extras; }
+}
+@media (max-width: 760px) { .target-box { grid-template-areas: 'card' 'statuses' 'kill' 'extras'; } }
+@media (max-width: 760px) {
+  .target-box { grid-template-columns: minmax(0, 1fr); }
+  .status-pad { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 
 /* Passives and Incarnon evolutions live inside the Weapon panel */
 .panel .panel { margin-top: 14px; padding: 12px; background: rgba(255, 255, 255, 0.025); }
@@ -810,3 +848,85 @@ select { max-width: 100%; }
 /* Copy / Paste loadout code, above the calculator */
 .loadout-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .loadout-code-box { flex: 1 1 320px; min-width: 0; font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem; }
+
+/* Full results (StatsPanel): key stats column on the left, foldable boxes on the right, like PoB's Calcs tab.
+   the panel is an inline-size container, so it falls back to one column when it shares the row with Kill details */
+.results-layout { display: grid; grid-template-columns: minmax(230px, 270px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.key-stats { display: grid; gap: 2px; padding: 2px 12px 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(255, 255, 255, 0.02); }
+.key-group { display: grid; gap: 1px; padding-top: 8px; }
+.key-group + .key-group { border-top: 1px solid var(--border); margin-top: 6px; }
+.key-group-title { font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+.key-stat { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; padding: 2px 4px; margin: 0 -4px; border-radius: 4px; font-size: 0.85rem; }
+.key-label { color: var(--muted); }
+.key-value { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.key-sub { grid-column: 1 / -1; text-align: right; font-size: 0.72rem; color: var(--muted); }
+.key-stat.main .key-label { color: var(--text); font-weight: 600; }
+.key-stat.main .key-value { font-size: 1.35rem; line-height: 1.2; }
+.key-stat.has-breakdown { cursor: help; }
+.key-stat.has-breakdown .key-label { text-decoration: underline dotted rgba(139, 147, 163, 0.6); text-underline-offset: 3px; }
+.key-stat.has-breakdown:hover, .key-stat.has-breakdown:focus-visible { background: rgba(212, 180, 106, 0.08); outline: none; }
+.key-breakdown { display: none; position: absolute; left: calc(100% + 10px); top: -6px; z-index: 30; width: 260px; padding: 8px 10px; background: #0b0d11; border: 1px solid var(--accent); border-radius: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6); font-size: 0.8rem; }
+.key-stat.has-breakdown:hover .key-breakdown, .key-stat.has-breakdown:focus-visible .key-breakdown { display: grid; gap: 2px; }
+.key-breakdown > span { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); }
+.key-breakdown > span > span:last-child { color: var(--text); font-variant-numeric: tabular-nums; }
+.key-breakdown > span.total { border-top: 1px solid var(--border); padding-top: 3px; margin-top: 2px; color: var(--text); }
+.key-breakdown > span.total > span:last-child { color: var(--accent); }
+.result-boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 12px; align-items: start; min-width: 0; }
+.result-boxes .wide { grid-column: 1 / -1; }
+.result-boxes .requirements { margin-top: 0; }
+.result-boxes .requirements ul { display: flex; flex-wrap: wrap; gap: 2px 22px; padding-left: 16px; }
+.unparsed-title { margin-top: 8px !important; color: var(--muted) !important; }
+.result-box { border: 1px solid var(--border); border-radius: 8px; background: rgba(255, 255, 255, 0.02); min-width: 0; }
+.result-box > summary { display: flex; align-items: center; gap: 6px; padding: 7px 12px; cursor: pointer; list-style: none; border-radius: 8px; }
+.result-box > summary::-webkit-details-marker { display: none; }
+.result-box > summary::before { content: '▸'; color: var(--muted); font-size: 0.75rem; transition: transform 0.12s; }
+.result-box[open] > summary::before { transform: rotate(90deg); }
+.result-box[open] > summary { border-bottom: 1px solid var(--border); border-radius: 8px 8px 0 0; }
+.result-box > summary:hover { background: rgba(255, 255, 255, 0.03); }
+.result-box > summary h3 { margin: 0; font-size: 0.85rem; color: var(--text); }
+.result-box-body { padding: 6px 12px 10px; overflow-x: auto; }
+.compact-table { font-size: 0.85rem; }
+.compact-table td, .compact-table th { padding: 3px 0 3px 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.compact-table td:first-child, .compact-table th:first-child { padding-left: 0; text-align: left; white-space: normal; }
+.compact-table th { font-weight: 500; font-size: 0.72rem; color: var(--muted); }
+.info { color: var(--muted); cursor: help; font-size: 0.85rem; }
+.info:hover { color: var(--accent); }
+.share-bar { display: inline-block; width: 48px; height: 6px; margin-right: 6px; border-radius: 3px; background: var(--border); vertical-align: middle; overflow: hidden; }
+.share-bar > span { display: block; height: 100%; background: var(--muted); }
+.dmg-bg-heat { background: #ff8a4c !important; }
+.dmg-bg-cold { background: #7fd3ff !important; }
+.dmg-bg-electricity { background: #b28cff !important; }
+.dmg-bg-toxin { background: #7ee07e !important; }
+.dmg-bg-blast { background: #ffb347 !important; }
+.dmg-bg-corrosive { background: #c8e06a !important; }
+.dmg-bg-gas { background: #9fd9a8 !important; }
+.dmg-bg-magnetic { background: #6aa8ff !important; }
+.dmg-bg-radiation { background: #ffe066 !important; }
+.dmg-bg-viral { background: #ff6fa8 !important; }
+.dmg-bg-impact { background: #c9c9c9 !important; }
+.dmg-bg-puncture { background: #e0d6a8 !important; }
+.dmg-bg-slash { background: #ff7a7a !important; }
+.dmg-bg-void { background: #f3e7a0 !important; }
+.dmg-bg-tau { background: #c8b6ff !important; }
+@container (max-width: 820px) {
+  .results-layout { grid-template-columns: minmax(0, 1fr); }
+  .key-stats { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); column-gap: 16px; }
+  .key-group + .key-group { border-top: 0; margin-top: 0; }
+  .key-breakdown { left: 0; top: calc(100% + 4px); }
+}
+/* long option text (stance combos) can't widen the page on a phone */
+.panel select { max-width: 100%; min-width: 0; }
+.melee-row > label { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+
+/* damage simulator: a floating centered box over the calculator */
+.fight-dialog { width: min(920px, calc(100vw - 24px)); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel); color: inherit;
+  border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.fight-dialog::backdrop { background: rgb(0 0 0 / 0.6); }
+.fight-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fight-head h2 { margin: 0; font-size: 1.15rem; color: var(--accent); }
+.fight-controls { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; margin: 10px 0 4px; }
+.fight-controls label { display: grid; gap: 3px; font-size: 0.8rem; color: var(--muted); }
+.fight-controls label.check { display: flex; align-items: center; gap: 6px; }
+.fight-controls input[type='number'] { width: 70px; }
+.fight-notes { font-size: 0.75rem; margin-top: 10px; }
+.tag-experimental { font-size: 0.7rem; font-weight: normal; border: 1px solid var(--accent); color: var(--accent); border-radius: 10px; padding: 1px 8px; margin-left: 6px; vertical-align: 2px; }

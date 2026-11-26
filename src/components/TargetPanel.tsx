@@ -5,9 +5,9 @@ import type { Enemy, StatusMode, TargetLayer, TargetSettings } from '../types'
 import { SearchSelect } from './SearchSelect'
 
 // the export calls them "Infestation", the U36 table calls them "Infested"
-const PRESET_FACTION: Record<string, string> = { Infestation: 'Infested' }
-const enemyOptions = enemies.map((enemy) => ({ id: enemy.uniqueName, label: `${enemy.name} (${enemy.faction})` }))
-const MAX_SLIDER_LEVEL = 400
+export const PRESET_FACTION: Record<string, string> = { Infestation: 'Infested' }
+export const enemyOptions = enemies.map((enemy) => ({ id: enemy.uniqueName, label: `${enemy.name} (${enemy.faction})` }))
+export const MAX_SLIDER_LEVEL = 400
 
 export interface ScaledEnemy {
   enemy: Enemy
@@ -33,7 +33,7 @@ export function resolveEnemy(target: TargetSettings): ScaledEnemy | null {
 }
 
 // picking a faction puts head multiplier + headcrit back on auto (they follow the faction in the calc)
-const AUTO_HEAD = { headshotMultiplier: null, headcrit: null }
+export const AUTO_HEAD = { headshotMultiplier: null, headcrit: null }
 
 export const resolveArmor = (target: TargetSettings): number => resolveEnemy(target)?.armor ?? target.manualArmor
 
@@ -49,7 +49,7 @@ const presetsAt = (spawnLevel: number): TargetPreset[] => ([
   { label: `Juggernaut ${spawnLevel}`, title: 'Steel Path Juggernaut: armor, and status immune',
     target: { enemyId: '/Lotus/Types/Enemies/Infested/AiWeek/Quadrupeds/JuggernautAvatar', faction: 'Infested', baseLevel: 15, statusMode: 'immune' as StatusMode } },
 ] as TargetPreset[]).map((preset) => ({ ...preset, target: { ...preset.target, level: spawnLevel - STEEL_PATH_LEVEL_BONUS, steelPath: true, layer: 'health' as const, ...AUTO_HEAD } }))
-const TARGET_PRESETS = [...presetsAt(9999), ...presetsAt(250)]
+export const TARGET_PRESETS = [...presetsAt(9999), ...presetsAt(250)]
 
 interface Props {
   target: TargetSettings

@@ -9,6 +9,18 @@ const GRID = '#2c2c2a'
 const AXIS = '#383835'
 const INK = '#898781'
 const PAD = { top: 24, right: 16, bottom: 34, left: 52 }
+// shaded x ranges behind a chart (the damage simulator's reloads, Incarnon refills, form switches, normal-form stretches)
+type Shade = { start: number; end: number; kind?: string }
+const SHADE_STYLE: Record<string, { name: string; color: string; opacity: number }> = {
+  reload: { name: 'Reloading', color: '#8b93a3', opacity: 0.14 },
+  refill: { name: 'Refilling the Incarnon form (idle)', color: '#8b93a3', opacity: 0.14 },
+  switch: { name: 'Switching forms', color: '#c8b6ff', opacity: 0.2 },
+  normal: { name: 'Normal form (refilling)', color: '#199e70', opacity: 0.12 },
+}
+const shadeStyle = (shade: Shade) => SHADE_STYLE[shade.kind ?? 'reload'] ?? SHADE_STYLE.reload
+const shadeLegend = (shades: Shade[]) => [...new Set(shades.map((shade) => shade.kind ?? 'reload'))].map((kind) => ({ name: SHADE_STYLE[kind]?.name ?? kind, color: SHADE_STYLE[kind]?.color ?? '#8b93a3' }))
+// what's going on at x: the last band that covers it (a reload inside a normal-form stretch wins)
+const shadeAt = (shades: Shade[], at: number) => [...shades].reverse().find((shade) => at >= shade.start && at < shade.end)
 
 // charts are drawn at the container's real width so text stays 11px on a phone too
 function useWidth() {
@@ -81,8 +93,8 @@ function Axes({ width, height, xTicks, yTicks, xScale, yScale, xFmt, yFmt, xLabe
 }
 
 // ---- histogram: counts per bin, bins are [start, end) ----
-export function Histogram({ values, binSize, max, fmt, title, xLabel, height = 200, color = BAR }: {
-  values: number[]; binSize: number; max: number; fmt: (v: number) => string; title?: string; xLabel?: string; height?: number; color?: string
+export function Histogram({ values, binSize, max, fmt, title, xLabel, height = 200, color = BAR, unit = 'weapons' }: {
+  values: number[]; binSize: number; max: number; fmt: (v: number) => string; title?: string; xLabel?: string; height?: number; color?: string; unit?: string
 }) {
   const binCount = Math.ceil(max / binSize)
   const counts = Array.from({ length: binCount }, () => 0)
@@ -102,7 +114,7 @@ export function Histogram({ values, binSize, max, fmt, title, xLabel, height = 2
               const y = yScale(count)
               const range = index === binCount - 1 ? `${fmt(index * binSize)}+` : `${fmt(index * binSize)}–${fmt((index + 1) * binSize)}`
               return (
-                <g key={index} onMouseMove={(event) => setTip({ x: event.nativeEvent.offsetX, y: event.nativeEvent.offsetY, body: <><b>{range}</b><br />{count} weapons</> })}>
+                <g key={index} onMouseMove={(event) => setTip({ x: event.nativeEvent.offsetX, y: event.nativeEvent.offsetY, body: <><b>{range}</b><br />{count} {unit}</> })}>
                   <rect x={x} y={PAD.top} width={Math.max(1, barWidth - 2)} height={height - PAD.top - PAD.bottom} fill="transparent" />
                   {count > 0 && <path d={roundedTop(x, y, Math.max(1, barWidth - 2), height - PAD.bottom - y)} fill={color} />}
                 </g>
@@ -157,16 +169,18 @@ export function Scatter({ series, xFmt, yFmt, xMax, yMax, logY, title, xLabel, y
 }
 
 // ---- lines over a shared x (numbers), crosshair + tooltip at the nearest x ----
-export function Lines({ x, series, xFmt, yFmt, title, xLabel, yLabel, note, height = 260, yMin = 0, xTickLabels }: {
-  x: number[]; series: { name: string; color: string; values: (number | null)[]; dashed?: boolean }[]; xFmt: (v: number) => string; yFmt: (v: number) => string
+export function Lines({ x, series, xFmt, yFmt, title, xLabel, yLabel, note, height = 260, yMin = 0, xTickLabels, shades = [] }: {
+  // band: a shaded low-high range behind the line (the damage simulator's 10-90% runs)
+  x: number[]; series: { name: string; color: string; values: (number | null)[]; dashed?: boolean; band?: { low: number[]; high: number[] } }[]; xFmt: (v: number) => string; yFmt: (v: number) => string
   title?: string; xLabel?: string; yLabel?: string; note?: ReactNode; height?: number; yMin?: number; xTickLabels?: boolean
+  shades?: Shade[] // x ranges shaded grey behind the lines (the damage simulator's reloads)
 }) {
   const [hover, setHover] = useState<number | null>(null)
   const xLow = Math.min(...x)
   const xTop = Math.max(...x)
-  const yTop = Math.max(...series.flatMap((one) => one.values.filter((value): value is number => value !== null)))
+  const yTop = Math.max(...series.flatMap((one) => [...one.values.filter((value): value is number => value !== null), ...(one.band?.high ?? [])]))
   return (
-    <Shell title={title} height={height} legend={series} note={note}>
+    <Shell title={title} height={height} legend={[...series, ...shadeLegend(shades)]} note={note}>
       {(width, setTip) => {
         const xScale = (value: number) => PAD.left + ((value - xLow) / (xTop - xLow || 1)) * (width - PAD.left - PAD.right)
         const yScale = (value: number) => height - PAD.bottom - ((value - yMin) / (yTop - yMin || 1)) * (height - PAD.top - PAD.bottom)
@@ -176,14 +190,19 @@ export function Lines({ x, series, xFmt, yFmt, title, xLabel, yLabel, note, heig
           let nearest = 0
           x.forEach((value, index) => { if (Math.abs(xScale(value) - mouseX) < Math.abs(xScale(x[nearest]) - mouseX)) nearest = index })
           setHover(nearest)
-          setTip({ x: xScale(x[nearest]), y: event.nativeEvent.offsetY, body: <><b>{xFmt(x[nearest])}</b>{series.map((one) => (
+          setTip({ x: xScale(x[nearest]), y: event.nativeEvent.offsetY, body: <><b>{xFmt(x[nearest])}</b>{shadeAt(shades, x[nearest]) && <div>{shadeStyle(shadeAt(shades, x[nearest])!).name}</div>}{series.map((one) => (
             <div key={one.name}><i className="swatch" style={{ background: one.color }} />{one.name}: {one.values[nearest] === null ? '–' : yFmt(one.values[nearest]!)}</div>))}</> })
         }
         return (
           <>
             <Axes width={width} height={height} xTicks={xTickLabels ? x : ticks(xLow, xTop, 6)} yTicks={ticks(yMin, yTop, 5)} xScale={xScale} yScale={yScale}
               xFmt={xFmt} yFmt={yFmt} xLabel={xLabel} yLabel={yLabel} />
+            <ShadeBands shades={shades} from={xLow} to={xTop} xScale={xScale} top={PAD.top} bottom={height - PAD.bottom} />
             {hover !== null && <line x1={xScale(x[hover])} x2={xScale(x[hover])} y1={PAD.top} y2={height - PAD.bottom} stroke={AXIS} />}
+            {series.map((one) => one.band && (
+              <path key={`${one.name} band`} fill={one.color} fillOpacity={0.18} stroke="none"
+                d={`${path(one.band.high)}${one.band.low.map((_, index) => `L${xScale(x[one.band!.low.length - 1 - index]).toFixed(1)},${yScale(one.band!.low[one.band!.low.length - 1 - index]).toFixed(1)}`).join('')}Z`} />
+            ))}
             {series.map((one) => <path key={one.name} d={path(one.values)} fill="none" stroke={one.color} strokeWidth={2} strokeDasharray={one.dashed ? '5 4' : undefined} strokeLinejoin="round" />)}
             {hover !== null && series.map((one) => one.values[hover] !== null && (
               <circle key={one.name} cx={xScale(x[hover])} cy={yScale(one.values[hover]!)} r={4} fill={one.color} stroke="#171a21" strokeWidth={2} />))}
@@ -193,6 +212,84 @@ export function Lines({ x, series, xFmt, yFmt, title, xLabel, yLabel, note, heig
         )
       }}
     </Shell>
+  )
+}
+
+// ---- the damage simulator's kill race: enemy HP left with and without the status damage, the gap shaded, proc dots on
+// the real line, and both kill times marked ----
+export function KillRace({ x, withStatus, directOnly, killAt, directKillAt, procs, procColor, xFmt, yFmt, title, note, height = 280, shades = [] }: {
+  x: number[]; withStatus: number[]; directOnly: number[]; killAt: number; directKillAt: number
+  procs: { t: number; type: string; hp: number }[]; procColor: (type: string) => string
+  xFmt: (v: number) => string; yFmt: (v: number) => string; title?: string; note?: ReactNode; height?: number; shades?: Shade[]
+}) {
+  const [hover, setHover] = useState<number | null>(null)
+  const xTop = x[x.length - 1] || 1
+  const yTop = Math.max(...withStatus, ...directOnly, 1)
+  // neutral ink for the real line and gold for the gap, so neither gets mixed up with a damage type's dot color
+  const WITH = '#e6e8ec', DIRECT = SERIES[0], GAP = SERIES[3]
+  const types = [...new Set(procs.map((proc) => proc.type))]
+  const legend = [{ name: 'With status damage', color: WITH }, { name: 'Direct hits only', color: DIRECT }, { name: 'Status damage (gap)', color: GAP }, ...shadeLegend(shades), ...types.map((type) => ({ name: `${type} proc`, color: procColor(type) }))]
+  return (
+    <Shell title={title} height={height} legend={legend} note={note}>
+      {(width, setTip) => {
+        const top = PAD.top + 14 // room for the kill labels
+        const xScale = (value: number) => PAD.left + (value / xTop) * (width - PAD.left - PAD.right)
+        const yScale = (value: number) => height - PAD.bottom - (value / yTop) * (height - top - PAD.bottom)
+        const path = (values: number[]) => values.map((value, index) => `${index ? 'L' : 'M'}${xScale(x[index]).toFixed(1)},${yScale(value).toFixed(1)}`).join('')
+        // the gap between the two lines is the status damage: direct-only on top, the real fight under it
+        const gap = `${path(directOnly)}${withStatus.map((_, k) => { const i = withStatus.length - 1 - k; return `L${xScale(x[i]).toFixed(1)},${yScale(withStatus[i]).toFixed(1)}` }).join('')}Z`
+        // one dot per status type per 3 px, a 1 s kill can have thousands of procs
+        const seen = new Set<string>()
+        const dots = procs.filter((proc) => { if (proc.t > xTop) return false; const key = `${proc.type}|${Math.round(xScale(proc.t) / 3)}`; if (seen.has(key)) return false; seen.add(key); return true })
+        const marker = (at: number, label: string, color: string, row: number) => Number.isFinite(at) && at <= xTop && (
+          <g fontSize={11}>
+            <line x1={xScale(at)} x2={xScale(at)} y1={top - 2} y2={height - PAD.bottom} stroke={color} strokeDasharray="4 3" />
+            <text x={xScale(at)} y={PAD.top - 2 + row * 12} textAnchor={xScale(at) > width - 120 ? 'end' : 'middle'} fill="#e6e8ec">{label}</text>
+          </g>
+        )
+        const onMove = (event: React.MouseEvent) => {
+          const mouseX = event.nativeEvent.offsetX
+          const index = Math.max(0, Math.min(x.length - 1, Math.round(((mouseX - PAD.left) / (width - PAD.left - PAD.right)) * (x.length - 1))))
+          setHover(index)
+          const near = procs.filter((proc) => proc.t <= x[index] && proc.t > (index ? x[index - 1] : -1))
+          const counts = Object.entries(near.reduce((all, proc) => { all[proc.type] = (all[proc.type] ?? 0) + 1; return all }, {} as Record<string, number>))
+          setTip({ x: xScale(x[index]), y: event.nativeEvent.offsetY, body: <>
+            <b>{xFmt(x[index])}</b>{shadeAt(shades, x[index]) && <span> · {shadeStyle(shadeAt(shades, x[index])!).name.toLowerCase()}</span>}
+            <div><i className="swatch" style={{ background: WITH }} />With status: {yFmt(withStatus[index])} left</div>
+            <div><i className="swatch" style={{ background: DIRECT }} />Direct only: {yFmt(directOnly[index])} left</div>
+            <div>Status damage so far: {yFmt(Math.max(0, directOnly[index] - withStatus[index]))}</div>
+            {counts.length > 0 && <div>Procs here: {counts.map(([type, count]) => `${count} ${type}`).join(', ')}</div>}
+          </> })
+        }
+        return (
+          <>
+            <Axes width={width} height={height} xTicks={ticks(0, xTop, 6)} yTicks={ticks(0, yTop, 5)} xScale={xScale} yScale={yScale} xFmt={xFmt} yFmt={yFmt} xLabel="seconds" />
+            <ShadeBands shades={shades} from={0} to={xTop} xScale={xScale} top={top} bottom={height - PAD.bottom} />
+            <path d={gap} fill={GAP} fillOpacity={0.3} stroke="none" />
+            {hover !== null && <line x1={xScale(x[hover])} x2={xScale(x[hover])} y1={top} y2={height - PAD.bottom} stroke={AXIS} />}
+            <path d={path(directOnly)} fill="none" stroke={DIRECT} strokeWidth={2} strokeDasharray="5 4" strokeLinejoin="round" />
+            <path d={path(withStatus)} fill="none" stroke={WITH} strokeWidth={2} strokeLinejoin="round" />
+            {dots.map((proc, index) => <circle key={index} cx={xScale(proc.t)} cy={yScale(proc.hp)} r={3.5} fill={procColor(proc.type)} stroke="#171a21" strokeWidth={1.5} />)}
+            {marker(killAt, `kill ${xFmt(killAt)}`, WITH, 0)}
+            {marker(directKillAt, `direct only ${xFmt(directKillAt)}`, DIRECT, Number.isFinite(killAt) && Math.abs(xScale(directKillAt) - xScale(killAt)) < 110 ? 1 : 0)}
+            <rect x={PAD.left} y={top} width={width - PAD.left - PAD.right} height={height - top - PAD.bottom} fill="transparent" onMouseMove={onMove} onMouseLeave={() => setHover(null)} />
+          </>
+        )
+      }}
+    </Shell>
+  )
+}
+
+// grey bands behind a chart for x ranges like reloads, clipped to what's on the axis
+function ShadeBands({ shades, from, to, xScale, top, bottom }: { shades: Shade[]; from: number; to: number; xScale: (v: number) => number; top: number; bottom: number }) {
+  return (
+    <g aria-hidden="true">
+      {shades.filter((shade) => shade.end > from && shade.start < to).map((shade) => {
+        const left = xScale(Math.max(from, shade.start))
+        const style = shadeStyle(shade)
+        return <rect key={`${shade.kind}${shade.start}`} x={left} y={top} width={Math.max(1, xScale(Math.min(to, shade.end)) - left)} height={bottom - top} fill={style.color} fillOpacity={style.opacity} />
+      })}
+    </g>
   )
 }
 

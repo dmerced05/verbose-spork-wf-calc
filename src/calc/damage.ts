@@ -117,6 +117,15 @@ export interface HitBreakdown {
   critNormal: number
   critHit: number
   attrition: number
+  // Melee Doughty's extra crit damage on the Puncture part of the hit, per crit view (0 without it), so the formula adds up
+  doughtyExtra: { average: number; normal: number; crit: number }
+}
+
+// Melee Doughty, for the readouts: crit multiplier only reports the weapon's own k, the Puncture part crits at k + bonus
+export interface DoughtyReport {
+  punctureStatusChance: number // status chance x Puncture's share of the proc weighting
+  bonus: number // +Nx crit multiplier, rounded to 0.1, capped at 50
+  punctureCritMultiplier: number // k + bonus
 }
 
 export interface CalcResult {
@@ -125,6 +134,7 @@ export interface CalcResult {
   critChance: number
   critMultiplier: number
   critTier: number // 0 = can't crit, 1 = yellow, 2 = orange, 3+ = red
+  doughty: DoughtyReport | null // Melee Doughty equipped (critMultiplier above leaves its bonus out)
   statusChance: number
   multishot: number
   multishotLocked: boolean
@@ -146,7 +156,7 @@ export interface CalcResult {
   attackTotal: number // one attack: every pellet/duplicate + the full DoT of its procs
   // an Incarnon form's whole battery: shots in it, time to fire them all, the damage they do (DoTs included), and the refill
   // (weak point hits + swaps) before the next one. null for anything that isn't a charged Incarnon form
-  battery: { rounds: number; shots: number; seconds: number; damage: number; refillSeconds: number | null } | null
+  battery: { rounds: number; shots: number; seconds: number; damage: number; refillSeconds: number | null; fillSeconds: number | null } | null // fillSeconds: the refill without the form switches (the damage simulator's cycle mode)
   duplicateStrikes: number // Melee Duplicate: average strikes per attack (1 without it)
   burstDps: number
   procsPerSecond: number
@@ -164,6 +174,10 @@ export interface CalcResult {
   damageInWindow: (seconds: number) => number // expected damage in the first `seconds`
   simulateWindows: (windows: number[], runs?: number) => DamageRange[] // Monte Carlo range (crit/status rolls)
   shotModel: ShotModel
+  // every status this attack lands, procs per pellet (shotModel.dots only carries the DoTs), and how much Status Duration
+  // stretches each one. the damage simulator (fight.ts) uses these to put stacks on the enemy
+  procsPerPellet: Record<string, number>
+  statusDurationScale: Record<string, number>
   fireRateLocked: boolean
   passives: string[] // names of the passives that are on for this attack
   abilities: string[] // Warframe abilities that apply to this weapon
@@ -424,6 +438,11 @@ function combineParts(results: CalcResult[], names: string[]): CalcResult {
     sustainedDps: add((result) => result.sustainedDps),
     timeToKill: null,
     partShotModels: results.map((result) => result.shotModel),
+    // procs per main-part pellet, every part's added in (the sim fires the parts together on the main part's shots)
+    procsPerPellet: results.reduce((total, result) => {
+      for (const [damageType, perPellet] of Object.entries(result.procsPerPellet)) total[damageType] = (total[damageType] ?? 0) + perPellet * scale(result)
+      return total
+    }, {} as Record<string, number>),
     steadyStateDps: add((result) => result.steadyStateDps),
     damageInWindow: (seconds: number) => sum(results.map((result) => result.damageInWindow(seconds))),
     // luck ranges added part by part, so the spread comes out a bit wider than one roll of the whole shot would be
@@ -1315,14 +1334,26 @@ function calculateOnce({
   if (critPerPunctureStatus > 0) {
     requirements.push(`Melee Doughty: ${Math.round(punctureStatusChance * 1000) / 10}% Puncture status chance -> +${doughtyBonus}x crit multiplier on the Puncture part of the hit only`)
   }
+  const doughtyExtra = {
+    normal: puncturePart * Math.floor(Math.max(0, critChance)) * doughtyBonus,
+    crit: puncturePart * Math.ceil(Math.max(0, critChance)) * doughtyBonus,
+    average: puncturePart * Math.max(0, critChance) * (1 - superCritShare) * doughtyBonus,
+  }
   const hit = {
-    normal: vsTargetNoCrit * normalCritMultiplier + puncturePart * Math.floor(Math.max(0, critChance)) * doughtyBonus,
-    crit: vsTargetNoCrit * critHitMultiplier + puncturePart * Math.ceil(Math.max(0, critChance)) * doughtyBonus,
-    average: vsTargetNoCrit * (averageCritMultiplier + attritionBonus) + puncturePart * Math.max(0, critChance) * (1 - superCritShare) * doughtyBonus,
+    normal: vsTargetNoCrit * normalCritMultiplier + doughtyExtra.normal,
+    crit: vsTargetNoCrit * critHitMultiplier + doughtyExtra.crit,
+    average: vsTargetNoCrit * (averageCritMultiplier + attritionBonus) + doughtyExtra.average,
   }
   // Melee Duplicate: "base (yellow) Critical Hits inflict a second instance of damage", the duplicate rerolls crit and
-  // status (wiki). so a crit is worth one more hit and its procs. it's a separate instance, so hit.* stays one hit
-  const strikes = isMelee ? 1 + Math.min(1, critChance) * duplicateOnCritChance : 1
+  // status (wiki). so a yellow crit is worth one more hit and its procs. it's a separate instance, so hit.* stays one hit.
+  // only yellow (tier 1) counts, orange and red don't: under 100% crit that's c of the hits, 100-200% it's the 2 - c that
+  // stay tier 1 (the rest go orange), 200%+ none. the wiki's best crit for it, (3k - 4) / (2k - 2), falls out of this.
+  // hits pushed to a super crit (critOverride) aren't yellow either
+  const yellowShare = (critChance <= 0 ? 0 : critChance < 1 ? critChance : critChance < 2 ? 2 - critChance : 0) * (1 - superCritShare)
+  const strikes = isMelee ? 1 + yellowShare * duplicateOnCritChance : 1
+  if (isMelee && duplicateOnCritChance > 0) {
+    requirements.push(`Melee Duplicate: ${Math.round(yellowShare * 1000) / 10}% of hits are yellow crits -> ${Math.round(strikes * 100) / 100} strikes per attack (orange and red crits don't duplicate)`)
+  }
   const hitsPerAttack = multishot * strikes
   const averageShot = hit.average * hitsPerAttack
   const burstDps = averageShot * fireRate
@@ -1522,6 +1553,7 @@ function calculateOnce({
   // Vasto, "Individual Multishot bullets can build charges"). so a full form takes charges / rounds-per-hit weak point hits,
   // landed at the normal form's own rate: its fire rate (same fire rate mods) x its projectiles, reloads included. every
   // normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits instead), so this is the best case
+  let refillFilling: number | null = null // earning the charges back, switches left out
   const refill = incarnonCharges && attack.incarnonRefill ? (() => {
     const normal = weapon.attacks.find((candidate) => !isIncarnonAttackName(candidate.name) && !candidate.parts && !candidate.heavy)
     if (!normal) return null
@@ -1532,14 +1564,16 @@ function calculateOnce({
     const pullsPerSecond = normalMagazine ? normalMagazine / (normalMagazine / pullRate + normalReloadTime) : pullRate
     const hits = incarnonCharges / attack.incarnonRefill.roundsPerHit / (1 + incarnonChargeBonus)
     const filling = hits / (pullsPerSecond * projectiles)
-    // switching takes a reload both ways: "Mode switching is not instantaneous and has an animation equal to the weapon's
-    // reload speed" (every Genesis page), and "When Incarnon Form ends, the weapon's magazine will be refilled ... as if it were
-    // reloaded" (wiki Incarnon). reload mods don't shorten it: Phenmor's reload perk "Does not affect transition from Incarnon
-    // back to base form" and only reaches the way in "with a well-timed manual reload". in game the swap runs longer than a
-    // plain reload (my call, no source gives a timing), so each swap is 2x the base reload, in and out
-    const switching = 2 * INCARNON_SWAP_RELOADS * (weapon.reloadTime ?? 0)
+    // switching in costs time, getting out doesn't: when the battery runs out the gun drops back to its normal form already
+    // reloaded, no switch (Daniel's call; wiki Incarnon: "When Incarnon Form ends, the weapon's magazine will be refilled ...
+    // as if it were reloaded"). the way in: "Mode switching is not instantaneous and has an animation equal to the weapon's
+    // reload speed" (every Genesis page), and reload mods don't shorten it (Phenmor's reload perk "Does not affect transition
+    // from Incarnon back to base form", only reaching the way in "with a well-timed manual reload"). in game the swap runs
+    // longer than a plain reload (my call, no source gives a timing), so it's 2x the base reload
+    const switching = INCARNON_SWAP_RELOADS * (weapon.reloadTime ?? 0)
     const seconds = filling + switching
-    requirements.push(`Incarnon form refill: ${Math.round(hits)} ${attack.incarnonRefill.directHits ? 'direct' : 'weak point'} hits with the normal form (${(pullsPerSecond * projectiles).toFixed(1)}/s, every normal shot assumed to count) = ${filling.toFixed(1)} s, plus ${switching.toFixed(1)} s switching in and out = ${seconds.toFixed(1)} s per ${incarnonCharges}-round form`)
+    requirements.push(`Incarnon form refill: ${Math.round(hits)} ${attack.incarnonRefill.directHits ? 'direct' : 'weak point'} hits with the normal form (${(pullsPerSecond * projectiles).toFixed(1)}/s, every normal shot assumed to count) = ${filling.toFixed(1)} s, plus ${switching.toFixed(1)} s switching back in = ${seconds.toFixed(1)} s per ${incarnonCharges}-round form`)
+    refillFilling = filling
     return seconds
   })() : null
   const reloadTime = refill ?? normalReload
@@ -1636,6 +1670,7 @@ function calculateOnce({
     critChance,
     critMultiplier,
     critTier: Math.ceil(critChance),
+    doughty: critPerPunctureStatus > 0 ? { punctureStatusChance, bonus: doughtyBonus, punctureCritMultiplier: critMultiplier + doughtyBonus } : null,
     statusChance,
     multishot,
     multishotLocked,
@@ -1661,7 +1696,7 @@ function calculateOnce({
     attackTotal,
     battery: incarnonCharges && shotsPerMagazine ? {
       rounds: incarnonCharges, shots: shotsPerMagazine, seconds: shotsPerMagazine / fireRate,
-      damage: attackTotal * shotsPerMagazine, refillSeconds: reloadTime,
+      damage: attackTotal * shotsPerMagazine, refillSeconds: reloadTime, fillSeconds: refillFilling,
     } : null,
     duplicateStrikes: strikes,
     burstDps,
@@ -1679,6 +1714,8 @@ function calculateOnce({
     damageInWindow,
     simulateWindows,
     shotModel,
+    procsPerPellet: Object.fromEntries(procTypes.map((damageType) => [damageType, pelletsPerSecondForModel > 0 ? procRates[damageType] / pelletsPerSecondForModel : 0])),
+    statusDurationScale: Object.fromEntries(procTypes.map((damageType) => [damageType, 1 + bonus.statusDuration + (statusDurationByType['*'] ?? 0) + (statusDurationByType[damageType] ?? 0)])),
     fireRateLocked,
     passives: activePassives,
     abilities: activeAbilities,
@@ -1710,7 +1747,7 @@ function calculateOnce({
         .map(([damageType, raw]) => ({ damageType, raw, parts: typeParts[damageType] ?? [] })).sort((a, b) => b.raw - a.raw),
       extraHit: extraHitNoCrit, faction: factionMultiplier, vulnerability, headshot: headshotFactor,
       critChance, critMultiplier, critAverage: averageCritMultiplier, critNormal: normalCritMultiplier, critHit: critHitMultiplier,
-      attrition: attritionBonus,
+      attrition: attritionBonus, doughtyExtra,
     },
   }
 }

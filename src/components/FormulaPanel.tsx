@@ -103,8 +103,10 @@ export function FormulaPanel({ result }: Props) {
   // ---- one damage instance ----
   const typeSum = b.types.map((row) => `${num(row.share)}\\cdot ${num(row.type)}_{${label(row.damageType)}}`).join(' + ')
   const sumValue = b.types.reduce((total, row) => total + row.share * row.type, 0)
+  // Melee Doughty's extra crit damage on the Puncture part rides on top (D), so H matches the hit
+  const doughtyExtra = b.doughtyExtra[critView] * (beams ? result.beamMerge : 1)
   const instanceValue = (b.baseDamage * b.damageScale * b.heavyCombo * sumValue + b.extraHit) * b.faction * (1 + b.vulnerability) * b.headshot * crit.value
-    * (beams ? result.beamMerge : 1)
+    * (beams ? result.beamMerge : 1) + doughtyExtra
   const hitSymbols = [
     'H = \\Big(\\underbrace{B}_{' + label('base') + '}\\cdot\\underbrace{\\big[' + scaleSymbol + '\\big]}_{' + label('damage scale') + '}',
     b.heavyCombo !== 1 ? '\\cdot \\underbrace{C}_{' + label('combo') + '}' : '',
@@ -112,6 +114,7 @@ export function FormulaPanel({ result }: Props) {
     b.extraHit > 0 ? ' + X' : '',
     '\\Big)\\cdot \\underbrace{F}_{' + label('faction') + '}\\cdot (1+V)\\cdot \\underbrace{W}_{' + label('headshot') + '}\\cdot K',
     beams ? '\\cdot \\underbrace{b}_{' + label('beams') + '}' : '',
+    doughtyExtra > 0 ? ' + \\underbrace{D}_{' + label('Doughty') + '}' : '',
     ',\\quad ' + crit.symbol,
   ].join('')
   const hitNumbers = [
@@ -121,10 +124,12 @@ export function FormulaPanel({ result }: Props) {
     b.extraHit > 0 ? ` + ${num(b.extraHit)}` : '',
     `\\Big)\\cdot ${num(b.faction)}\\cdot (1+${num(b.vulnerability)})\\cdot ${num(b.headshot)}\\cdot ${num(crit.value)}`,
     beams ? `\\cdot ${num(result.beamMerge)}` : '',
+    doughtyExtra > 0 ? ` + ${num(doughtyExtra)}` : '',
     ` = \\mathbf{${num(instanceValue)}}`,
   ].join('')
   const hitNote = `Quantized shares q (each type rounded to 1/32 of base). T = faction weakness × armor × Viral/Magnetic for that type. `
     + `Crit: ${crit.name}, c = ${(b.critChance * 100).toFixed(1)}%, k = ${b.critMultiplier.toFixed(2)}×.`
+    + (result.doughty ? ` Melee Doughty: the Puncture part crits at k + ${result.doughty.bonus.toFixed(1)} (${(result.doughty.punctureStatusChance * 100).toFixed(1)}% Puncture status chance), the + ${num(doughtyExtra)} at the end.` : '')
     + (b.coMode === 'add' ? ' This weapon adds CO outside the damage mods.' : b.coMode === 'multiply' ? ' This weapon multiplies CO with the damage mods.' : '')
 
   // ---- where each type's share and target multiplier come from ----

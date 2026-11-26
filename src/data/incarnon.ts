@@ -827,8 +827,8 @@ IV | Elemental Balance | ALL | +20% Base Status Chance [Normal only]; +40% Base 
     lines: `
 II | Weighted Impetus | Destreza | +50 Base Damage; On Heavy Attack Kill: +100% Heavy Attack Wind Up Speed
 II | Weighted Impetus | Destreza Prime | +40 Base Damage; On Heavy Attack Kill: +100% Heavy Attack Wind Up Speed
-II | Piercing Stature | Destreza | +50 Base Damage; On Puncture Status Effect: +20% Flat Status Chance; Stacks up to 5x.
-II | Piercing Stature | Destreza Prime | +40 Base Damage; On Puncture Status Effect: +20% Flat Status Chance; Stacks up to 5x.
+II | Piercing Stature | Destreza | +50 Base Damage; On Puncture Status Effect: +20% Status Chance, additive with mods; Stacks up to 5x.
+II | Piercing Stature | Destreza Prime | +40 Base Damage; On Puncture Status Effect: +20% Status Chance, additive with mods; Stacks up to 5x.
 III | Orokin Reach | ALL | +1 Range
 III | Overhand | ALL | Heavy Attack Efficiency fixed at 30%
 III | Adept Reflexes | ALL | +20 Initial Combo

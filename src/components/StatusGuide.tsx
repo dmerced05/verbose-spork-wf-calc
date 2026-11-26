@@ -1,5 +1,6 @@
 // the Status Guide tab: how each status effect's damage scales and what it does for a mission, with the numbers the
 // calculator uses. everything here is from the wiki (Status_Effect, Damage_over_Time, Damage/Heat_Damage, Oct 2026)
+import { Info } from './Tip'
 import { useState } from 'react'
 
 interface DotStatus {
@@ -85,11 +86,13 @@ export function StatusGuide() {
   return (
     <div className="status-guide">
       <section className="panel">
-        <h2>Status guide</h2>
-        <p className="muted">
-          How each status effect's damage scales, and what it does for a whole mission. Numbers are from the wiki's Status Effect, Damage over Time and
-          Heat Damage pages, and they're the ones the calculator uses.
-        </p>
+        <h2>
+          Status guide
+          <Info>
+            How each status effect's damage scales, and what it does for a whole mission. Numbers are from the wiki's Status Effect, Damage over Time and
+            Heat Damage pages, and they're the ones the calculator uses.
+          </Info>
+        </h2>
         <nav className="sg-jump">
           {/* buttons, not #links: the URL hash is the tab, so a #section link would bounce back to the calculator */}
           {SECTIONS.map((section) => (

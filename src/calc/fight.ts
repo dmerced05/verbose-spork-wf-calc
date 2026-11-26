@@ -2,7 +2,8 @@
 // health, status stacks, Heat's armor strip) and every pellet and DoT tick is priced by calculate() against that state at
 // that moment, so damage.ts stays the only damage math. prices are cached per state, a fight only visits a few dozen.
 // runs are seeded (seed + run index) so the same setup gives the same fight every time
-import { INCARNON_SWAP_RELOADS, calculate, type CalcInput, type CalcResult } from './damage'
+import { HOT_SHOT, calculate, type CalcInput, type CalcResult } from './damage'
+import { arcanesById } from '../data'
 import { isIncarnonAttackName } from './incarnonForm'
 import { rng, shotTimes, type ShotModel } from './simulate'
 import type { TargetLayer } from '../types'
@@ -58,6 +59,9 @@ export interface FightSetup {
   // experimental, Incarnon forms only: instead of sitting idle while the form refills, switch out, fire the normal form for the
   // refill time (its hits do damage), switch back in. never used by the leaderboard (see incarnonCycle)
   cycle?: IncarnonCycle
+  // Arcane Hot Shot on the Warframe: 'max' = its stacks as the Warframe panel has them (max by default, your abilities keep it
+  // up), 'weapon' = stacks only from this weapon's own Heat inflictions in the fight (experimental, see HOT_SHOT_* below)
+  hotShot?: 'max' | 'weapon'
 }
 export interface IncarnonCycle { normalInput: CalcInput; swapSeconds: number; fillSeconds: number }
 export type ShadeKind = 'reload' | 'refill' | 'switch' | 'normal'
@@ -90,6 +94,7 @@ export interface FightSummary {
   // the median run (same seed) with and without its DoTs: total enemy HP left on the sample grid, and where every proc landed
   race: { withStatus: number[]; directOnly: number[]; killAt: number; directKillAt: number; statusShare: number; procs: ProcMark[] }
   states: number // prices worked out
+  hotShotPeak: number | null // weapon procs mode: the most Hot Shot stacks reached, median over runs
 }
 
 interface Priced {
@@ -153,8 +158,8 @@ export function makePricer(input: CalcInput, frozen: boolean) {
   const base = input.debuffs
   return {
     get size() { return cache.size },
-    price(layer: TargetLayer, head: boolean, stacks: Record<string, number>, heatStrip: number, overguardUp: boolean): Priced {
-      const key = `${layer}|${head ? 1 : 0}|${heatStrip}|${overguardUp ? 1 : 0}|${Object.entries(stacks).filter(([, n]) => n > 0).map(([type, n]) => `${type}${n}`).sort().join(',')}`
+    price(layer: TargetLayer, head: boolean, stacks: Record<string, number>, heatStrip: number, overguardUp: boolean, hotShotStacks: number | null = null): Priced {
+      const key = `${layer}|${head ? 1 : 0}|${heatStrip}|${overguardUp ? 1 : 0}|${hotShotStacks ?? ''}|${Object.entries(stacks).filter(([, n]) => n > 0).map(([type, n]) => `${type}${n}`).sort().join(',')}`
       let priced = cache.get(key)
       if (priced) return priced
       // my stacks go on top of whatever the Debuffs panel already put there (teammates, abilities), capped at 10
@@ -170,7 +175,8 @@ export function makePricer(input: CalcInput, frozen: boolean) {
         // my guess: Condition Overload counts what's really on the enemy right now, not the build's assumed set
         statusTypeSource: 'debuffs' as const,
       }
-      const result = calculate({ ...input, debuffs, target: { ...input.target, headshot: head, layer } })
+      const buffs = hotShotStacks === null ? input.buffs : withHotShotStacks(input.buffs, hotShotStacks)
+      const result = calculate({ ...input, debuffs, buffs, target: { ...input.target, headshot: head, layer } })
       const model = result.shotModel
       // same tier split as simulateDamage: floor tier vs next tier up, rescaled so the mean stays right
       const critFloor = Math.floor(model.critChance)
@@ -223,6 +229,7 @@ interface RunResult {
   reloads: number
   armorZeroAt: number | null
   minArmor: number
+  hotShotPeak: number // most Hot Shot stacks reached (weapon procs mode)
   samples: { overguard: Float64Array; shield: Float64Array; health: Float64Array; armor: Float64Array }
   dealtBy: (seconds: number) => number // frozen mode: damage dealt before `seconds`
   directDealt: number
@@ -246,6 +253,13 @@ export function runFight(setup: FightSetup, run: number, pricer: ReturnType<type
   const stackTimers: Record<string, number[]> = {} // expiry times, oldest first
   const pending: { type: string; expiry: number }[] = []
   let heatExpiry = -Infinity, heatRampStart = 0, heatRampFrom = 0, heatEndStage = 0, heatChain = 0
+  // the Heat stacks of the live chain, grouped by when in the second they tick (1/20 s buckets): one self-rescheduling event per
+  // bucket instead of one per proc, which made a long fight O(procs x seconds) and was most of the run time. each stack still
+  // ticks on (within 0.05 s of) its own clock, so the totals match the expected damage. stack key = label|crit|head|form
+  const HEAT_BUCKETS = 20
+  // from = the bucket tick a stack starts on: a stack that joins just before its bucket's tick waits for the next one
+  type HeatStack = { dot: string; crit: boolean; head: boolean; normal: boolean; count: number; from: number }
+  const heatPool = new Map<number, { nextTick: number; stacks: Map<string, HeatStack> }>()
   const heatStageAt = (t: number) => {
     if (frozen || heatExpiry === -Infinity) return 0
     const k = heatScale
@@ -265,8 +279,41 @@ export function runFight(setup: FightSetup, run: number, pricer: ReturnType<type
   }
   const layerNow = (): FightLayer => (frozen ? startLayer : pools.overguard > 0 ? 'overguard' : pools.shield > 0 ? 'shield' : 'health')
   let firingNormal = false // cycle mode: the shot going off now is the normal form's
-  const priceAt = (t: number, layer: FightLayer, head: boolean, normal = firingNormal) =>
-    (normal && normalPricer ? normalPricer : pricer).price(layer, head, stacksNow(t), HEAT_STAGES[heatStageAt(t)], !frozen && pools.overguard > 0)
+  // the enemy's statuses only change when a shot's procs land, a stack runs out or Heat's strip steps, so the stack list
+  // and the price lookup are reused until one of those happens (rebuilding them per pellet was the next biggest cost)
+  // Arcane Hot Shot from this weapon's own Heat (setup.hotShot 'weapon'): its stacks are part of the enemy-side state here
+  const hotShotLive = setup.hotShot === 'weapon' && hasHotShot(input) && !frozen
+  let hotShotStacks = 0, hotShotExpiry = -Infinity, hotShotPending = 0, hotShotPeak = 0
+  let stateVersion = 0 // bumped when procs land or a Heat chain starts / grows
+  let cachedVersion = -1, validFrom = Infinity, validUntil = -Infinity
+  let cachedStacks: Record<string, number> = {}, cachedStrip = 0
+  const priceCache = new Map<string, Priced>()
+  const nextHeatStep = (t: number) => {
+    if (frozen || heatExpiry === -Infinity) return Infinity
+    const stage = heatStageAt(t)
+    if (t < heatExpiry) return stage < 4 ? Math.min(heatExpiry, heatRampStart + (stage - heatRampFrom + 1) * HEAT_UP_STEP * heatScale) : heatExpiry
+    return stage > 0 ? heatExpiry + (heatEndStage - stage + 1) * HEAT_DOWN_STEP * heatScale : Infinity
+  }
+  const priceAt = (t: number, layer: FightLayer, head: boolean, normal = firingNormal) => {
+    if (cachedVersion !== stateVersion || t < validFrom || t >= validUntil) {
+      cachedStacks = stacksNow(t)
+      cachedStrip = HEAT_STAGES[heatStageAt(t)]
+      let next = nextHeatStep(t)
+      for (const timers of Object.values(stackTimers)) if (timers.length && timers[0] < next) next = timers[0]
+      if (hotShotLive && t < hotShotExpiry && hotShotExpiry < next) next = hotShotExpiry
+      cachedVersion = stateVersion; validFrom = t; validUntil = next
+      priceCache.clear()
+    }
+    const overguardUp = !frozen && pools.overguard > 0
+    const hotShotNow = hotShotLive ? (t < hotShotExpiry ? hotShotStacks : 0) : null
+    const key = `${layer}${head ? 1 : 0}${normal ? 1 : 0}${overguardUp ? 1 : 0}${hotShotNow ?? ''}`
+    let priced = priceCache.get(key)
+    if (!priced) {
+      priced = (normal && normalPricer ? normalPricer : pricer).price(layer, head, cachedStacks, cachedStrip, overguardUp, hotShotNow)
+      priceCache.set(key, priced)
+    }
+    return priced
+  }
 
   let dealtTimes: number[] = [], dealtAmounts: number[] = []
   let directDealt = 0, dotDealt = 0
@@ -331,6 +378,32 @@ export function runFight(setup: FightSetup, run: number, pricer: ReturnType<type
     }
   }
 
+  // one tick of the whole Heat chain: every stack in the pool, priced vs the enemy as it is now
+  const heatTick = (t: number, bucket: number): boolean => {
+    const group = heatPool.get(bucket)
+    if (!group) return false
+    group.nextTick = t + 1
+    // stacks that have started merge into one entry per kind (from = -1), so the list stays short in a long fight
+    for (const [key, stack] of group.stacks) {
+      if (stack.from < 0 || stack.from > t + 1e-9) continue
+      group.stacks.delete(key)
+      const liveKey = key.slice(0, key.lastIndexOf('|')) + '|live'
+      const live = group.stacks.get(liveKey)
+      if (live) live.count += stack.count
+      else group.stacks.set(liveKey, { ...stack, from: -1 })
+    }
+    const stacks = [...group.stacks.values()].filter((stack) => stack.from <= t + 1e-9)
+    const amountFor = (layer: FightLayer) => {
+      let total = 0
+      for (const stack of stacks) {
+        const dot = priceAt(t, layer, stack.head, stack.normal).dots.find((candidate) => candidate.label === stack.dot)
+        if (dot) total += (stack.crit ? dot.crit : dot.normal) * stack.count
+      }
+      return total
+    }
+    return deal(t, amountFor, `heat tick (${stacks.reduce((n, stack) => n + stack.count, 0)} stacks)`, false, 'tick')
+  }
+
   // a DoT tick, priced vs the enemy as it is now. Toxin skips shields but not Overguard (Daniel's call), Overguard takes all of it
   const tick = (event: Timed): boolean => {
     const dotType = event.dot.split(' (')[0]
@@ -356,11 +429,16 @@ export function runFight(setup: FightSetup, run: number, pricer: ReturnType<type
       const event = queue.pop()!
       if (event.t >= cap) return false
       sampleUpTo(event.t)
-      // Heat stacks all die together when the chain runs out (a later chain doesn't bring old stacks back)
-      if (event.heatChain >= 0 && (event.heatChain !== heatChain || event.t > heatExpiry + 1e-9)) continue
+      if (event.heatChain >= 0) {
+        // Heat stacks all die together when the chain runs out (a later chain doesn't bring old stacks back)
+        if (event.heatChain !== heatChain) continue
+        if (event.t > heatExpiry + 1e-9) { heatPool.clear(); continue }
+        if (heatTick(event.t, event.left)) return true
+        queue.push({ ...event, t: event.t + 1, seq: seq++ })
+        continue
+      }
       if (tick(event)) return true
-      if (event.heatChain >= 0) queue.push({ ...event, t: event.t + 1, seq: seq++ })
-      else if (event.left > 1) queue.push({ ...event, t: event.t + 1, left: event.left - 1, seq: seq++ })
+      if (event.left > 1) queue.push({ ...event, t: event.t + 1, left: event.left - 1, seq: seq++ })
     }
     return false
   }
@@ -395,6 +473,7 @@ export function runFight(setup: FightSetup, run: number, pricer: ReturnType<type
         if (deal(time, (layer) => (layer === 'health' ? hitOn('health', 'toxin') : 0), `${label} (Toxin)`, true)) { dead = true; break }
       } else if (deal(time, (layer) => hitOn(layer, 'all'), label, false)) { dead = true; break }
 
+      let heatThisPellet = false // Hot Shot: a hit that inflicts Heat is one stack however many Heat procs it rolls
       const procs = first.procFloor + (random() < first.procUp ? 1 : 0)
       for (let proc = 0; proc < procs; proc++) {
         let pick = random()
@@ -407,6 +486,7 @@ export function runFight(setup: FightSetup, run: number, pricer: ReturnType<type
           pending.push({ type: kind.type, expiry: time + (BASE_DURATION[kind.type] ?? 6) * scale })
         }
         say({ t: time, kind: 'proc', text: kind.type })
+        if (kind.type === 'heat') heatThisPellet = true
         // Cascadia Empowered (wiki): "Creates an extra instance of damage when proccing a status effect", priced per proc by
         // damage.ts (750 x faction x vulnerability x the proc mix's armor/weakness), counted as status damage
         if (first.dots.some((candidate) => candidate.label === 'cascadia')) {
@@ -422,14 +502,30 @@ export function runFight(setup: FightSetup, run: number, pricer: ReturnType<type
         }
         if (dot.refreshes) {
           // "a Heat proc both adds a stack and refreshes the duration of all currently active heat stacks on the target"
-          if (time >= heatExpiry) { heatRampFrom = heatStageAt(time); heatRampStart = time; heatChain++ }
+          if (time >= heatExpiry) { heatRampFrom = heatStageAt(time); heatRampStart = time; heatChain++; heatPool.clear() }
+          stateVersion++ // the strip's schedule moves with the chain
           heatExpiry = Math.max(heatExpiry, time + dot.ticks)
           if (!frozen) heatEndStage = Math.min(4, heatRampFrom + Math.floor((heatExpiry - heatRampStart) / (HEAT_UP_STEP * heatScale) + 1e-9))
-          queue.push({ t: time + dot.firstTickAt, seq: seq++, dot: dot.label, crit, head, left: Infinity, heatChain, normal: firingNormal })
+          const firstTick = time + dot.firstTickAt
+          const bucket = Math.floor((firstTick % 1) * HEAT_BUCKETS) % HEAT_BUCKETS
+          let group = heatPool.get(bucket)
+          if (!group) {
+            // a new bucket's clock starts with its first proc's first tick, then every second while the chain lives
+            group = { nextTick: firstTick, stacks: new Map() }
+            heatPool.set(bucket, group)
+            queue.push({ t: firstTick, seq: seq++, dot: 'heat', crit, head, left: bucket, heatChain, normal: firingNormal })
+          }
+          // first tick on the bucket's clock closest to its own (never a second early)
+          const from = group.nextTick >= firstTick - 0.5 ? group.nextTick : group.nextTick + Math.round(firstTick - group.nextTick)
+          const key = `${dot.label}|${crit ? 1 : 0}|${head ? 1 : 0}|${firingNormal ? 1 : 0}|${from}`
+          const pooled = group.stacks.get(key)
+          if (pooled) pooled.count++
+          else group.stacks.set(key, { dot: dot.label, crit, head, normal: firingNormal, count: 1, from })
         } else {
           queue.push({ t: time + dot.firstTickAt, seq: seq++, dot: dot.label, crit, head, left: dot.ticks, heatChain: -1, normal: firingNormal })
         }
       }
+      if (heatThisPellet) hotShotPending++
     }
     if (dead) break
     // the shot's procs land now: Viral (wiki) "Attacks deal their initial damage before they apply Viral status effects",
@@ -442,7 +538,17 @@ export function runFight(setup: FightSetup, run: number, pricer: ReturnType<type
       timers.push(expiry)
       timers.sort((a, b) => a - b)
     }
+    if (pending.length) stateVersion++
     pending.length = 0
+    // Hot Shot (weapon procs mode): one stack per hit that inflicted Heat ("per infliction of Heat status, not per proc"),
+    // counted from the next shot like the procs themselves, every stack on one 10 s timer the newest one refreshes
+    if (hotShotLive && hotShotPending > 0) {
+      hotShotStacks = Math.min(HOT_SHOT_MAX_STACKS, (time < hotShotExpiry ? hotShotStacks : 0) + hotShotPending)
+      hotShotExpiry = time + HOT_SHOT_SECONDS
+      hotShotPeak = Math.max(hotShotPeak, hotShotStacks)
+      stateVersion++
+    }
+    hotShotPending = 0
   }
   if (!dead) dead = runQueueUntil(cap)
   sampleUpTo(cap)
@@ -459,6 +565,7 @@ export function runFight(setup: FightSetup, run: number, pricer: ReturnType<type
     reloads,
     armorZeroAt,
     minArmor: Number.isFinite(minArmor) ? minArmor : 0,
+    hotShotPeak,
     samples,
     directDealt,
     dotDealt,
@@ -539,8 +646,20 @@ export function simulateFight(setup: FightSetup, onProgress?: (done: number) => 
       : reloadWindows(median.model, setup.seconds, isIncarnonAttackName(setup.input.attack.name) ? 'refill' : 'reload'),
     race: { withStatus: totalHp(median), directOnly: totalHp(medianDirect), killAt: median.killTime, directKillAt: medianDirect.killTime, statusShare: share([median]), procs: median.procs },
     states: pricer.size,
+    hotShotPeak: setup.hotShot === 'weapon' && hasHotShot(setup.input) ? medianOf(results.map((result) => result.hotShotPeak)) : null,
   }
 }
+
+// Arcane Hot Shot (wiki): "Gain 6% weapon Critical Chance for 10s ... Maximum 50x stacks", one 10 s timer for all stacks
+const HOT_SHOT_MAX_STACKS = 50
+const HOT_SHOT_SECONDS = 10
+export const hasHotShot = (input: CalcInput) =>
+  (input.buffs.warframe?.arcanes ?? []).some((slot) => arcanesById.get(slot.arcaneId)?.name === HOT_SHOT)
+// the same Warframe with Hot Shot held at a given stack count (the rest of its arcanes untouched)
+const withHotShotStacks = (buffs: CalcInput['buffs'], stacks: number): CalcInput['buffs'] => buffs.warframe ? {
+  ...buffs,
+  warframe: { ...buffs.warframe, arcanes: (buffs.warframe.arcanes ?? []).map((slot) => (arcanesById.get(slot.arcaneId)?.name === HOT_SHOT ? { ...slot, conditionalStacks: stacks } : slot)) },
+} : buffs
 
 // reload windows on the shot model's clock: after a magazine's last shot comes one shot interval, then the reload
 // (Felarx & co. reload shell by shell, reloadTime already has that in it). on an Incarnon form the "reload" is the whole
@@ -585,13 +704,13 @@ export function cycleSchedule(incarnon: ShotModel, normal: ShotModel, swapSecond
 }
 
 // can this attack run the cycle mode? an Incarnon form with a battery, and the weapon's normal form to fall back on (same
-// pick as damage.ts's refill: the first non-Incarnon attack that isn't merged or a heavy). switching in is
-// INCARNON_SWAP_RELOADS x the base reload, like the refill estimate
+// pick as damage.ts's refill: the first non-Incarnon attack that isn't merged or a heavy). switching in takes what the
+// refill estimate says: one reload of the normal form
 export function incarnonCycle(input: CalcInput, result: CalcResult): IncarnonCycle | null {
-  if (!isIncarnonAttackName(input.attack.name) || result.battery?.fillSeconds == null) return null
+  if (!isIncarnonAttackName(input.attack.name) || result.battery?.fillSeconds == null || result.battery.switchSeconds == null) return null
   const normal = input.weapon.attacks.find((candidate) => !isIncarnonAttackName(candidate.name) && !candidate.parts && !candidate.heavy)
   if (!normal) return null
-  return { normalInput: { ...input, attack: normal }, swapSeconds: INCARNON_SWAP_RELOADS * (input.weapon.reloadTime ?? 0), fillSeconds: result.battery.fillSeconds }
+  return { normalInput: { ...input, attack: normal }, swapSeconds: result.battery.switchSeconds, fillSeconds: result.battery.fillSeconds }
 }
 
 // frozen-target damage by window, for the accuracy checks against expectedDamage / simulateDamage

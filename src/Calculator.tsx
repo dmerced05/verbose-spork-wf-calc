@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Info } from './components/Tip'
 import { STATUS_TYPES, factionLabel, hitsPerComboTier, maxComboFor } from './calc/constants'
 import { calculate } from './calc/damage'
-import { arcanesById, enemies, getCompatibleArcanes, getCompatibleMods, modsById, weapons, weaponsById } from './data'
+import { arcanesById, enemies, getCompatibleArcanes, getCompatibleMods, modsById, warframesById, weapons, weaponsById } from './data'
 import { estimateKill } from './calc/kill'
 import { FightDialog } from './components/FightDialog'
 import { CO_MODE_LABELS, resolveCoBehavior, type CoMode } from './calc/conditionOverload'
@@ -11,6 +12,8 @@ import { TargetBox } from './components/TargetBox'
 import { PassivesPanel } from './components/PassivesPanel'
 import { WarframePanel, type FrameSnapshot } from './components/WarframePanel'
 import { decodeLoadout, encodeLoadout } from './calc/loadoutCode'
+import { addRecent, browserStore, codeFromUrl, readRecent, setUrlCode, type BuildLabel } from './calc/buildStorage'
+import { BuildStorageDialog } from './components/BuildStorageDialog'
 import { BaseStats } from './components/BaseStats'
 import { hasBonusElement, passivesFor, type BonusElement } from './data/passives'
 import { heavyComboFor, type HeavyMode } from './data/heavyAttacks'
@@ -110,9 +113,10 @@ interface CalculatorProps {
   frameToLoad?: { frame: string; nonce: number } | null // just pick this Warframe, no mods or abilities on
   onScenarioChange?: (scenario: CompareScenario) => void
   onRivenChange?: (riven: { weaponId: string; config: RivenConfig }) => void
+  active?: boolean // the Calculator tab is showing: only then does the address bar carry the build (?b=)
 }
 
-export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRivenChange }: CalculatorProps) {
+export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRivenChange, active = true }: CalculatorProps) {
   const [weaponId, setWeaponId] = useState(defaultWeaponId)
   const [attackIndex, setAttackIndex] = useState(0)
   const [slots, setSlots] = useState(emptySlots)
@@ -145,6 +149,13 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
   const [codeNote, setCodeNote] = useState<string | null>(null)
   const [shownCode, setShownCode] = useState<string | null>(null) // the fallback box when the clipboard won't take it
   const [simOpen, setSimOpen] = useState(false) // the damage simulator box
+  // local build storage + build links: the Warframe side bumps frameVersion so the build's code (and the URL) follows it too
+  const [frameVersion, setFrameVersion] = useState(0)
+  const [currentCode, setCurrentCode] = useState<string | null>(null)
+  const [storageOpen, setStorageOpen] = useState(false)
+  const [recentVersion, setRecentVersion] = useState(0)
+  const recordNext = useRef(false) // the next settled code is a load: record it right away
+  const firstCode = useRef<string | null>(null) // the default build the page opened on, not worth recording
 
   // "Load build" on the leaderboard: set the weapon, attack, mods, arcane and perks, and switch the target/debuffs
   // to the leaderboard scenario so the numbers match what the leaderboard showed
@@ -188,6 +199,7 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
       setFrameLoad({ nonce: buildToLoad.nonce, load: 'clear' })
     }
     setLoadedFrom(keepScenario ? null : `${entry.weaponName} (${entry.attack})`)
+    recordNext.current = true
   }, [buildToLoad])
   useEffect(() => {
     if (!frameToLoad) return
@@ -302,26 +314,54 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
 
   // loadout codes. what goes in is the raw state, the same thing the panels themselves hold, so pasting it back is just
   // setting it all again. the weapon must exist; mods/arcanes this version doesn't know are dropped, missing fields get defaults
-  const copyCode = async () => {
-    const setup: CalcSnapshot = {
-      v: 1, weaponId, attackIndex, slots, polarities, hasCatalyst, arcaneSlot, coOverride, incarnonSelection, incarnonStacks,
-      target, debuffs, buffs, passiveStacks, bonusElement, heavyMode, stancePick, rivenConfig, frame: frameSnapshot.current,
-    }
-    const code = encodeLoadout(setup)
+  const currentSetup = (): CalcSnapshot => ({
+    v: 1, weaponId, attackIndex, slots, polarities, hasCatalyst, arcaneSlot, coOverride, incarnonSelection, incarnonStacks,
+    target, debuffs, buffs, passiveStacks, bonusElement, heavyMode, stancePick, rivenConfig, frame: frameSnapshot.current,
+  })
+  // what a stored build shows in the list, made when it's recorded so the list never has to unpack codes
+  const currentLabel = (): BuildLabel => {
+    const current = weaponsById.get(weaponId)!
+    const frameId = frameSnapshot.current?.frameId
+    return { weapon: current.name, attack: current.attacks[attackIndex]?.name ?? '', frame: frameId ? warframesById.get(frameId)?.name ?? null : null }
+  }
+  const remember = (code: string) => {
+    addRecent(browserStore(), code, currentLabel())
+    setRecentVersion((version) => version + 1)
+  }
+  // the clipboard, for codes and links. Safari only lets the click itself write, and packing a code takes a moment, so the
+  // write starts right away with the text as a promise. older browsers without ClipboardItem get the plain write
+  const copyText = async (text: string | Promise<string>, what: string): Promise<boolean> => {
+    const pending = Promise.resolve(text)
     setShownCode(null)
     try {
-      // Safari only lets the click itself write, and packing the code takes a moment, so the write starts right away
-      // with the code as a promise. older browsers without ClipboardItem get the plain write
       if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
-        await navigator.clipboard.write([new ClipboardItem({ 'text/plain': code.then((text) => new Blob([text], { type: 'text/plain' })) })])
+        await navigator.clipboard.write([new ClipboardItem({ 'text/plain': pending.then((value) => new Blob([value], { type: 'text/plain' })) })])
       } else {
-        await navigator.clipboard.writeText(await code)
+        await navigator.clipboard.writeText(await pending)
       }
-      setCodeNote(`Copied (${(await code).length} characters)`)
+      setCodeNote(`${what} copied (${(await pending).length} characters)`)
+      return true
     } catch {
       // clipboard blocked (or not there at all on a plain http:// address): show it to copy by hand
-      setShownCode(await code)
-      setCodeNote('Your browser blocked the clipboard, copy the code from the box')
+      setShownCode(await pending)
+      setCodeNote(`Your browser blocked the clipboard, copy the ${what.toLowerCase()} from the box`)
+      return false
+    }
+  }
+  const copyCode = async () => {
+    const code = encodeLoadout(currentSetup())
+    await copyText(code, 'Loadout code')
+    remember(await code)
+  }
+  // every way in (paste, a link, the storage box) goes through here; the error message when it isn't a usable code
+  const loadCode = async (text: string): Promise<string | null> => {
+    try {
+      applySnapshot((await decodeLoadout(text)) as Partial<CalcSnapshot>)
+      recordNext.current = true
+      return null
+    } catch (error) {
+      setCodeNote((error as Error).message)
+      return (error as Error).message
     }
   }
   const pasteCode = async () => {
@@ -330,12 +370,40 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
     if (!text?.trim().startsWith('VS1.')) text = window.prompt('Paste a loadout code')
     if (!text) return
     setShownCode(null)
-    try {
-      applySnapshot((await decodeLoadout(text)) as Partial<CalcSnapshot>)
-    } catch (error) {
-      setCodeNote((error as Error).message)
-    }
+    await loadCode(text)
   }
+
+  // a build link (?b=<code>) opens straight onto that build
+  useEffect(() => {
+    const linked = codeFromUrl()
+    if (linked) void loadCode(linked)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the current build as a code, re-packed a second after the last change (the Warframe side settles a render or two
+  // after a load, the wait covers that too)
+  useEffect(() => {
+    let stale = false
+    const timer = window.setTimeout(() => {
+      encodeLoadout(currentSetup()).then((code) => { if (!stale) setCurrentCode(code) }).catch(() => {})
+    }, 1000)
+    return () => { stale = true; window.clearTimeout(timer) }
+  }, [weaponId, attackIndex, slots, polarities, hasCatalyst, arcaneSlot, coOverride, incarnonSelection, incarnonStacks, target, debuffs, buffs, passiveStacks, bonusElement, heavyMode, stancePick, rivenConfig, frameVersion]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the address bar follows the build while this tab is showing (replaceState: no history spam), and lets go when it isn't
+  useEffect(() => { setUrlCode(active ? currentCode : null) }, [active, currentCode])
+
+  // recent builds, recorded on their own: a load goes in as soon as it settles, anything else after 10 s without changes
+  // (if it differs from the newest one). the default build the page opened on isn't worth a slot
+  useEffect(() => {
+    if (!currentCode) return
+    if (firstCode.current === null && !recordNext.current) { firstCode.current = currentCode; return }
+    if (recordNext.current) { recordNext.current = false; remember(currentCode); return }
+    if (currentCode === firstCode.current) return
+    const timer = window.setTimeout(() => {
+      if (readRecent(browserStore())[0]?.code !== currentCode) remember(currentCode)
+    }, 10_000)
+    return () => window.clearTimeout(timer)
+  }, [currentCode]) // eslint-disable-line react-hooks/exhaustive-deps
   const applySnapshot = (saved: Partial<CalcSnapshot>) => {
     const loaded = saved.weaponId ? weaponsById.get(saved.weaponId) : undefined
     if (!loaded) throw new Error("That code's weapon isn't in this version's data")
@@ -385,6 +453,7 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
         <button onClick={copyCode} title="The whole setup, weapon and Warframe, as one code on your clipboard">Copy loadout code</button>
         <button onClick={pasteCode} title="Load a setup from a code on your clipboard">Paste loadout code</button>
         <button onClick={() => setSimOpen(true)} title="Fight the target shot by shot, a few hundred times, in a floating box">Damage simulator</button>
+        <button onClick={() => setStorageOpen(true)} title="Your recent and saved builds in this browser, with links to share or bookmark">Local build storage</button>
         {codeNote && <span className="muted-inline" role="status">{codeNote}</span>}
         {shownCode && (
           <input
@@ -393,6 +462,15 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
           />
         )}
       </div>
+      {storageOpen && (
+        <BuildStorageDialog
+          current={currentCode ? { code: currentCode, label: currentLabel() } : null}
+          recentVersion={recentVersion}
+          onLoad={loadCode}
+          onCopy={copyText}
+          onClose={() => setStorageOpen(false)}
+        />
+      )}
       {simOpen && <FightDialog input={{ ...calcInput, target }} enemy={scaledEnemy} onClose={() => setSimOpen(false)} />}
       <div className="layout" onClick={togglePanel}>
         <ResultsBar
@@ -462,7 +540,7 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
                   onChange={(event) => setBuffs({ ...buffs, combo: Number(event.target.value) })}
                 />
                 {usesStance(weapon, attack) && weaponStances.length > 0 && (
-                  <label title="Normal Attack DPS follows a stance combo on repeat: its hits per second and damage multipliers (wiki stance tables, length at 1.0 attack speed)">
+                  <label>
                     Stance combo
                     <select value={stancePick} onChange={(event) => setStancePick(event.target.value)}>
                       <option value="auto">Best combo ({(() => { const best = bestCombo(weapon); return best ? comboLabel(best) : 'none' })()})</option>
@@ -472,22 +550,25 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
                         </option>
                       )))}
                       <option value="none">No stance math (one 100% swing per attack speed)</option>
-                    </select>
+                    </select> <Info>Normal Attack DPS follows a stance combo on repeat: its hits per second and damage multipliers (wiki stance tables, length at 1.0 attack speed)</Info>
                   </label>
                 )}
                 {attack.heavy && attack.heavyMultiplier && heavyComboFor(weapon.name) && (
-                  <label title="This heavy hits more than once. Biggest hit = one damage instance, full heavy = every hit added up">
+                  <label>
                     Heavy attack
                     <select value={heavyMode} onChange={(event) => setHeavyMode(event.target.value as HeavyMode)}>
                       <option value="biggestHit">Biggest hit</option>
                       <option value="fullCombo">Full heavy (all hits)</option>
-                    </select>
+                    </select> <Info>This heavy hits more than once. Biggest hit = one damage instance, full heavy = every hit added up</Info>
                   </label>
                 )}
                 <p className="muted">
-                  Combo multiplies Heavy Attack / Heavy Slam damage and feeds Blood Rush, Weeping Wounds and the Gladiator set
-                  (bonus × (combo − 1)) on every melee attack. Gladiator pieces on your Warframe are in the Warframe panel. Normal swings don't get the damage multiplier.
-                  {attack.heavy && ' Heavies read the combo before spending it.'}
+                  What combo does
+                  <Info>
+                    Combo multiplies Heavy Attack / Heavy Slam damage and feeds Blood Rush, Weeping Wounds and the Gladiator set
+                    (bonus × (combo − 1)) on every melee attack. Gladiator pieces on your Warframe are in the Warframe panel. Normal swings don't get the damage multiplier.
+                    {attack.heavy && ' Heavies read the combo before spending it.'}
+                  </Info>
                 </p>
               </div>
             )}
@@ -577,7 +658,7 @@ export function Calculator({ buildToLoad, frameToLoad, onScenarioChange, onRiven
             isMelee={isMelee} weapon={weapon}
             onWarframeChange={(state, corrosive) => { setWarframeState(state); setWarframeCorrosive(corrosive) }}
             loadRequest={frameLoad}
-            onSnapshot={(snapshot) => { frameSnapshot.current = snapshot }}
+            onSnapshot={(snapshot) => { frameSnapshot.current = snapshot; setFrameVersion((version) => version + 1) }}
             restoreRequest={frameRestore}
             abilityTarget={{
               faction: target.faction, armor: resolveArmor(target),

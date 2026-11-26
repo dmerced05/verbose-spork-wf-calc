@@ -149,9 +149,10 @@ export const ALGORITHMS: Algorithm[] = [
     steps: [
       '1. Mods, weapon arcane and Incarnon, optimized for the peak hit against a level 9,999 Steel Path Heavy Gunner. 2. + headshot (never on AoE, off for melee unless asked).',
       '3. + solo priming: the statuses the build applies itself plus a companion\'s (Diriga stands in for every primer). Companion picked, mods re-optimized for those debuffs, companion picked again on the new build.',
-      '4. + Warframe arcanes and 5. + Archon Shards on "any Warframe" with nothing cast: every Tauforged 5-shard multiset, each with a quick frame mod search, then the best few searched properly.',
+      '4. + Warframe arcanes and 5. + Archon Shards on "any Warframe" with nothing cast: Arcane Hot Shot is left out of that step since it needs abilities inflicting Heat; every Tauforged 5-shard multiset, each with a quick frame mod search, then the best few searched properly.',
       '6. + your Warframe: every frame\'s own modeled abilities (every combination of one option per ability, capped at 400) plus one Helminth subsume, screened at a reference Strength; the shortlist gets a real frame mod build (beam search over 8 slots + aura + exilus, sets placed whole) and the weapon mods re-optimized.',
       '7. + enemy debuffs maxed, 8. + allies: one teammate at a time, the frame that adds the most on top.',
+      'Focus the search (optional): the Compare tab\'s weapon rules (lock mods in or out, the arcane, Incarnon perks) go into every step\'s mod search. Locked Warframe arcanes are always on and the search only fills the free slot. Locking Warframes limits step 6 to those; with one, it also holds the arcanes and shards in steps 4-5, and its best few setups become the paths.',
     ],
     equations: [
       {
@@ -256,7 +257,7 @@ export const ALGORITHMS: Algorithm[] = [
     where: 'Compare › Build Paths',
     summary: 'Runs the build optimizer once per path (a set of rules: locked or banned mods, a riven, a fixed arcane or evolution, crit limits) per goal, so different build philosophies can be compared side by side.',
     complexity: String.raw`O(|\text{paths}|\cdot|\text{boards}|\cdot T_{opt})`,
-    sources: [{ file: 'src/optimizer/compare.ts', symbol: 'runPath' }, { file: 'src/optimizer/compare.ts', symbol: 'constraintsFor' }],
+    sources: [{ file: 'src/optimizer/compare.ts', symbol: 'runPath' }, { file: 'src/optimizer/compare.ts', symbol: 'constraintsFor' }, { file: 'src/optimizer/compare.ts', symbol: 'ruleConstraints' }],
     steps: [
       'Each path becomes optimizer constraints: locked mods (a riven too), excluded mods, locked or excluded arcane and evolutions, min / max crit chance.',
       '"Thorough" doubles the beam width (8 → 16). Runs in a Web Worker so the page stays responsive.',
@@ -407,11 +408,11 @@ export const ALGORITHMS: Algorithm[] = [
     ],
     steps: [
       'Shot times come from the same shot model as the time windows (fire rate, magazine, reload, charge). Each pellet rolls head or body (the aim setting), its crit tier and its procs with a seeded mulberry32 RNG, seed + run index. Reloads come off the same clock (a shot interval after the last shot in a magazine, then the reload) and are shaded on the charts.',
-      'Every pellet and DoT tick is priced by the normal damage calc against the enemy\'s state at that moment: layer, head or body, stacks of each status and the Heat strip stage. Prices are cached per state, so a fight only runs the calc for the few dozen states it reaches.',
-      'Damage goes overguard, then shields, then health. When a layer breaks mid-hit, what\'s left of the hit is priced again against the next layer. Toxin goes around shields. Overguard takes no armor and no damage reduction, but Magnetic and Secondary Fortifier still count. Cascadia Empowered lands one flat hit on every real proc.',
+      'Every pellet and DoT tick is priced by the normal damage calc against the enemy\'s state at that moment: layer, head or body, stacks of each status and the Heat strip stage. Prices are cached per state, so a fight only runs the calc for the few dozen states it reaches, and reused between state changes (a proc landing, a stack running out, a Heat strip step). Heat stacks tick in 1/20 s groups (one event per group a second, each stack still on its own clock) instead of one event per proc.',
+      'Damage goes overguard, then shields, then health. When a layer breaks mid-hit, what\'s left of the hit is priced again against the next layer. Toxin goes around shields. Overguard takes no armor and no damage reduction, but Magnetic and Secondary Fortifier still count. Cascadia Empowered lands one flat hit on every real proc. With Arcane Hot Shot on the Warframe, its stacks are either held where the Warframe panel has them (max) or built only from this weapon\'s Heat: one stack per hit that inflicts Heat, all on one 10 s timer, 50 max.',
       'A shot\'s procs count from the next shot on. Corrosive stacks last 8 s, the others 6 s, each on its own timer, at most 10 (the oldest is replaced). Heat strips {{src/calc/fight.ts#HEAT_STAGES}} of armor one step every {{src/calc/fight.ts#HEAT_UP_STEP}} s, and falls back a step every {{src/calc/fight.ts#HEAT_DOWN_STEP}} s once Heat ends. Status Duration stretches all of it.',
       'Eximus overguard = {{src/calc/fight.ts#EXIMUS_BASE_OVERGUARD}} × the level multiplier below. While it\'s up the enemy ignores crowd control (no lifted / knocked down bonus) and holds at most {{src/calc/fight.ts#OVERGUARD_COLD_CAP}} Cold stacks.',
-      'Incarnon forms (experimental toggle, never the leaderboard): instead of idling through the refill, the form fires its battery, drops straight back to the normal form with a full magazine (no switch when the battery runs out), the normal form fires while the charges come back (its hits count), and it switches back in; switching in is 2x the base reload, the same guess as the refill estimate. Switches, normal-form stretches and reloads are shaded on the charts.',
+      'Incarnon forms (experimental toggle, never the leaderboard): instead of idling through the refill, the form fires its battery, drops straight back to the normal form with a full magazine (no switch when the battery runs out), the normal form fires while the charges come back (its hits count), and it switches back in, which takes one reload like the refill estimate. Switches, normal-form stretches and reloads are shaded on the charts.',
       'Every fight is also run again with DoT ticks dealing nothing (the procs still land, so strips and Viral still help the hits). The gap between the two is the status damage, and the two kill times show when the hits alone would have killed.',
       'Checked against the averages: with nothing changing on the enemy, the mean damage of 1,000 runs at 10 s is within 1% of the expected damage on a sample of leaderboard guns, and the 10th / 90th percentiles within 2% of the Monte Carlo range. Bosses are experimental: attenuation isn\'t applied.',
     ],
@@ -440,17 +441,17 @@ export const ALGORITHMS: Algorithm[] = [
     steps: [
       'Charges come back per weak point hit (wiki: "each charge producing 3 rounds" on Vasto). Every normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits): the best case.',
       'Hits land at the normal form\'s own rate (its fire rate mods count) times its projectiles, reloads included.',
-      'Switching back into the form takes {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}× the base form\'s reload (reload speed mods don\'t shorten it). Getting out is free: when the battery runs out the gun drops back to its normal form already reloaded.',
+      'Switching back into the form takes {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}} reload of the base form, its real one: reload speed mods shorten it, and shell-by-shell guns (Felarx) reload the whole magazine. Getting out is free: when the battery runs out the gun drops back to its normal form already reloaded.',
       'An attack is the Incarnon form when its name says so, plus Laetum\'s Auto Radial Attack (the burst every form shot sets off), which runs on the form\'s charges too. [Normal only] evolutions skip all of them.',
       'Ammo Efficiency (mods, arcanes, evolutions) never stretches the charges: they aren\'t ammo.',
-      'The refill\'s reloads are the base form\'s: shell-by-shell weapons (Felarx, Strun) reload shell by shell with the base form\'s modded magazine. The swap uses the listed reload stat.',
+      'The refill\'s reloads are the base form\'s: shell-by-shell weapons (Felarx, Strun) reload shell by shell with the base form\'s modded magazine.',
     ],
     equations: [
       {
         name: 'Refill time',
-        tex: String.raw`t_{refill} = \frac{Q / \rho}{(1 + g)\; r_{norm}\; n_{proj}} + t_{reloads} + {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}\cdot R_{base}`,
+        tex: String.raw`t_{refill} = \frac{Q / \rho}{(1 + g)\; r_{norm}\; n_{proj}} + t_{reloads} + {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}\cdot R_{norm}`,
         complexity: 'O(1)',
-        note: 'Q = charges, ρ = rounds per hit, g = charge gain bonus (Incarnon Efficiency), t_reloads = the base form\'s own reloads while filling (shell by shell where it applies), R_base = the listed reload.',
+        note: 'Q = charges, ρ = rounds per hit, g = charge gain bonus (Incarnon Efficiency), t_reloads = the base form\'s own reloads while filling (shell by shell where it applies), R_norm = the base form\'s modded reload (a whole magazine, shell by shell where it applies).',
       },
       {
         name: 'Sustained DPS of the form',

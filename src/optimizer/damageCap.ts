@@ -13,7 +13,7 @@
 import { arcanes, warframes, warframeBaseName, weaponsById } from '../data'
 import { SHARD_SLOTS, shardBuffsById, rank30Energy, type ShardSlot } from '../data/archonShards'
 import { describeLoadout, evaluateFrame, optimizeFrameMods, REGULAR_SLOTS, type FrameEval, type FrameLoadout, type FrameSpec } from './frameBuild'
-import { calculate, type CalcResult } from '../calc/damage'
+import { HOT_SHOT, calculate, type CalcResult } from '../calc/damage'
 import { resolveCoBehavior } from '../calc/conditionOverload'
 import type { Warframe } from '../types'
 import { rivenMod, type RivenConfig } from '../calc/riven'
@@ -27,7 +27,7 @@ import { optimizeAttack, type OptimizeConstraints, type OptimizedBuild } from '.
 import { exaltedRuleFor } from '../data/exalted'
 import type { Objective } from './objectives'
 import { toEntry, type WeaponEntry } from './leaderboardWeapon'
-import type { CompareScenario } from './compare'
+import { ruleConstraints, type ComparePath, type CompareScenario } from './compare'
 import type { Buffs, Debuffs, TargetSettings } from '../types'
 
 export interface CapStep {
@@ -61,6 +61,14 @@ export interface CapRequest {
   allyCount: number
   meleeHeadshots: boolean // most melee can't reliably headshot, so off unless asked
   allowCompression: boolean // Primary Compression shrinks the AoE (Niche), so it's only in the pool when asked
+  rules?: ComparePath // the Compare tab's lock in / lock out rules for the weapon, held through every step
+  frameLocks?: FrameLocks // search mode only: the panel mode already fixes the Warframe
+}
+
+// "focus the search" for the Warframe steps
+export interface FrameLocks {
+  frames: string[] // only these Warframes (base names), empty = all of them
+  arcaneIds: string[] // Warframe arcanes always on (up to 2), the search fills whatever's left
 }
 
 // one Warframe setup carried through the last four steps
@@ -140,7 +148,7 @@ export const maxedDebuffs = (): Debuffs => ({
 // one ability (slot) and its variants, or a passive. required: a plain passive is always on, so leaving it off isn't a setup
 interface Group { slot: string | null; options: WarframeAbility[]; required?: boolean }
 
-const frameNames = [...new Set(warframes.map((frame) => warframeBaseName(frame.name)))].sort()
+export const frameNames = [...new Set(warframes.map((frame) => warframeBaseName(frame.name)))].sort()
 const frameSlots = (frame: string) => warframes.find((candidate) => candidate.name === frame)?.abilities.map((ability) => ability.name) ?? []
 const hasEffects = (ability: WarframeAbility) => ability.effects.length > 0
 
@@ -198,7 +206,7 @@ const searchable = (ability: WarframeAbility, melee: boolean) => !(melee && abil
 // same hit as a setup with fewer abilities (Warcry's attack speed does nothing for one hit): not a separate setup
 const sameHit = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * Math.max(Math.abs(a), Math.abs(b))
 
-const frameByName = (name: string): Warframe => warframes.find((frame) => frame.name === name)!
+const frameByName = (name: string): Warframe => warframes.find((frame) => frame.name === name) ?? warframes.find((frame) => warframeBaseName(frame.name) === name)!
 // the frame's variants (Excalibur, Excalibur Prime, Excalibur Umbra): same kit, different Energy
 const variantsOf = (name: string) => warframes.filter((frame) => warframeBaseName(frame.name) === name)
 
@@ -217,14 +225,17 @@ function strengthWithFreeSlots(frame: Warframe, freeSlots: number): number {
 // that isn't a damage-buff frame (those restrict where a subsume can go)
 const anyFrame = () => frameNames.find((frame) => ownGroups(frame, false).length === 0 && SUBSUMABLE[frame] && frameSlots(frame).length === 4) ?? 'Loki'
 
-function searchFrames(snapshot: Snapshot, allyStrength: number): FrameCandidate[] {
+function searchFrames(snapshot: Snapshot, allyStrength: number, onlyFrames: string[] = []): FrameCandidate[] {
   const candidates: FrameCandidate[] = []
   const melee = snapshot.build.weapon.category === 'Melee'
   // an exalted weapon only exists on its own Warframe (Exalted Blade -> Excalibur). otherwise every frame with something
   // modeled, and frames with nothing of their own are all the same here: "any Warframe" with a subsume
   const exaltedRule = exaltedRuleFor(snapshot.build.weapon)
   const exaltedFrame = exaltedRule?.warframe
-  const framesToTry = exaltedFrame ? [exaltedFrame] : [...frameNames.filter((frame) => ownGroups(frame, false).length > 0), 'Any Warframe']
+  // locked Warframes: just those (even one with nothing of its own, it still gets a subsume)
+  const framesToTry = exaltedFrame ? [exaltedFrame]
+    : onlyFrames.length ? onlyFrames
+      : [...frameNames.filter((frame) => ownGroups(frame, false).length > 0), 'Any Warframe']
   for (const frame of framesToTry) {
     const loadFrame = frame === 'Any Warframe' ? anyFrame() : frame
     const frameObject = frameByName(loadFrame)
@@ -422,19 +433,26 @@ function searchPriming(snapshot: Snapshot, warframe: WarframeState | undefined, 
   return best
 }
 
-const FRAME_ARCANES = arcanes.filter((arcane) => arcane.type === 'Warframe Arcane')
+// Arcane Hot Shot needs your abilities to inflict Heat, so it's not one that "works on any Warframe without casting anything"
+const FRAME_ARCANES = arcanes.filter((arcane) => arcane.type === 'Warframe Arcane' && arcane.name !== HOT_SHOT)
 
 // arcanes go through the frame build too, so Molt Augmented's Strength counts
-function searchArcanes(snapshot: Snapshot, spec: FrameSpec, loadout: FrameLoadout): { ids: string[]; score: number }[] {
-  const scoreWith = (ids: string[]) => scoreEval(snapshot, evaluateFrame({ ...spec, arcaneIds: ids }, loadout))
+// locked: always on (any arcane you lock counts, Hot Shot too), the search only fills the slots left
+function searchArcanes(snapshot: Snapshot, spec: FrameSpec, loadout: FrameLoadout, locked: string[] = []): { ids: string[]; score: number }[] {
+  const scoreWith = (ids: string[]) => scoreEval(snapshot, evaluateFrame({ ...spec, arcaneIds: [...locked, ...ids] }, loadout))
+  const free = 2 - locked.length
+  if (free <= 0) return [{ ids: locked.slice(0, 2), score: scoreWith([]) }]
   const none = scoreWith([])
   // only the ones that do anything alone are worth pairing
-  const useful = FRAME_ARCANES.map((arcane) => ({ id: arcane.uniqueName, score: scoreWith([arcane.uniqueName]) })).filter((option) => option.score > none * 1.0001)
+  const useful = FRAME_ARCANES.filter((arcane) => !locked.includes(arcane.uniqueName))
+    .map((arcane) => ({ id: arcane.uniqueName, score: scoreWith([arcane.uniqueName]) })).filter((option) => option.score > none * 1.0001)
   const results: { ids: string[]; score: number }[] = [{ ids: [], score: none }, ...useful.map((option) => ({ ids: [option.id], score: option.score }))]
-  for (let i = 0; i < useful.length; i++) {
-    for (let j = i + 1; j < useful.length; j++) results.push({ ids: [useful[i].id, useful[j].id], score: scoreWith([useful[i].id, useful[j].id]) })
+  if (free === 2) {
+    for (let i = 0; i < useful.length; i++) {
+      for (let j = i + 1; j < useful.length; j++) results.push({ ids: [useful[i].id, useful[j].id], score: scoreWith([useful[i].id, useful[j].id]) })
+    }
   }
-  return results.sort((a, b) => b.score - a.score)
+  return results.map((result) => ({ ...result, ids: [...locked, ...result.ids] })).sort((a, b) => b.score - a.score)
 }
 
 // one teammate at a time: the frame whose own ally-reaching abilities add the most on top of what's already there
@@ -498,7 +516,9 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
   const isMelee = weapon.category === 'Melee'
   const { scenario } = request
   const riven = request.riven ? rivenMod(weapon, request.riven) : null
-  const lockedMods = riven ? [{ mod: riven, rank: riven.fusionLimit, conditionalStacks: 0 }] : []
+  const rules = request.rules ? ruleConstraints(weapon, request.rules) : {}
+  const lockedMods = [...(rules.lockedMods ?? []), ...(riven ? [{ mod: riven, rank: riven.fusionLimit, conditionalStacks: 0 }] : [])]
+  const frameLocks: FrameLocks = request.frameLocks ?? { frames: [], arcaneIds: [] }
   // headshots: never on AoE, and off for melee unless asked (most melee can't land them reliably)
   const canHeadshot = !attack.isAoE && (!isMelee || request.meleeHeadshots)
   const target: TargetSettings = { ...scenario.target, headshot: false }
@@ -510,8 +530,8 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
 
   const optimize = (stepTarget: TargetSettings, debuffs: Debuffs, buffs: Buffs) => {
     const constraints: OptimizeConstraints = {
-      lockedMods, beamWidth: request.thorough ? 16 : 8,
-      excludedArcaneIds: request.allowCompression ? [] : COMPRESSION_ID,
+      ...rules, lockedMods, beamWidth: request.thorough ? 16 : 8,
+      excludedArcaneIds: [...(rules.excludedArcaneIds ?? []), ...(request.allowCompression ? [] : COMPRESSION_ID)],
       scenario: { target: stepTarget, armor: scenario.armor, debuffs, buffs },
     }
     return optimizeAttack(weapon, attack, PEAK_OBJECTIVE, true, request.heavyMode, constraints)
@@ -598,7 +618,9 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
   const arcaneNamesOf = (ids: string[]) => ids.map((id) => arcanes.find((arcane) => arcane.uniqueName === id)!.name)
   // an exalted weapon only exists on its own frame, and its damage follows that frame's Strength (Molt Augmented counts)
   const exaltedFrame = exaltedRuleFor(weapon)?.warframe
-  const holder = frameByName(exaltedFrame ?? anyFrame())
+  // one Warframe locked: it holds the arcanes and shards too (its Energy matters for Violet)
+  const onlyFrame = !exaltedFrame && frameLocks.frames.length === 1 ? frameLocks.frames[0] : undefined
+  const holder = frameByName(exaltedFrame ?? onlyFrame ?? anyFrame())
   const holderSpec: FrameSpec = { frame: holder, subsume: null, casts: [], allyStrength: request.allyStrength, arcaneIds: [], shards: [] }
   const emptyLoadout: FrameLoadout = { regular: [], aura: [], exilus: null }
   const holderLoad = (spec: FrameSpec, loadout: FrameLoadout): FrameLoad => ({
@@ -607,11 +629,11 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
     mods: { regular: loadout.regular.map((mod) => mod.name), aura: loadout.aura.map((mod) => mod.name), exilus: loadout.exilus?.name ?? null },
   })
   const holderSetup = (spec: FrameSpec, loadout: FrameLoadout, evaluated: FrameEval | null): CapSetup => ({
-    frame: exaltedFrame ?? 'Any Warframe', casts: [], arcanes: arcaneNamesOf(spec.arcaneIds), allies: [],
+    frame: exaltedFrame ?? onlyFrame ?? 'Any Warframe', casts: [], arcanes: arcaneNamesOf(spec.arcaneIds), allies: [],
     ...(spec.shards.length ? { shards: shardNames(spec.shards), mods: describeLoadout(loadout), energy: evaluated?.energy, strength: evaluated?.strength } : {}),
     load: holderLoad(spec, loadout),
   })
-  const arcaneOptions = searchArcanes(snapshot(primedHead.build, primedHead.debuffs), holderSpec, emptyLoadout).slice(0, request.thorough ? 4 : 2)
+  const arcaneOptions = searchArcanes(snapshot(primedHead.build, primedHead.debuffs), holderSpec, emptyLoadout, frameLocks.arcaneIds).slice(0, request.thorough ? 4 : 2)
   const sharedArcanes = soloBest(arcaneOptions.map((option) => {
     const spec = { ...holderSpec, arcaneIds: option.ids }
     const evaluated = evaluateFrame(spec, emptyLoadout)
@@ -627,7 +649,7 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
 
   // 6-8 per Warframe path, screened on the shared step-5 build
   const sharedSnapshot = snapshot(sharedShards.build, sharedShards.debuffs)
-  const frames = searchFrames(sharedSnapshot, request.allyStrength)
+  const frames = searchFrames(sharedSnapshot, request.allyStrength, frameLocks.frames)
   // the shortlist gets real frame mods (with the shared shards and arcanes on), then the weapon mods re-optimized
   const shortlist = frames.slice(0, request.thorough ? 12 : 8)
   const plainBest = frames.find((candidate) => !candidate.situational.length)
@@ -668,7 +690,7 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
       ...option, spec: pick.spec, loadout: pick.loadout, state: pick.evaluated.state, cp: pick.evaluated.corrosiveProjections,
       setup: withLoadout(option.setup, pick.spec, pick.loadout, pick.evaluated),
     }))])
-    const arcanePicks = searchArcanes(snapshot(withShardPick.build, withShardPick.debuffs), withShardPick.spec, withShardPick.loadout).slice(0, request.thorough ? 4 : 2)
+    const arcanePicks = searchArcanes(snapshot(withShardPick.build, withShardPick.debuffs), withShardPick.spec, withShardPick.loadout, frameLocks.arcaneIds).slice(0, request.thorough ? 4 : 2)
     const withFrame = soloBest(arcanePicks.map((arcaneOption) => {
       const spec = { ...withShardPick.spec, arcaneIds: arcaneOption.ids }
       const evaluated = evaluateFrame(spec, withShardPick.loadout)

@@ -1,5 +1,6 @@
 // the Rivens tab: every stat's roll range for a weapon's riven type in each layout, why some stats suit the weapon, and a
 // god-roll search that runs the optimizer with each candidate riven locked in (src/optimizer/rivenSearch.ts)
+import { Info } from './Tip'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { weapons, weaponsById } from '../data'
 import { RIVEN_DISPOSITION, fmt, isSpliced, rivenPool, rivenRange, rivenTypeFor, spliceRecipes, statName, type RivenConfig, type RivenStat } from '../calc/riven'
@@ -159,23 +160,28 @@ export function RivenPage({ calculatorScenario, onLoadBuild }: Props) {
         </div>
         {tiers && <EvolutionPicker tiers={tiers} picks={usedPicks} fromLeaderboard={!picks && Boolean(boardPicks && Object.keys(boardPicks).length)} onChange={setPicks} />}
         <p className="muted">
-          {type} riven. Every weapon rolls with the same x{RIVEN_DISPOSITION} disposition since Hotfix 44.1.3. Values are at rank 8: base × {RIVEN_DISPOSITION} ×
-          the layout's weight × a 90–110% roll (wiki Riven Mods).
+          {type} riven, x{RIVEN_DISPOSITION} disposition, rank 8
+          <Info>
+            Every weapon rolls with the same x{RIVEN_DISPOSITION} disposition since Hotfix 44.1.3. Values are at rank 8: base × {RIVEN_DISPOSITION} ×
+            the layout's weight × a 90–110% roll (wiki Riven Mods).
+          </Info>
         </p>
       </section>
 
       <div className="riven-grid">
         <section className="panel">
           <div className="row spread">
-            <h3>Roll ranges</h3>
+            <h3>
+              Roll ranges
+              <Info>
+                The more stats a riven has, the lower each one rolls: weights 0.99 / 1.2375 / 0.75 / 0.9375 for the four layouts. A curse makes the
+                positives roll higher, which is why the usual god roll has one.
+              </Info>
+            </h3>
             <select value={layout} onChange={(event) => setLayout(event.target.value as LayoutId)}>
               {LAYOUTS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
           </div>
-          <p className="muted-inline">
-            The more stats a riven has, the lower each one rolls: weights 0.99 / 1.2375 / 0.75 / 0.9375 for the four layouts. A curse makes the
-            positives roll higher, which is why the usual god roll has one.
-          </p>
           <table className="riven-range-table">
             <thead>
               <tr><th>Stat</th><th>Buff</th>{layoutSpec.negatives > 0 && <th>Curse</th>}</tr>
@@ -218,11 +224,13 @@ export function RivenPage({ calculatorScenario, onLoadBuild }: Props) {
           </section>
 
           <section className="panel">
-            <h3>God roll finder</h3>
-            <p className="muted-inline">
-              Tests each damage stat on a riven, then every 2- and 3-stat combination of the best ones, rebuilding the other 7 mods around
-              each riven with the optimizer. Takes 5–15 s.
-            </p>
+            <h3>
+              God roll finder
+              <Info>
+                Tests each damage stat on a riven, then every 2- and 3-stat combination of the best ones, rebuilding the other 7 mods around
+                each riven with the optimizer. Takes 5–15 s.
+              </Info>
+            </h3>
             <div className="row">
               <label className="inline">
                 Goal
@@ -258,8 +266,11 @@ export function RivenPage({ calculatorScenario, onLoadBuild }: Props) {
         <section className="panel">
           <h3>Results for {attack.name}, {goalLabel(goal)}</h3>
           <p className="muted">
-            Without a riven the best build does <b>{scoreText(shown.result.baseline.score)}</b>. Gains below are on top of that, with the other 7 mods
-            rebuilt around the riven. Positives are tested with a harmless curse ({shown.result.harmlessCurse}) since that rolls them higher.
+            Without a riven the best build does <b>{scoreText(shown.result.baseline.score)}</b>
+            <Info>
+              Gains below are on top of that, with the other 7 mods rebuilt around the riven. Positives are tested with a harmless curse
+              ({shown.result.harmlessCurse}) since that rolls them higher.
+            </Info>
           </p>
           <div className="riven-results">
             <div>

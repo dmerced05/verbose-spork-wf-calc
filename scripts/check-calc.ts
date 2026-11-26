@@ -24,6 +24,8 @@ type EquippedModList = EquippedMod[]
 import { RIVEN_DISPOSITION, RIVEN_MOD_ID, applySplice, availableSplices, emptyRiven, rivenIssues, rivenMod, rivenPool, rivenRange, rivenRoll, type RivenConfig, type RivenStat } from '../src/calc/riven'
 import { emptyPath, runPath, type ComparePath, type CompareRequest } from '../src/optimizer/compare'
 import { INT_LIMIT, onScreen } from '../src/calc/damageCap'
+import { RECENT_KEY, SAVED_KEY, addRecent, addSaved, buildLink, codeFromUrl, deleteSaved, readRecent, readSaved, renameSaved } from '../src/calc/buildStorage'
+import { decodeLoadout, encodeLoadout } from '../src/calc/loadoutCode'
 import { cycleSchedule, frozenDamage, incarnonCycle, makePricer, overguardMultiplier, runFight, simulateFight, type FightEvent, type FightSetup } from '../src/calc/fight'
 import { expectedDamage, simulateDamage } from '../src/calc/simulate'
 import { expandLeaderboard } from '../src/optimizer/leaderboardTypes'
@@ -637,6 +639,14 @@ const frameArcane = (name: string) => ({ arcaneId: arcanes.find((arcane) => arca
 const withFrameArcane = (name: string): CalcInput['buffs'] => ({ roar: 0, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 1, armor: 0, casts: [], arcanes: [frameArcane(name)] } })
 expectClose('Arcane Avenger +45 points after mods', runMelee(swing, { mods: [meleeMod('True Steel')], buffs: withFrameArcane('Arcane Avenger') }).critChance, 0.2 * 2.2 + 0.45)
 expectClose('Arcane Fury +180% on melee', runMelee(swing, { buffs: withFrameArcane('Arcane Fury') }).hit.normal, 280)
+// Arcane Hot Shot: "Gain 6% weapon Critical Chance ... Maximum 50x stacks", wiki: "Bonus is additive to mods such as Point
+// Strike, Pistol Gambit and True Steel". 50 stacks = +300%: 20% x (1 + 1.2 + 3) with True Steel, not Avenger's flat-after
+{
+  const hotShot = (stacks: number): CalcInput['buffs'] => ({ roar: 0, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 1, armor: 0, casts: [], arcanes: [{ ...frameArcane('Arcane Hot Shot'), conditionalStacks: stacks }] } })
+  expectClose('Hot Shot 50 stacks adds in with True Steel', runMelee(swing, { mods: [meleeMod('True Steel')], buffs: hotShot(50) }).critChance, 0.2 * (1 + 1.2 + 3))
+  expectClose('Hot Shot 10 stacks = +60%', run(testAttack({ impact: 100 }, { critChance: 0.25 }), { buffs: hotShot(10) }).critChance, 0.25 * 1.6)
+  expectClose('Hot Shot caps at 50 stacks', run(testAttack({ impact: 100 }, { critChance: 0.25 }), { buffs: hotShot(80) }).critChance, 0.25 * 4)
+}
 expectClose('Arcane Fury skips guns', run(testAttack({ impact: 100 }), { buffs: withFrameArcane('Arcane Fury') }).hit.normal, 100)
 
 // ---- damage augments ----
@@ -1400,7 +1410,7 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
 }
 
 // Incarnon form refill: Vasto Prime's 24 rounds = 8 weak point hits ("each charge producing 3 rounds") with the normal form
-// (2.5/s, 6-round magazine, 1 s reload: 6 / 3.4 = 1.76 hits/s) = 4.53 s, plus a 2-reload swap back in = 6.53 s (no swap out:
+// (2.5/s, 6-round magazine, 1 s reload: 6 / 3.4 = 1.76 hits/s) = 4.53 s, plus one reload to switch back in = 5.53 s (no switch out:
 // the gun drops back to normal, reloaded, when the battery runs out)
 // Onos: a 57-round charge cycle (7 beam ticks + the 50-round blast) is 6 per 350-round form, and the blast lands 4 s in
 {
@@ -1409,7 +1419,12 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
     return calculate({ weapon, attack: weapon.attacks.find((attack) => attack.name === attackName)!, mods: [], armor: 0, debuffs: noDebuffs(), buffs: { roar: 0 },
       target: { ...grineerTarget, faction: 'None' } })
   }
-  expectClose('Vasto Prime Incarnon refill + switching', run1('Vasto Prime', 'Incarnon Form').shotModel.reloadTime ?? 0, 8 / (6 / (6 / 2.5 + 1)) + 2)
+  // switching in = one reload of the normal form, the whole magazine on a shell-by-shell gun: Felarx 0.8 + 0.5 + 6 x 0.4 = 3.7 s
+  {
+    const felarx = run1('Felarx', 'Incarnon Form')
+    expectClose('Felarx switch in = a full 6-shell reload', felarx.battery!.switchSeconds!, 3.7)
+  }
+  expectClose('Vasto Prime Incarnon refill + switching', run1('Vasto Prime', 'Incarnon Form').shotModel.reloadTime ?? 0, 8 / (6 / (6 / 2.5 + 1)) + 1)
   const blast = run1('Onos', 'Incarnon Form Charge Attack')
   expectClose('Onos 6 charge cycles per form', blast.shotModel.magazineSize ?? 0, 6)
   // battery: 6 blasts, so 6 x (blast + its Heat DoT), fired 4 s apart
@@ -1593,19 +1608,62 @@ expectClose('Braton blast (90% heat + 90% cold, quantized)', typeValue(bratonRes
     const schedule = cycleSchedule(incarnon.shotModel, calculate(cycle.normalInput).shotModel, cycle.swapSeconds, cycle.fillSeconds, 60)
     const firstNormal = schedule.shots.findIndex((shot) => shot.normal)
     const battery = 24 / incarnon.shotModel.fireRate
-    expectClose('Sim cycle: Vasto switching in takes 2x its 1 s reload', cycle.swapSeconds, 2)
-    expectClose('Sim cycle: fill = the refill minus switching back in', cycle.fillSeconds, incarnon.battery!.refillSeconds! - 2)
+    expectClose('Sim cycle: Vasto switching in takes its 1 s reload', cycle.swapSeconds, 1)
+    expectClose('Sim cycle: fill = the refill minus switching back in', cycle.fillSeconds, incarnon.battery!.refillSeconds! - 1)
     expectClose('Sim cycle: one cycle = battery + the refill estimate', schedule.shots.find((shot, index) => index > firstNormal && !shot.normal)!.t, battery + incarnon.shotModel.reloadTime!)
     expectClose('Sim cycle: the whole 24-round battery fires first', firstNormal, 24)
     expectClose('Sim cycle: normal form right when the battery runs out', schedule.shots[firstNormal].t, battery)
-    expectClose('Sim cycle: back in the form after battery + fill + one switch', schedule.shots.find((shot, index) => index > firstNormal && !shot.normal)!.t, battery + cycle.fillSeconds + 2)
-    expectClose('Sim cycle: only switching in is shaded as a switch', schedule.windows.filter((shade) => shade.kind === 'switch' && shade.start < battery + cycle.fillSeconds + 2).length, 1)
+    expectClose('Sim cycle: back in the form after battery + fill + one switch', schedule.shots.find((shot, index) => index > firstNormal && !shot.normal)!.t, battery + cycle.fillSeconds + 1)
+    expectClose('Sim cycle: only switching in is shaded as a switch', schedule.windows.filter((shade) => shade.kind === 'switch' && shade.start < battery + cycle.fillSeconds + 1).length, 1)
     expectClose('Sim cycle: a normal attack has no cycle', incarnonCycle({ ...input, attack: cycle.normalInput.attack }, calculate(cycle.normalInput)) === null ? 1 : 0, 1)
+  }
+
+  // Hot Shot from the weapon's own Heat: one stack per hit that inflicts Heat (2 procs on one hit is still 1), from the next shot,
+  // 50 max. 100% Heat status at 1 shot/s for 60 s reaches 50; no Heat at all stays at 0 and never changes the crit
+  {
+    const hotShotBuffs: CalcInput['buffs'] = { roar: 0, warframe: { frameName: 'None', abilityStrength: 1, teammateStrength: 1, armor: 0, casts: [], arcanes: [{ arcaneId: arcanes.find((arcane) => arcane.name === 'Arcane Hot Shot')!.uniqueName, rank: 5, conditionalStacks: 50 }] } }
+    const heatGun = { ...fightInput(testAttack({ heat: 100 }, { statusChance: 2, critChance: 0.1 })), buffs: hotShotBuffs }
+    const peak = (input: CalcInput, seconds: number) => simulateFight({ input, pools: { overguard: 0, shield: 0, health: 1e12 }, runs: 3, seconds, headshotShare: 0, hotShot: 'weapon' }).hotShotPeak
+    expectClose('Sim Hot Shot: 200% Heat status is still one stack a hit (10 hits in 10 s)', peak(heatGun, 10)!, 10)
+    expectClose('Sim Hot Shot: caps at 50', peak(heatGun, 60)!, 50)
+    expectClose('Sim Hot Shot: no Heat, no stacks', peak({ ...fightInput(testAttack({ impact: 100 }, { statusChance: 1 })), buffs: hotShotBuffs }, 20)!, 0)
+    expectClose('Sim Hot Shot: max mode reports no peak', simulateFight({ input: heatGun, pools: { overguard: 0, shield: 0, health: 1e12 }, runs: 2, seconds: 5, headshotShare: 0, hotShot: 'max' }).hotShotPeak === null ? 1 : 0, 1)
   }
 
   // same seed, same fight
   const repeat = () => simulateFight({ input: fightInput(testAttack({ corrosive: 60, heat: 40 }, { statusChance: 0.6, critChance: 0.4 }), 900), pools: { overguard: 300, shield: 400, health: 3000 }, runs: 50, seconds: 60, headshotShare: 0.4 })
   expectClose('Sim: same seed gives the same kill times', JSON.stringify(repeat().killTimes) === JSON.stringify(repeat().killTimes) ? 1 : 0, 1)
+}
+// ---- local build storage + build links (src/calc/buildStorage.ts) ----
+{
+  const fakeStore = () => { const data = new Map<string, string>(); return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value) } } }
+  const label = (weapon: string) => ({ weapon, attack: 'Normal Attack', frame: 'Excalibur' })
+  const store = fakeStore()
+  for (let index = 0; index < 12; index++) addRecent(store, `VS1.code${index}`, label(`Weapon ${index}`), 1000 + index)
+  expectClose('Recent caps at 10', readRecent(store).length, 10)
+  expectClose('Recent: newest first', readRecent(store)[0].code === 'VS1.code11' ? 1 : 0, 1)
+  addRecent(store, 'VS1.code5', label('Weapon 5'), 5000)
+  expectClose('Recent: re-adding moves it to the top, no duplicate', readRecent(store)[0].code === 'VS1.code5' && readRecent(store).filter((entry) => entry.code === 'VS1.code5').length === 1 ? 1 : 0, 1)
+  expectClose('Recent: still 10 after a re-add', readRecent(store).length, 10)
+  const saved = addSaved(store, '  Braton crit ', 'VS1.saved', label('Braton Prime'), 2000)
+  expectClose('Saved: added, name trimmed', saved.length === 1 && saved[0].name === 'Braton crit' ? 1 : 0, 1)
+  expectClose('Saved: blank name falls back to the weapon', addSaved(store, ' ', 'VS1.other', label('Lex Prime'))[0].name === 'Lex Prime' ? 1 : 0, 1)
+  expectClose('Saved: rename', renameSaved(store, saved[0].id, 'Braton status').find((entry) => entry.id === saved[0].id)!.name === 'Braton status' ? 1 : 0, 1)
+  expectClose('Saved: blank rename keeps the old name', renameSaved(store, saved[0].id, '  ').find((entry) => entry.id === saved[0].id)!.name === 'Braton status' ? 1 : 0, 1)
+  expectClose('Saved: delete', deleteSaved(store, saved[0].id).some((entry) => entry.id === saved[0].id) ? 0 : 1, 1)
+  const corrupt = fakeStore()
+  corrupt.setItem(RECENT_KEY, '{not json')
+  corrupt.setItem(SAVED_KEY, JSON.stringify([{ id: 1 }, 'junk']))
+  expectClose('Corrupt recent JSON reads as empty', readRecent(corrupt).length, 0)
+  expectClose('Wrong-shaped saved entries are dropped', readSaved(corrupt).length, 0)
+  expectClose('No storage at all (private window) reads as empty', readRecent(null).length + readSaved(null).length, 0)
+  // a ?b= link round-trips to the same setup as the code, keeps the site path and opens on the Calculator tab
+  const setup = { v: 1, weaponId: weapons[0].uniqueName, attackIndex: 0, target: { level: 120 } }
+  const code = await encodeLoadout(setup)
+  const link = buildLink(code, 'https://someone.github.io/verbose-spork-wf-calc/?old=1#leaderboard')
+  expectClose('Build link: path kept, old query dropped, Calculator tab', link.startsWith('https://someone.github.io/verbose-spork-wf-calc/?b=VS1.') && link.endsWith('#calculator') ? 1 : 0, 1)
+  expectClose('Build link: same code back out', codeFromUrl(link) === code ? 1 : 0, 1)
+  expectClose('Build link: same setup back out', JSON.stringify(await decodeLoadout(codeFromUrl(link)!)) === JSON.stringify(setup) ? 1 : 0, 1)
 }
 if (failures) throw new Error(`${failures} check(s) failed`)
 console.log('\nall checks passed')

@@ -1,18 +1,20 @@
 // fourth tab: can this weapon break the damage limit, and what does it take? a ladder of investment layers, each
 // optimized for the biggest single instance against the calculator's target, Warframe and debuffs
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { arcanesById, enemiesById, modsById, weapons, weaponsById } from '../data'
+import { arcanes, arcanesById, enemiesById, modsById, weapons, weaponsById } from '../data'
 import { nicheNote } from '../calc/nicheMods'
-import { Tip } from './Tip'
+import { Tip, Info } from './Tip'
 import { INT_LIMIT, onScreen } from '../calc/damageCap'
 import { RIVEN_DISPOSITION, RIVEN_MOD_ID, emptyRiven, rivenTypeFor, type RivenConfig } from '../calc/riven'
 import { RivenEditor } from './RivenEditor'
 import { compressionFor } from '../data/compression'
 import { abilitiesById } from '../data/warframeAbilities'
 import { heavyComboFor, type HeavyMode } from '../data/heavyAttacks'
-import { CAP_STEPS, CAP_TARGET, type CapPath, type CapRequest, type CapSetup, type CapStepResult } from '../optimizer/damageCap'
+import { CAP_STEPS, CAP_TARGET, frameNames, type CapPath, type CapRequest, type CapSetup, type CapStepResult, type FrameLocks } from '../optimizer/damageCap'
 import type { CapMessage } from '../optimizer/capWorker'
-import type { CompareScenario } from '../optimizer/compare'
+import { emptyPath, type ComparePath, type CompareScenario } from '../optimizer/compare'
+import { WeaponRules } from './Compare'
+import { getIncarnonTiers } from '../calc/incarnon'
 import type { LeaderboardEntry } from '../optimizer/leaderboardTypes'
 import { SearchSelect } from './SearchSelect'
 import type { BuildToLoad } from '../Calculator'
@@ -27,6 +29,10 @@ interface Props {
 }
 
 const weaponOptions = weapons.map((weapon) => ({ id: weapon.uniqueName, label: weapon.name }))
+const frameOptions = frameNames.map((name) => ({ id: name, label: name }))
+const frameArcaneOptions = arcanes.filter((arcane) => arcane.type === 'Warframe Arcane').map((arcane) => ({ id: arcane.uniqueName, label: arcane.name }))
+  .sort((a, b) => a.label.localeCompare(b.label))
+const NO_FRAME_LOCKS: FrameLocks = { frames: [], arcaneIds: [] }
 const whole = (value: number) => Math.round(value).toLocaleString()
 const times = (value: number) => (value >= 100 ? `×${Math.round(value).toLocaleString()}` : `×${value.toFixed(value >= 10 ? 1 : 2)}`)
 
@@ -43,6 +49,10 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
   const [allyCount, setAllyCount] = useState(3)
   const [meleeHeadshots, setMeleeHeadshots] = useState(false)
   const [allowCompression, setAllowCompression] = useState(false)
+  // focus the search: the Compare tab's weapon rules, plus which Warframes / Warframe arcanes the Warframe steps are held to
+  const [rules, setRules] = useState<ComparePath>(() => emptyPath('Focus'))
+  const [frameLocks, setFrameLocks] = useState<FrameLocks>(NO_FRAME_LOCKS)
+  const [lockKey, setLockKey] = useState(0) // clears the frame/arcane search boxes after a pick
   const [paths, setPaths] = useState<CapPath[]>([])
   const [selectedPath, setSelectedPath] = useState(0)
   const [defaultPath, setDefaultPath] = useState(0)
@@ -59,6 +69,14 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
   const attack = weapon.attacks[attackIndex] ?? weapon.attacks[0]
   const rivenForWeapon = calculatorRiven?.weaponId === weaponId && calculatorRiven.config.stats.length ? calculatorRiven.config : null
   const rivenType = rivenTypeFor(weapon)
+  const tiers = useMemo(() => getIncarnonTiers(weapon.name) ?? [], [weapon])
+  const lockCount = rules.lockedModIds.length + rules.excludedModNames.length + (rules.lockedArcaneId ? 1 : 0)
+    + Object.keys(rules.lockedPerks).length + rules.excludedPerkNames.length + frameLocks.frames.length + frameLocks.arcaneIds.length
+  const addLock = (key: keyof FrameLocks, max: number) => (id: string | null) => {
+    if (id && !frameLocks[key].includes(id) && frameLocks[key].length < max) setFrameLocks({ ...frameLocks, [key]: [...frameLocks[key], id] })
+    setLockKey(lockKey + 1)
+  }
+  const dropLock = (key: keyof FrameLocks, id: string) => setFrameLocks({ ...frameLocks, [key]: frameLocks[key].filter((other) => other !== id) })
   // the calculator's Warframe panel and buffs, but always against the cap target (Steel Path Heavy Gunner, level 9,999)
   const scenario = useMemo(
     () => (calculatorScenario ? { ...calculatorScenario, target: CAP_TARGET, armor: resolveArmor(CAP_TARGET) } : null),
@@ -83,6 +101,7 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
     setWeaponId(id)
     setAttackIndex(0)
     setRiven(null) // a riven belongs to one weapon
+    setRules(emptyPath('Focus')) // so do its mod/arcane/Incarnon locks. Warframe locks carry over
     setResults([])
     setRanWith(null)
   }
@@ -96,6 +115,7 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
     const request: CapRequest = {
       weaponId, attackIndex, heavyMode, scenario, riven: rivenType && riven?.stats.length ? riven : null, thorough,
       frameMode, allyStrength: allyStrength / 100, allyCount, meleeHeadshots, allowCompression,
+      rules, frameLocks: frameMode === 'search' ? frameLocks : NO_FRAME_LOCKS,
     }
     const collected: CapStepResult[] = []
     setResults([])
@@ -153,12 +173,14 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
   return (
     <div className="compare">
       <section className="panel">
-        <h2>Damage cap</h2>
-        <p className="muted">
-          How far one hit gets toward the 32-bit damage limit as investment stacks up. Each step is optimized for the biggest single
-          instance (top crit tier, or a Devouring Attrition non-crit; a beam's merged tick). Damage past the limit isn't capped, but anything
-          over it shows on screen as -2,147,483,648, and the game log writes the real value under a "number too large" error, so both are shown.
-        </p>
+        <h2>
+          Damage cap
+          <Info>
+            How far one hit gets toward the 32-bit damage limit as investment stacks up. Each step is optimized for the biggest single
+            instance (top crit tier, or a Devouring Attrition non-crit; a beam's merged tick). Damage past the limit isn't capped, but anything
+            over it shows on screen as -2,147,483,648, and the game log writes the real value under a "number too large" error, so both are shown.
+          </Info>
+        </h2>
         <div className="row compare-controls">
           <SearchSelect options={weaponOptions} selectedId={weaponId} onSelect={pickWeapon} placeholder="Search weapons" />
           {weapon.attacks.length > 1 && (
@@ -178,13 +200,13 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
           </label>
           <label className="inline-check"><input type="checkbox" checked={thorough} onChange={(event) => setThorough(event.target.checked)} /> Thorough search</label>
           {compressionFor(weapon.name, attack.name) && weapon.type !== 'Shotgun' && (
-            <label className="inline-check" title="Primary Compression shrinks the explosion to 20% while aiming, so the AoE hits far fewer enemies. Off = it's left out of the arcane pick">
-              <input type="checkbox" checked={allowCompression} onChange={(event) => setAllowCompression(event.target.checked)} /> Allow Primary Compression (Niche)
+            <label className="inline-check">
+              <input type="checkbox" checked={allowCompression} onChange={(event) => setAllowCompression(event.target.checked)} /> Allow Primary Compression (Niche) <Info>Primary Compression shrinks the explosion to 20% while aiming, so the AoE hits far fewer enemies. Off = it's left out of the arcane pick</Info>
             </label>
           )}
           {weapon.category === 'Melee' && (
-            <label className="inline-check" title="Most melee weapons can't land headshots reliably, so the headshot step is off for melee unless this is on">
-              <input type="checkbox" checked={meleeHeadshots} onChange={(event) => setMeleeHeadshots(event.target.checked)} /> Count melee headshots
+            <label className="inline-check">
+              <input type="checkbox" checked={meleeHeadshots} onChange={(event) => setMeleeHeadshots(event.target.checked)} /> Count melee headshots <Info>Most melee weapons can't land headshots reliably, so the headshot step is off for melee unless this is on</Info>
             </label>
           )}
         </div>
@@ -216,19 +238,64 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
             {riven && <RivenEditor type={rivenType} disposition={RIVEN_DISPOSITION} config={riven} onChange={setRiven} />}
           </div>
         )}
+        <details className="cap-focus">
+          <summary>
+            Focus the search{lockCount ? ` (${lockCount} rule${lockCount > 1 ? 's' : ''})` : ''}
+            <Info>Same rules as Compare build paths, held through every step. Locked mods still take slots.</Info>
+          </summary>
+          <div className="cap-focus-grid">
+            <div className="path-editor">
+              <WeaponRules path={rules} weaponId={weaponId} tiers={tiers} hasRiven={Boolean(rivenType && riven?.stats.length)} onChange={setRules} />
+            </div>
+            <div className="path-editor">
+              <div className="path-section">
+                <span className="label">
+                  Only these Warframes {frameMode === 'panel' ? '(not used with the Warframe panel)' : frameLocks.frames.length ? '' : '(empty = all)'}
+                  <Info>Step 6 only tries these. With one locked, it also holds the arcanes and shards steps, and its best few setups become the paths.</Info>
+                </span>
+                <div className="row">
+                  {frameLocks.frames.map((name) => (
+                    <span key={name} className="chip lock-chip">{name}<button className="chip-x" onClick={() => dropLock('frames', name)}>×</button></span>
+                  ))}
+                </div>
+                <SearchSelect key={`frame-${lockKey}`} options={frameOptions} selectedId={null} onSelect={addLock('frames', frameNames.length)} placeholder="Add a Warframe" />
+
+              </div>
+              <div className="path-section">
+                <span className="label">
+                  Lock in Warframe arcanes ({frameLocks.arcaneIds.length}/2) {frameMode === 'panel' ? '(not used with the Warframe panel)' : ''}
+                  <Info>Locked ones are on from the Warframe arcanes step, even ones the search skips (Hot Shot, taken at max stacks). The search fills whatever slot is left.</Info>
+                </span>
+                <div className="row">
+                  {frameLocks.arcaneIds.map((id) => (
+                    <span key={id} className="chip lock-chip">{arcanesById.get(id)?.name ?? id}<button className="chip-x" onClick={() => dropLock('arcaneIds', id)}>×</button></span>
+                  ))}
+                </div>
+                {frameLocks.arcaneIds.length < 2 && (
+                  <SearchSelect key={`arcane-${lockKey}`} options={frameArcaneOptions} selectedId={null} onSelect={addLock('arcaneIds', 2)} placeholder="Add a Warframe arcane" />
+                )}
+              </div>
+              {lockCount > 0 && <button onClick={() => { setRules(emptyPath('Focus')); setFrameLocks(NO_FRAME_LOCKS) }}>Clear all rules</button>}
+            </div>
+          </div>
+        </details>
         {summary && (
-          <ul className="cap-summary muted">
-            <li><b>Target</b> {summary.target}{summary.combo ? ` · ${summary.combo}` : ''}</li>
-            <li>
-              <b>Warframe steps</b>{' '}
-              {frameMode === 'search'
-                ? `first the best pair of Warframe arcanes and 5 Tauforged Archon Shards any Warframe gets without casting anything, then every Warframe's own abilities and augments + one Helminth subsume (in a slot it can replace) with real frame mods and the shards and arcanes re-picked for it, then up to ${allyCount} allies' abilities. Exalted weapons stay on their own frame. Melee skips Empowered Quiver (Dashwire), exalted guns keep it`
-                : summary.frame}
-            </li>
-            <li><b>Solo priming</b> only the statuses the build applies, plus a Diriga primer: Impact, Puncture, Slash and Arc Coil Electricity, and with Manifold Bond 3 modded elements other than Electricity (7 statuses; Hounds and Nautilus prime as much or one less). Its damage isn't counted. It stays on (re-picked for each build) through the arcane, shard and Warframe steps, so everything up to Your Warframe is reachable alone</li>
-            <li><b>Debuffs step</b> maxed: every status type on the target, 10 Viral / Corrosive / Cold, full Heat strip, 5 Puncture, 10 Tau</li>
-            <li>Target is fixed: a Steel Path Heavy Gunner at level 9,999 (Grineer, armor at the 2,700 clamp). The Warframe panel still comes from the Calculator tab. Conditionals (kill stacks, Galvanized, Deadhead...) are taken at max, ability conditions as met.</li>
-          </ul>
+          <p className="cap-summary muted">
+            <b>Target</b> {summary.target}{summary.combo ? ` · ${summary.combo}` : ''} · what each step uses
+            <Info>
+              <ul>
+              <li>
+                <b>Warframe steps</b>{' '}
+                {frameMode === 'search'
+                  ? `first the best pair of Warframe arcanes and 5 Tauforged Archon Shards any Warframe gets without casting anything, then every Warframe's own abilities and augments + one Helminth subsume (in a slot it can replace) with real frame mods and the shards and arcanes re-picked for it, then up to ${allyCount} allies' abilities. Exalted weapons stay on their own frame. Melee skips Empowered Quiver (Dashwire), exalted guns keep it`
+                  : summary.frame}
+              </li>
+              <li><b>Solo priming</b> only the statuses the build applies, plus a Diriga primer: Impact, Puncture, Slash and Arc Coil Electricity, and with Manifold Bond 3 modded elements other than Electricity (7 statuses; Hounds and Nautilus prime as much or one less). Its damage isn't counted. It stays on (re-picked for each build) through the arcane, shard and Warframe steps, so everything up to Your Warframe is reachable alone</li>
+              <li><b>Debuffs step</b> maxed: every status type on the target, 10 Viral / Corrosive / Cold, full Heat strip, 5 Puncture, 10 Tau</li>
+              <li>Target is fixed: a Steel Path Heavy Gunner at level 9,999 (Grineer, armor at the 2,700 clamp). The Warframe panel still comes from the Calculator tab. Conditionals (kill stacks, Galvanized, Deadhead...) are taken at max, ability conditions as met.</li>
+              </ul>
+            </Info>
+          </p>
         )}
         <div className="row spread">
           <span className="muted-inline">
@@ -304,7 +371,7 @@ export function DamageCap({ calculatorScenario, calculatorRiven, onLoadBuild }: 
               </tbody>
             </table>
           </div>
-          <p className="muted">Click a step to see its build. Each step is searched again from scratch, so builds can change between steps (debuffs can make a different element better).</p>
+          <p className="muted">Click a step to see its build <Info>Each step is searched again from scratch, so builds can change between steps (debuffs can make a different element better).</Info></p>
           {openStep !== null && stepResult(openStep) && (() => {
             const result = stepResult(openStep)!
             const { entry } = result

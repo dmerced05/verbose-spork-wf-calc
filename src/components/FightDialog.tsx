@@ -1,9 +1,10 @@
 // the damage simulator's floating box: takes the Calculator's build and target as they are, runs N seeded fights in a worker
 // and shows how overguard / shields / health / armor go down, plus the kill time on good and bad luck. a native <dialog>
 // opened with showModal(), so Esc closes it and focus stays inside without any extra code
+import { Info } from './Tip'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { calculate, type CalcInput } from '../calc/damage'
-import { EXIMUS_BASE_OVERGUARD, incarnonCycle, scaleOverguard, type FightSetup, type FightSummary } from '../calc/fight'
+import { EXIMUS_BASE_OVERGUARD, hasHotShot, incarnonCycle, scaleOverguard, type FightSetup, type FightSummary } from '../calc/fight'
 import type { FightMessage } from '../calc/fightWorker'
 import type { ScaledEnemy } from './TargetPanel'
 import { Histogram, KillRace, Lines, SERIES, Tile } from './charts'
@@ -44,6 +45,9 @@ export function FightDialog({ input, enemy, onClose }: Props) {
   const cycleOption = useMemo(() => incarnonCycle(input, calculate(input)), [input])
   const [cycle, setCycle] = useState(false)
   const cycleOn = Boolean(cycleOption && cycle)
+  // Arcane Hot Shot on the Warframe: held at its panel stacks (max), or built only from this weapon's Heat
+  const hotShotEquipped = hasHotShot(input)
+  const [hotShot, setHotShot] = useState<'max' | 'weapon'>('max')
 
   useEffect(() => {
     ref.current?.showModal()
@@ -67,6 +71,7 @@ export function FightDialog({ input, enemy, onClose }: Props) {
     const setup: FightSetup = {
       input: { ...input, target }, pools, runs, seconds: cap,
       headshotShare: aim === 'body' ? 0 : aim === 'head' ? 1 : headShare / 100,
+      hotShot: hotShotEquipped ? hotShot : undefined,
       cycle: cycleOn && cycleOption ? { ...cycleOption, normalInput: { ...cycleOption.normalInput, target } } : undefined,
     }
     setProgress(0)
@@ -126,9 +131,17 @@ export function FightDialog({ input, enemy, onClose }: Props) {
             <label className="check" title="All Eximus units have a base Overguard of 12, scaled by level">
               <input type="checkbox" checked={eximus} onChange={(event) => setEximus(event.target.checked)} /> Eximus (Overguard)
             </label>
+            {hotShotEquipped && (
+              <label>Hot Shot
+                <select value={hotShot} onChange={(event) => setHotShot(event.target.value as typeof hotShot)}>
+                  <option value="max">Max stacks (abilities keep it up)</option>
+                  <option value="weapon">Weapon Heat procs only</option>
+                </select> <Info>Arcane Hot Shot's crit (+6% a stack, 50 max, 10 s). Max: your abilities keep it topped up. Weapon Heat only: stacks come from this weapon's own Heat hits, one per hit, all on one 10 s timer</Info>
+              </label>
+            )}
             {cycleOption && (
-              <label className="check" title={`Fire the Incarnon battery, drop back to ${cycleOption.normalInput.attack.name} with a full magazine, fire it while the charges come back (${cycleOption.fillSeconds.toFixed(1)} s), switch back in (${cycleOption.swapSeconds.toFixed(1)} s). The switch time is a guess: 2x the base reload`}>
-                <input type="checkbox" checked={cycle} onChange={(event) => setCycle(event.target.checked)} /> Cycle with normal form <span className="tag-experimental">experimental</span>
+              <label className="check">
+                <input type="checkbox" checked={cycle} onChange={(event) => setCycle(event.target.checked)} /> Cycle with normal form <span className="tag-experimental">experimental</span> <Info>{`Fire the Incarnon battery, drop back to ${cycleOption.normalInput.attack.name} with a full magazine, fire it while the charges come back (${cycleOption.fillSeconds.toFixed(1)} s), switch back in (${cycleOption.swapSeconds.toFixed(1)} s, one reload)`}</Info>
               </label>
             )}
             <button onClick={run} disabled={progress !== null}>{progress !== null ? `Running… ${Math.round(progress * 100)}%` : 'Run'}</button>
@@ -179,11 +192,16 @@ export function FightDialog({ input, enemy, onClose }: Props) {
                   binSize={(Math.max(...finiteKills) * 1.05 || 1) / 20} fmt={(value) => `${value.toFixed(value < 10 ? 1 : 0)} s`} xLabel="seconds" />
               )}
               <p className="muted fight-notes">
+                {summary.runs} runs, {Math.round(ms)} ms
+                {summary.hotShotPeak !== null && ` · Hot Shot peaks at ${summary.hotShotPeak} of 50 stacks`}
+                <Info label="How the fight is simulated">
                 {summary.runs} runs, seed 12345 + run, {summary.states} enemy states priced, {Math.round(ms)} ms.
                 Procs count from the next shot on; Heat strips 15/30/40/50% over 2 s; Condition Overload counts what's actually on the enemy.
                 Overguard ignores crowd control, caps Cold at 4 stacks, takes Toxin and scales with level only (Steel Path just adds levels).
                 {boss && ' Boss damage attenuation is not applied here.'}
-                {cycleOn && cycleOption && ` Cycle mode (experimental): the form fires its battery, the gun drops back to ${cycleOption.normalInput.attack.name} reloaded (no switch), which fires while the charges come back (every normal shot assumed to hit a weak point, like the refill estimate), then it switches back in. Switching in is a guess: 2x the base reload (${cycleOption.swapSeconds.toFixed(1)} s). Not used by the leaderboard.`}
+                {summary.hotShotPeak !== null && ` Hot Shot from this weapon's Heat only: peaks at ${summary.hotShotPeak} of 50 stacks (median run), one stack per hit that inflicts Heat, all reset 10 s after the last. The in-game text says abilities trigger it, so this is the what-if.`}
+                {cycleOn && cycleOption && ` Cycle mode (experimental): the form fires its battery, the gun drops back to ${cycleOption.normalInput.attack.name} reloaded (no switch), which fires while the charges come back (every normal shot assumed to hit a weak point, like the refill estimate), then it switches back in, which takes one reload (${cycleOption.swapSeconds.toFixed(1)} s). Not used by the leaderboard.`}
+                </Info>
               </p>
             </>
           )}

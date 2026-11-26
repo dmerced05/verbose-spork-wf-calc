@@ -1,4 +1,5 @@
 // the riven's stats, typed in as the game shows them at rank 8. ranges/rolls come from src/calc/riven.ts
+import { Info } from './Tip'
 import {
   applySplice, availableSplices, fmt, isSpliced, rivenIssues, rivenPool, rivenRange, rivenRoll, spliceRecipes, statName,
   type RivenConfig, type RivenStat, type RivenType,
@@ -136,8 +137,11 @@ export function RivenEditor({ type, disposition, config, onChange }: Props) {
 
       {issues.length > 0 && <ul className="riven-issues">{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}
       <p className="muted-inline">
-        Ranges are 90–110% of the stat's base × disposition × the 2/3-positive, ±negative weight (wiki). Rivens are RNG, so they're
-        never part of the optimizer or leaderboard.
+        Roll ranges
+        <Info>
+          Ranges are 90–110% of the stat's base × disposition × the 2/3-positive, ±negative weight (wiki). Rivens are RNG, so they're
+          never part of the optimizer or leaderboard.
+        </Info>
       </p>
     </div>
   )

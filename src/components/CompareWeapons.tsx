@@ -17,7 +17,7 @@ import type { Attack, Weapon } from '../types'
 import { EvolutionPicker } from './EvolutionPicker'
 import { SearchSelect } from './SearchSelect'
 import { Thumb } from './Thumb'
-import { Tip } from './Tip'
+import { Tip, Info } from './Tip'
 
 const ROWS: MetricKey[] = ['hit', 'damage', 'multishot', 'critChance', 'critMultiplier', 'statusChance', 'fireRate', 'rawDps', 'magazine', 'reload']
 const BOARD_ROWS = [
@@ -142,15 +142,17 @@ export function CompareWeapons() {
   return (
     <div className="compare-weapons">
       <section className="panel">
-        <h2>Compare weapons</h2>
-        <p className="muted">
-          Two {categoryWord(category)} side by side. The second pick only lists {categoryWord(category)}, since comparing across categories doesn't
-          tell you much. Percentiles are within each weapon's own type, by the same attack where enough of them have it: {rankText(sideA)}{a.uniqueName !== b.uniqueName && groupOf(sideA) !== groupOf(sideB) ? <>, {rankText(sideB)}</> : null}.
-          A type with fewer than 6 weapons ranks against all {categoryWord(category)} instead.
-          {anyIncarnon && (rankIncarnon
-            ? <> Incarnon forms are ranked against other Incarnon forms of their type{leaderboard ? ', each with the leaderboard\'s evolutions' : ' (unevolved until the leaderboard loads)'}. Conditional parts of evolutions (on kill, on headshot...) aren't counted.</>
-            : <> Incarnon forms are ranked against normal attacks too, so they'll mostly look strong.</>)}
-        </p>
+        <h2>
+          Compare weapons
+          <Info>
+            Two {categoryWord(category)} side by side. The second pick only lists {categoryWord(category)}, since comparing across categories doesn't
+            tell you much. Percentiles are within each weapon's own type, by the same attack where enough of them have it: {rankText(sideA)}{a.uniqueName !== b.uniqueName && groupOf(sideA) !== groupOf(sideB) ? <>, {rankText(sideB)}</> : null}.
+            A type with fewer than 6 weapons ranks against all {categoryWord(category)} instead.
+            {anyIncarnon && (rankIncarnon
+              ? <> Incarnon forms are ranked against other Incarnon forms of their type{leaderboard ? ', each with the leaderboard\'s evolutions' : ' (unevolved until the leaderboard loads)'}. Conditional parts of evolutions (on kill, on headshot...) aren't counted.</>
+              : <> Incarnon forms are ranked against normal attacks too, so they'll mostly look strong.</>)}
+          </Info>
+        </h2>
         {anyIncarnon && (
           <label className="inline-check">
             <input type="checkbox" checked={rankIncarnon} onChange={(event) => setRankIncarnon(event.target.checked)} />

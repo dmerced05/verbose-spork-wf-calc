@@ -5,7 +5,7 @@ import { rivenMod, type RivenConfig, RIVEN_MOD_ID } from '../calc/riven'
 import { equipArcane, equipMod, optimizeAttack, critViolation, type OptimizeConstraints, type OptimizedBuild } from './optimize'
 import { BOARDS, boardKey } from './objectives'
 import { toEntry, type WeaponEntry } from './leaderboardWeapon'
-import type { Buffs, Debuffs, EquippedMod, TargetSettings } from '../types'
+import type { Buffs, Debuffs, EquippedMod, TargetSettings, Weapon } from '../types'
 
 export interface ComparePath {
   name: string
@@ -49,8 +49,8 @@ export const emptyPath = (name: string): ComparePath => ({
   excludedPerkNames: [], maxCritChance: null, minCritChance: null,
 })
 
-function constraintsFor(request: CompareRequest, path: ComparePath): OptimizeConstraints {
-  const weapon = weaponsById.get(request.weaponId)!
+// a path's rules as optimizer constraints (Damage Cap uses these too, for its "focus the search" locks)
+export function ruleConstraints(weapon: Weapon, path: ComparePath): OptimizeConstraints {
   const isMelee = weapon.category === 'Melee'
   const lockedMods: EquippedMod[] = path.lockedModIds.flatMap((id) => {
     const mod = modsById.get(id)
@@ -68,10 +68,12 @@ function constraintsFor(request: CompareRequest, path: ComparePath): OptimizeCon
     excludedPerkNames: path.excludedPerkNames,
     maxCritChance: path.maxCritChance,
     minCritChance: path.minCritChance,
-    scenario: request.scenario,
-    beamWidth: request.thorough ? 16 : 8,
   }
 }
+
+const constraintsFor = (request: CompareRequest, path: ComparePath): OptimizeConstraints => ({
+  ...ruleConstraints(weaponsById.get(request.weaponId)!, path), scenario: request.scenario, beamWidth: request.thorough ? 16 : 8,
+})
 
 // one path on one board, the leaderboard's way: fire-rate boards also try the no-fire-rate build and keep the better
 export function runPath(request: CompareRequest, pathIndex: number, board: string): CompareResult {

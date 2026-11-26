@@ -8,7 +8,7 @@ import { OBJECTIVES, type ObjectiveId } from '../optimizer/objectives'
 import { damageModPool } from '../optimizer/modPool'
 import { equipArcane, equipMod } from '../optimizer/optimize'
 import type { Arcane, EquippedArcane, EquippedMod, Mod } from '../types'
-import { Tip } from './Tip'
+import { Tip, Info } from './Tip'
 
 interface Props {
   input: CalcInput // the calculator's current setup, mods included
@@ -76,7 +76,7 @@ export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, o
     <section className="panel advisor-panel">
       <div className="row spread">
         <h2>
-          Build advisor <Tip className="stack-note" text={HOW_IT_WORKS}>ⓘ</Tip>
+          Build advisor <Info>{HOW_IT_WORKS}</Info>
         </h2>
         <label className="inline">
           Goal
@@ -92,15 +92,21 @@ export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, o
 
       {ranking.dotWeight < 1 && (
         <p className="muted-inline">
-          Status DoT counts at half in these rankings: {Math.round(input.attack.statusChance * 100)}% base status isn't a DoT weapon, and targets often die
-          before the ticks land. Damage numbers shown are real.
+          Status DoT counts at half here
+          <Info>
+            Status DoT counts at half in these rankings: {Math.round(input.attack.statusChance * 100)}% base status isn't a DoT weapon, and targets often die
+            before the ticks land. Damage numbers shown are real.
+          </Info>
         </p>
       )}
 
       {input.mods.length >= 8 && (
         <p className="muted">
-          All 8 slots are full, so "Best mod" is what swapping it in for your weakest mod ({[...advice.slots].sort((a, b) => a.contribution - b.contribution)[0]?.mod.name}) would
-          do. A minus means your current mods are already the better use of that slot.
+          All 8 slots are full: "Best mod" swaps out {[...advice.slots].sort((a, b) => a.contribution - b.contribution)[0]?.mod.name}
+          <Info>
+            All 8 slots are full, so "Best mod" is what swapping it in for your weakest mod ({[...advice.slots].sort((a, b) => a.contribution - b.contribution)[0]?.mod.name}) would
+            do. A minus means your current mods are already the better use of that slot.
+          </Info>
         </p>
       )}
       <div className="advisor-table-wrap">
@@ -174,14 +180,16 @@ export function BuildAdvisor({ input, compatibleMods, compatibleArcanes, keep, o
 
       <div className="advisor-paths">
         <div className="row spread">
-          <h3>Build paths</h3>
+          <h3>
+            Build paths
+            <Info>
+              8 slots filled one at a time with whichever mod adds the most at that point{keep.length ? ' (your riven stays in)' : ''}, plus the arcane that
+              suits those mods best, with your perks, target and buffs. It shows the order stats pay off in. The Compare tab's optimizer looks further ahead for
+              the true best build.
+            </Info>
+          </h3>
           <button onClick={runPaths}>{shownPaths ? 'Rerun' : 'Suggest build paths'}</button>
         </div>
-        <p className="muted">
-          8 slots filled one at a time with whichever mod adds the most at that point{keep.length ? ' (your riven stays in)' : ''}, plus the arcane that
-          suits those mods best, with your perks, target and buffs. It shows the order stats pay off in. The Compare tab's optimizer looks further ahead for
-          the true best build.
-        </p>
         {shownPaths && (
           <div className="advisor-path-grid">
             {shownPaths.map((path) => (

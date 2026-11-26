@@ -1,6 +1,7 @@
 // the Calculator's Target drawer as one compact box (design B, "enemy card"): the enemy on a card with live health /
 // shields / armor bars, the statuses as click-to-add tiles, the kill numbers on the right, and the other debuffs in one
 // row underneath. same settings as TargetPanel + DebuffsPanel + the old Kill details, just packed into one screen
+import { Info } from './Tip'
 import { FACTIONS, HEAT_ARMOR_STRIP_STAGES, STATUS_EFFECTS, STATUS_TYPES, factionLabel, hasHeadcrits, headMultiplierFor } from '../calc/constants'
 import type { CalcResult } from '../calc/damage'
 import type { KillEstimate } from '../calc/kill'
@@ -118,10 +119,10 @@ export function TargetBox({ target, onTargetChange, debuffs, buffs, onDebuffsCha
           </label>
         </div>
         <div className="target-checks">
-          <label className="inline" title="Head multiplier: 3x on most, ~1.5x on Murmur/Techrot. Follows the faction or the enemy until you change it">
+          <label className="inline">
             Head ×
             <input type="number" min={1} step={0.5} className="tiny-input" value={target.headshotMultiplier ?? headMultiplierFor(target.faction)} onChange={(event) => update({ headshotMultiplier: Math.max(1, Number(event.target.value)) })} />
-            {target.headshotMultiplier != null && <button className="link-button" onClick={(event) => { event.preventDefault(); update({ headshotMultiplier: null }) }}>auto</button>}
+            {target.headshotMultiplier != null && <button className="link-button" onClick={(event) => { event.preventDefault(); update({ headshotMultiplier: null }) }}>auto</button>} <Info>Head multiplier: 3x on most, ~1.5x on Murmur/Techrot. Follows the faction or the enemy until you change it</Info>
           </label>
           <label className="inline" title="Crit headshots double the weapon's base crit multiplier on enemies with headcrit heads">
             <input type="checkbox" checked={target.headcrit ?? hasHeadcrits(target.faction)} onChange={(event) => update({ headcrit: event.target.checked })} />
@@ -186,8 +187,8 @@ export function TargetBox({ target, onTargetChange, debuffs, buffs, onDebuffsCha
                 <tr><td>% of health / shot</td><td>{number((kill.healthDamagePerShot / scaled.health) * 100, 1)}%</td>{canHeadshot && <td>{number((headKill.healthDamagePerShot / scaled.health) * 100, 1)}%</td>}</tr>
               </tbody>
             </table>
-            <p className="muted" title={'Uses average damage (crits averaged in), no shield overflow into health. "With DoTs" plays the fight out: procs tick as they land, Heat stacks, reloads included. The Damage simulator plays it shot by shot.'}>
-              {canHeadshot ? '' : 'AoE attacks can\'t headshot. '}Averages, no shield overflow ⓘ
+            <p className="muted">
+              {canHeadshot ? '' : 'AoE attacks can\'t headshot. '}Averages, no shield overflow <Info>{'Uses average damage (crits averaged in), no shield overflow into health. "With DoTs" plays the fight out: procs tick as they land, Heat stacks, reloads included. The Damage simulator plays it shot by shot.'}</Info>
             </p>
           </>
         ) : (
@@ -216,17 +217,17 @@ export function TargetBox({ target, onTargetChange, debuffs, buffs, onDebuffsCha
           <input type="number" min={0} value={toPercent(buffs.roar)} onChange={(event) => onBuffsChange({ ...buffs, roar: Math.max(0, Number(event.target.value)) / 100 })} />
         </label>
         {/* companion mod, only works while the companion has 50%+ crit chance */}
-        <label title="Tenacious Bond on your companion: +0.2x per rank to your crit multiplier, flat, if the companion has 50%+ crit chance">Tenacious Bond
+        <label>Tenacious Bond
           <select value={Math.round((buffs.tenaciousBond ?? 0) * 5)} onChange={(event) => onBuffsChange({ ...buffs, tenaciousBond: Number(event.target.value) / 5 })}>
             <option value={0}>Off</option>
             {[0, 1, 2, 3, 4, 5].map((rank) => <option key={rank} value={rank + 1}>R{rank} +{((rank + 1) * 0.2).toFixed(1)}x</option>)}
-          </select>
+          </select> <Info>Tenacious Bond on your companion: +0.2x per rank to your crit multiplier, flat, if the companion has 50%+ crit chance</Info>
         </label>
-        <label title="Condition Overload / Galvanized count status types, not stacks: by default the damage types this build deals, plus lifted/knocked down">CO / Galvanized counts
+        <label>CO / Galvanized counts
           <select value={debuffs.statusTypeSource ?? 'build'} onChange={(event) => updateDebuffs({ statusTypeSource: event.target.value as Debuffs['statusTypeSource'] })}>
             <option value="build">Build's damage types</option>
             <option value="debuffs">Statuses above</option>
-          </select>
+          </select> <Info>Condition Overload / Galvanized count status types, not stacks: by default the damage types this build deals, plus lifted/knocked down</Info>
         </label>
         <label className="inline" title="Hidden status, counts as a status type for Condition Overload / Galvanized">
           <input type="checkbox" checked={debuffs.liftedOrKnockedDown} onChange={(event) => updateDebuffs({ liftedOrKnockedDown: event.target.checked })} />

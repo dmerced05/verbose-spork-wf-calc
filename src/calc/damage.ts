@@ -26,9 +26,10 @@ import { STANCES, applyStance, bestCombo, comboLabel, usesStance, type StanceCho
 
 // "sustained" = average DPS over a fight this long: reloads, DoT ramp-up and Heat stacking count, and DoT ticks
 // after the fight ends don't (so long Status Duration tails stop inflating it)
-// one Incarnon swap (in or out) in base reloads. the Genesis pages say "equal to the weapon's reload speed", but in game it's
-// longer, so 2x until there's a measured number
-export const INCARNON_SWAP_RELOADS = 2
+// switching into the Incarnon form, in reloads: one, the weapon's own (Genesis pages: "has an animation equal to the weapon's
+// reload speed", and Daniel's in-game check). a shell-by-shell gun (Felarx) takes its whole magazine's reload, mods count
+export const INCARNON_SWAP_RELOADS = 1
+export const HOT_SHOT = 'Arcane Hot Shot' // a Warframe arcane whose weapon crit adds in with the crit mods (see the frame-arcane loop)
 export const SUSTAINED_FIGHT_SECONDS = 10 // about how long one tough enemy lives; Heat stacks die with it
 // the DoTs a beam's merged tick feeds twice (wiki Multishot)
 const GAS_MAX_INSTANCES = 10
@@ -156,7 +157,7 @@ export interface CalcResult {
   attackTotal: number // one attack: every pellet/duplicate + the full DoT of its procs
   // an Incarnon form's whole battery: shots in it, time to fire them all, the damage they do (DoTs included), and the refill
   // (weak point hits + swaps) before the next one. null for anything that isn't a charged Incarnon form
-  battery: { rounds: number; shots: number; seconds: number; damage: number; refillSeconds: number | null; fillSeconds: number | null } | null // fillSeconds: the refill without the form switches (the damage simulator's cycle mode)
+  battery: { rounds: number; shots: number; seconds: number; damage: number; refillSeconds: number | null; fillSeconds: number | null; switchSeconds: number | null } | null // fillSeconds: the refill without switching back in, switchSeconds: switching in (the damage simulator's cycle mode)
   duplicateStrikes: number // Melee Duplicate: average strikes per attack (1 without it)
   burstDps: number
   procsPerSecond: number
@@ -644,7 +645,8 @@ function calculateOnce({
     const enhance = 'enhance' in upgrade ? upgrade.enhance : 1
     const apply = (effect: ModEffect, rawTimes: number) => {
       const times = rawTimes * enhance
-      if ('isFrameArcane' in upgrade && effect.kind === 'stat' && effect.stat === 'critChance') frameArcaneFlatCrit += effect.value * times
+      // Arcane Hot Shot is the exception: wiki "Bonus is additive to mods such as Point Strike", so it goes in with the crit mods
+      if ('isFrameArcane' in upgrade && upgrade.name !== HOT_SHOT && effect.kind === 'stat' && effect.stat === 'critChance') frameArcaneFlatCrit += effect.value * times
       else if ('isArcane' in upgrade && effect.kind === 'damageType' && !PHYSICAL_TYPES.includes(effect.damageType)) {
         separateElements[effect.damageType] = (separateElements[effect.damageType] ?? 0) + effect.value * times
       } else applyEffect(effect, times)
@@ -1554,6 +1556,7 @@ function calculateOnce({
   // landed at the normal form's own rate: its fire rate (same fire rate mods) x its projectiles, reloads included. every
   // normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits instead), so this is the best case
   let refillFilling: number | null = null // earning the charges back, switches left out
+  let refillSwitching: number | null = null
   const refill = incarnonCharges && attack.incarnonRefill ? (() => {
     const normal = weapon.attacks.find((candidate) => !isIncarnonAttackName(candidate.name) && !candidate.parts && !candidate.heavy)
     if (!normal) return null
@@ -1566,14 +1569,14 @@ function calculateOnce({
     const filling = hits / (pullsPerSecond * projectiles)
     // switching in costs time, getting out doesn't: when the battery runs out the gun drops back to its normal form already
     // reloaded, no switch (Daniel's call; wiki Incarnon: "When Incarnon Form ends, the weapon's magazine will be refilled ...
-    // as if it were reloaded"). the way in: "Mode switching is not instantaneous and has an animation equal to the weapon's
-    // reload speed" (every Genesis page), and reload mods don't shorten it (Phenmor's reload perk "Does not affect transition
-    // from Incarnon back to base form", only reaching the way in "with a well-timed manual reload"). in game the swap runs
-    // longer than a plain reload (my call, no source gives a timing), so it's 2x the base reload
-    const switching = INCARNON_SWAP_RELOADS * (weapon.reloadTime ?? 0)
+    // as if it were reloaded"). the way in is one reload: "Mode switching is not instantaneous and has an animation equal to
+    // the weapon's reload speed" (every Genesis page). the normal form's actual reload, so reload speed mods shorten it and a
+    // shell-by-shell gun (Felarx) takes the whole magazine, not one shell (Daniel's in-game check)
+    const switching = INCARNON_SWAP_RELOADS * normalReloadTime
     const seconds = filling + switching
     requirements.push(`Incarnon form refill: ${Math.round(hits)} ${attack.incarnonRefill.directHits ? 'direct' : 'weak point'} hits with the normal form (${(pullsPerSecond * projectiles).toFixed(1)}/s, every normal shot assumed to count) = ${filling.toFixed(1)} s, plus ${switching.toFixed(1)} s switching back in = ${seconds.toFixed(1)} s per ${incarnonCharges}-round form`)
     refillFilling = filling
+    refillSwitching = switching
     return seconds
   })() : null
   const reloadTime = refill ?? normalReload
@@ -1696,7 +1699,7 @@ function calculateOnce({
     attackTotal,
     battery: incarnonCharges && shotsPerMagazine ? {
       rounds: incarnonCharges, shots: shotsPerMagazine, seconds: shotsPerMagazine / fireRate,
-      damage: attackTotal * shotsPerMagazine, refillSeconds: reloadTime, fillSeconds: refillFilling,
+      damage: attackTotal * shotsPerMagazine, refillSeconds: reloadTime, fillSeconds: refillFilling, switchSeconds: refillSwitching,
     } : null,
     duplicateStrikes: strikes,
     burstDps,

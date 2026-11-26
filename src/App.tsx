@@ -35,7 +35,9 @@ const sectionOf = (tab: Tab) => SECTIONS.find((section) => section.pages.some((p
 const tabFromHash = (): Tab => {
   if (typeof window === 'undefined') return 'home'
   const fromHash = window.location.hash.slice(1) as Tab
-  return TABS.includes(fromHash) ? fromHash : 'home'
+  if (TABS.includes(fromHash)) return fromHash
+  // a build link (?b=<code>) without a tab opens the Calculator
+  return new URLSearchParams(window.location.search).has('b') ? 'calculator' : 'home'
 }
 
 export default function App() {
@@ -125,7 +127,7 @@ export default function App() {
       )}
       {/* both stay mounted so switching tabs doesn't wipe the calculator setup */}
       <div hidden={tab !== 'calculator'}>
-        <Calculator buildToLoad={buildToLoad} frameToLoad={frameToLoad} onScenarioChange={setCalculatorScenario} onRivenChange={setCalculatorRiven} />
+        <Calculator buildToLoad={buildToLoad} frameToLoad={frameToLoad} onScenarioChange={setCalculatorScenario} onRivenChange={setCalculatorRiven} active={tab === 'calculator'} />
       </div>
       {leaderboardOpened && (
         <div hidden={tab !== 'leaderboard'}>

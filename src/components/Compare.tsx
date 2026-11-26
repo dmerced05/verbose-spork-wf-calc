@@ -15,7 +15,7 @@ import { loadLeaderboard } from '../optimizer/leaderboardLoader'
 import { SCENARIO_BUFFS, SCENARIO_DEBUFFS, SCENARIO_TARGET } from '../optimizer/scenario'
 import type { StatusMode } from '../types'
 import { RivenEditor } from './RivenEditor'
-import { Tip } from './Tip'
+import { Tip, Info } from './Tip'
 import { nicheNote } from '../calc/nicheMods'
 import { SearchSelect } from './SearchSelect'
 
@@ -225,11 +225,13 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
   return (
     <div className="compare">
       <section className="panel">
-        <h2>Compare build paths</h2>
-        <p className="muted">
-          Each path is optimized separately under its own rules, so two ways of building a weapon can be put side by side
-          (Phenmor: crit vs anti-crit with Devouring Attrition). Nothing here changes the leaderboard.
-        </p>
+        <h2>
+          Compare build paths
+          <Info>
+            Each path is optimized separately under its own rules, so two ways of building a weapon can be put side by side
+            (Phenmor: crit vs anti-crit with Devouring Attrition). Nothing here changes the leaderboard.
+          </Info>
+        </h2>
         <div className="row compare-controls">
           <SearchSelect options={weaponOptions} selectedId={weaponId} onSelect={pickWeapon} placeholder="Search weapons" />
           {weapon.attacks.length > 1 && (
@@ -241,13 +243,13 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
             <option value="leaderboard">Leaderboard scenario (neutral target)</option>
             <option value="calculator" disabled={!calculatorScenario}>Calculator's target, debuffs and Warframe</option>
           </select>
-          <label className="inline-number" title="How the enemy takes status. Immune: no procs or debuffs at all, so CO / Galvanized / DoTs do nothing. Capped: at most 4 stacks of each status, so DoT builds stall early">
+          <label className="inline-number">
             Status
             <select value={statusMode} onChange={(event) => setStatusMode(event.target.value as StatusMode)}>
               <option value="normal">normal</option>
               <option value="capped">capped at 4 stacks</option>
               <option value="immune">immune</option>
-            </select>
+            </select> <Info>How the enemy takes status. Immune: no procs or debuffs at all, so CO / Galvanized / DoTs do nothing. Capped: at most 4 stacks of each status, so DoT builds stall early</Info>
           </label>
           <label className="inline-check" title="Twice the search width. Slower, but finds a bit more when the rules are tight">
             <input type="checkbox" checked={thorough} onChange={(event) => setThorough(event.target.checked)} /> Thorough search
@@ -273,10 +275,14 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
         </div>
         {statusMode !== 'normal' && (
           <p className="muted">
-            {statusMode === 'immune'
-              ? 'Immune target: no procs and no debuffs, so Condition Overload, Galvanized mods, Viral/Heat and DoTs are worth nothing and the search drops them.'
-              : 'Capped target: 4 stacks per status at most, so DoTs stop growing early and Viral tops out at ×2.75. Builds lean toward direct hits.'}
-            {scenarioMode === 'leaderboard' && ' Not comparable with the leaderboard, which assumes normal status.'}
+            {statusMode === 'immune' ? 'Immune target: no procs, no debuffs' : 'Capped target: 4 stacks per status'}
+            {scenarioMode === 'leaderboard' && ', not comparable with the leaderboard'}
+            <Info>
+              {statusMode === 'immune'
+                ? 'Immune target: no procs and no debuffs, so Condition Overload, Galvanized mods, Viral/Heat and DoTs are worth nothing and the search drops them.'
+                : 'Capped target: 4 stacks per status at most, so DoTs stop growing early and Viral tops out at ×2.75. Builds lean toward direct hits.'}
+              {scenarioMode === 'leaderboard' && ' Not comparable with the leaderboard, which assumes normal status.'}
+            </Info>
           </p>
         )}
       </section>
@@ -396,8 +402,11 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
               </>
             )}
             <p className="muted">
-              Best found, not proven best: the search is a heuristic, and tight rules give it less room. Paths that lock things in keep
-              them in the first slots, so element order with a locked riven or mod may be worth fixing by hand in the calculator.
+              Best found, not proven best
+              <Info>
+                The search is a heuristic, and tight rules give it less room. Paths that lock things in keep
+                them in the first slots, so element order with a locked riven or mod may be worth fixing by hand in the calculator.
+              </Info>
             </p>
           </>
         )}
@@ -406,18 +415,21 @@ export function Compare({ calculatorScenario, calculatorRiven, onLoadBuild }: Pr
       {beats.length > 0 && (
         <section className="panel">
           <div className="row spread">
-            <h2>Beats the leaderboard</h2>
+            <h2>
+              Beats the leaderboard
+              <Info>
+                <p>Builds found here (leaderboard scenario, no riven) that score above that weapon's leaderboard entry, so the leaderboard's search
+                walked past them. Saved in this browser.</p>
+                <p>To fold them in: <b>Copy seeds</b>, paste into <code>scripts/leaderboard-seeds.json</code>,
+                run <code>npm run leaderboard</code>. Only these weapons rerun, each seed is scored the leaderboard's way and only kept if it
+                still beats the search.</p>
+              </Info>
+            </h2>
             <div className="row">
               <button onClick={() => copy(seedsJson)}>{copied ? 'Copied' : 'Copy seeds'}</button>
               <button onClick={() => { setBeats([]); saveBeats([]) }}>Clear</button>
             </div>
           </div>
-          <p className="muted">
-            Builds found here (leaderboard scenario, no riven) that score above that weapon's leaderboard entry, so the leaderboard's search
-            walked past them. Saved in this browser. To fold them in: <b>Copy seeds</b>, paste into <code>scripts/leaderboard-seeds.json</code>,
-            run <code>npm run leaderboard</code>. Only these weapons rerun, each seed is scored the leaderboard's way and only kept if it
-            still beats the search.
-          </p>
           <div className="table-scroll">
           <table className="compare-table">
             <thead><tr><th>Weapon</th><th>Goal</th><th>Found</th><th>Leaderboard</th><th>Build</th></tr></thead>
@@ -452,6 +464,54 @@ interface PathEditorProps {
 }
 
 function PathEditor({ letter, path, weaponId, tiers, rivenType, calculatorRiven, onChange, onRemove }: PathEditorProps) {
+  const slotsUsed = path.lockedModIds.length + (path.riven ? 1 : 0)
+  const percentInput = (value: number | null) => (value === null ? '' : Math.round(value * 1000) / 10)
+  const parsePercent = (text: string) => (text.trim() === '' ? null : Number(text) / 100)
+
+  return (
+    <section className="panel path-editor">
+      <div className="row spread">
+        <span className="path-letter">{letter}</span>
+        <input className="path-name" value={path.name} onChange={(event) => onChange({ ...path, name: event.target.value })} />
+        {onRemove && <button className="remove-inline" title="Remove path" onClick={onRemove}>×</button>}
+      </div>
+
+      <WeaponRules path={path} weaponId={weaponId} tiers={tiers} hasRiven={Boolean(path.riven)} onChange={onChange} />
+
+      <div className="path-section row">
+        <label>
+          Crit chance ≥
+          <input type="number" className="stack-input" placeholder="any" value={percentInput(path.minCritChance)}
+            onChange={(event) => onChange({ ...path, minCritChance: parsePercent(event.target.value) })} />%
+        </label>
+        <label>
+          ≤
+          <input type="number" className="stack-input" placeholder="any" value={percentInput(path.maxCritChance)}
+            onChange={(event) => onChange({ ...path, maxCritChance: parsePercent(event.target.value) })} />%
+        </label>
+      </div>
+
+      {rivenType && (
+        <div className="path-section">
+          <div className="row">
+            {!path.riven && <button disabled={slotsUsed >= 8} onClick={() => onChange({ ...path, riven: emptyRiven() })}>+ Riven</button>}
+            {calculatorRiven && <button onClick={() => onChange({ ...path, riven: calculatorRiven })}>Use the calculator's riven</button>}
+            {path.riven && <button onClick={() => onChange({ ...path, riven: null })}>Remove riven</button>}
+          </div>
+          {path.riven && (
+            <RivenEditor type={rivenType} disposition={RIVEN_DISPOSITION}
+              config={path.riven} onChange={(riven) => onChange({ ...path, riven })} />
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// the lock in / lock out mods, arcane and Incarnon rules of a path. Damage Cap's "focus the search" uses it too
+export function WeaponRules({ path, weaponId, tiers, hasRiven, onChange }: {
+  path: ComparePath; weaponId: string; tiers: NonNullable<ReturnType<typeof getIncarnonTiers>>; hasRiven: boolean; onChange: (path: ComparePath) => void
+}) {
   const weapon = weaponsById.get(weaponId)!
   // one entry per mod name (the highest-rank copy), like the calculator's browser
   const modOptions = useMemo(() => {
@@ -461,7 +521,7 @@ function PathEditor({ letter, path, weaponId, tiers, rivenType, calculatorRiven,
   }, [weapon])
   const arcaneOptions = useMemo(() => getCompatibleArcanes(weapon), [weapon])
   const [adderKey, setAdderKey] = useState(0) // remounts the search boxes so they clear after adding
-  const slotsUsed = path.lockedModIds.length + (path.riven ? 1 : 0)
+  const slotsUsed = path.lockedModIds.length + (hasRiven ? 1 : 0)
 
   const lockMod = (id: string | null) => {
     if (!id || slotsUsed >= 8 || path.lockedModIds.includes(id)) return
@@ -491,17 +551,9 @@ function PathEditor({ letter, path, weaponId, tiers, rivenType, calculatorRiven,
     }
     onChange({ ...path, lockedPerks, excludedPerkNames: excluded })
   }
-  const percentInput = (value: number | null) => (value === null ? '' : Math.round(value * 1000) / 10)
-  const parsePercent = (text: string) => (text.trim() === '' ? null : Number(text) / 100)
 
   return (
-    <section className="panel path-editor">
-      <div className="row spread">
-        <span className="path-letter">{letter}</span>
-        <input className="path-name" value={path.name} onChange={(event) => onChange({ ...path, name: event.target.value })} />
-        {onRemove && <button className="remove-inline" title="Remove path" onClick={onRemove}>×</button>}
-      </div>
-
+    <>
       <div className="path-section">
         <span className="label">Lock in ({slotsUsed}/8 slots)</span>
         <div className="row">
@@ -511,7 +563,7 @@ function PathEditor({ letter, path, weaponId, tiers, rivenType, calculatorRiven,
               <button className="chip-x" onClick={() => onChange({ ...path, lockedModIds: path.lockedModIds.filter((other) => other !== id) })}>×</button>
             </span>
           ))}
-          {path.riven && <span className="chip lock-chip riven-title">Riven</span>}
+          {hasRiven && <span className="chip lock-chip riven-title">Riven</span>}
         </div>
         <SearchSelect key={`lock-${adderKey}`} options={modOptions} selectedId={null} onSelect={lockMod} placeholder="Add a mod to lock in" />
       </div>
@@ -558,32 +610,6 @@ function PathEditor({ letter, path, weaponId, tiers, rivenType, calculatorRiven,
         </div>
       )}
 
-      <div className="path-section row">
-        <label>
-          Crit chance ≥
-          <input type="number" className="stack-input" placeholder="any" value={percentInput(path.minCritChance)}
-            onChange={(event) => onChange({ ...path, minCritChance: parsePercent(event.target.value) })} />%
-        </label>
-        <label>
-          ≤
-          <input type="number" className="stack-input" placeholder="any" value={percentInput(path.maxCritChance)}
-            onChange={(event) => onChange({ ...path, maxCritChance: parsePercent(event.target.value) })} />%
-        </label>
-      </div>
-
-      {rivenType && (
-        <div className="path-section">
-          <div className="row">
-            {!path.riven && <button disabled={slotsUsed >= 8} onClick={() => onChange({ ...path, riven: emptyRiven() })}>+ Riven</button>}
-            {calculatorRiven && <button onClick={() => onChange({ ...path, riven: calculatorRiven })}>Use the calculator's riven</button>}
-            {path.riven && <button onClick={() => onChange({ ...path, riven: null })}>Remove riven</button>}
-          </div>
-          {path.riven && (
-            <RivenEditor type={rivenType} disposition={RIVEN_DISPOSITION}
-              config={path.riven} onChange={(riven) => onChange({ ...path, riven })} />
-          )}
-        </div>
-      )}
-    </section>
+    </>
   )
 }

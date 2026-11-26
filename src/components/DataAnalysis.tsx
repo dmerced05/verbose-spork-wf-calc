@@ -1,6 +1,7 @@
 // Experimental > Ability Damage (the file kept its old Data Analysis name): Warframe abilities side by side. each ability runs on the build that fits how it scales (src/data/abilityBuilds.ts)
 // against a real target, so % of HP abilities (Smite, Reave, Sow + Reap) show up as what they are: they take the same share
 // of a Lancer and a Babau. hover a row for the wiki's scaling notes, the build's mods and why that build
+import { Info } from './Tip'
 import { useMemo, useState } from 'react'
 import { ABILITY_DAMAGE, defaultParams } from '../data/abilityDamage'
 import { abilityBuildFor } from '../data/abilityBuilds'
@@ -80,12 +81,14 @@ export function AbilityDamagePage() {
       <div className="analysis-top">
         <TargetPanel target={target} onChange={setTarget} />
         <section className="panel">
-          <h2>Ability damage</h2>
-          <p className="muted">
-            One cast on one target, each ability on the build its wiki page says it scales with (hover the build for the mods), status DoTs
-            included. &quot;Share of target HP&quot; is how much of the target&apos;s health and shields one cast takes: % of HP abilities take the
-            same share of anything. Your own build and settings are on each ability&apos;s card in the Calculator&apos;s Warframe panel.
-          </p>
+          <h2>
+            Ability damage
+            <Info>
+              One cast on one target, each ability on the build its wiki page says it scales with (hover the build for the mods), status DoTs
+              included. &quot;Share of target HP&quot; is how much of the target&apos;s health and shields one cast takes: % of HP abilities take the
+              same share of anything. Your own build and settings are on each ability&apos;s card in the Calculator&apos;s Warframe panel.
+            </Info>
+          </h2>
           <div className="leaderboard-settings">
             <label>
               Sort by

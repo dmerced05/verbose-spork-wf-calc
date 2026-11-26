@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { FULL_HEAVY_BOARD, TIME_WINDOWS, boardKey, objectiveById, ttkSeconds, type ObjectiveId } from '../optimizer/objectives'
 import { raisesFireRate } from '../calc/parseMod'
 import { nicheNote } from '../calc/nicheMods'
-import { Tip } from './Tip'
+import { Tip, Info } from './Tip'
 import { arcanesById, modsById, weaponsById } from '../data'
 import { biggestHit, comboTotal, heavyBreakdownText, heavyComboFor } from '../data/heavyAttacks'
 import { ATTACK_KINDS, attackKind, type AttackKind } from '../optimizer/attackKinds'
@@ -187,7 +187,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
                   </button>
                 ))}
               </div>
-              <span className="untested-tag" title="Damage attenuation numbers for these bosses aren't published or measured, see the description below">untested</span>
+              <span className="untested-tag">untested <Info>Damage attenuation numbers for these bosses aren't published or measured, see the description below</Info></span>
             </label>
           )}
           {rankBy === 'window' && (
@@ -213,9 +213,9 @@ export function Leaderboard({ onLoadBuild }: Props) {
             {CATEGORIES.map((option) => <option key={option}>{option}</option>)}
           </select>
           <input placeholder="Search weapons or attacks (e.g. heavy slam)" value={search} onChange={(event) => { setSearch(event.target.value); resetPaging() }} />
-          <label className="inline-check" title="Incarnon forms fire their wiki Incarnon Charges, then refill: weak point (or direct) hits with the normal form, plus 2x the base reload to swap back in (dropping out when the battery runs out is free). A Refill tag means the ranking runs past the battery">
+          <label className="inline-check">
             <input type="checkbox" checked={includeIncarnon} onChange={(event) => { setIncludeIncarnon(event.target.checked); resetPaging() }} />
-            Include Incarnon forms
+            Include Incarnon forms <Info>Incarnon forms fire their wiki Incarnon Charges, then refill: weak point (or direct) hits with the normal form, plus one reload to switch back in (dropping out when the battery runs out is free). A Refill tag means the ranking runs past the battery</Info>
           </label>
           {objective.usesFireRate && !boss && (
             <label className="inline-check" title="Off = the builds were optimized without fire rate / attack speed mods or arcanes">
@@ -224,9 +224,9 @@ export function Leaderboard({ onLoadBuild }: Props) {
             </label>
           )}
           {rankBy === 'single' && (
-            <label className="inline-check" title="Multi-hit Heavy Attacks (Heavy Scythes, Sparring, Dual Swords...) normally rank by their biggest hit. On = every hit of the heavy added up">
+            <label className="inline-check">
               <input type="checkbox" checked={fullHeavy} onChange={(event) => { setFullHeavy(event.target.checked); resetPaging() }} />
-              Count the full heavy (all hits)
+              Count the full heavy (all hits) <Info>Multi-hit Heavy Attacks (Heavy Scythes, Sparring, Dual Swords...) normally rank by their biggest hit. On = every hit of the heavy added up</Info>
             </label>
           )}
           <label className="inline-check" title="Off = every attack of every weapon gets its own listing">
@@ -253,9 +253,12 @@ export function Leaderboard({ onLoadBuild }: Props) {
           )}
         </div>
         <p className="muted">
-          Every weapon attack, each optimized on its own, in one fixed scenario: {data.scenario}
-          Incarnon forms fire their wiki Incarnon Charges, then refill with weak point (or direct) hits from the normal form, every shot counting, plus 2x the base reload to swap back in, no swap out (Refill tag: the ranking runs past the battery, so that part depends on your aim). Burst weapons fire their wiki burst, and ammo costs come from the wiki (Tenet Tetra's grenade uses the whole magazine). Shell-by-shell weapons (Felarx, Struns, Corinth, Zarr)
-          reload longer with magazine mods. Precomputed {new Date(data.generatedAt).toLocaleDateString()} from {data.dataVersion}.
+          Precomputed {new Date(data.generatedAt).toLocaleDateString()} from {data.dataVersion} · how it's scored
+          <Info>
+            <p>Every weapon attack, each optimized on its own, in one fixed scenario: {data.scenario}</p>
+            <p>Incarnon forms fire their wiki Incarnon Charges, then refill with weak point (or direct) hits from the normal form, every shot counting, plus one reload to switch back in, no switch out (Refill tag: the ranking runs past the battery, so that part depends on your aim).</p>
+            <p>Burst weapons fire their wiki burst, and ammo costs come from the wiki (Tenet Tetra's grenade uses the whole magazine). Shell-by-shell weapons (Felarx, Struns, Corinth, Zarr) reload longer with magazine mods.</p>
+          </Info>
         </p>
       </section>
 
@@ -313,7 +316,7 @@ export function Leaderboard({ onLoadBuild }: Props) {
                   const span = rankBy === 'window' ? windowSeconds : rankBy === 'sustained' ? SUSTAINED_SECONDS : boss ? ttkSeconds(entry.score) : null
                   if (span === null || !Number.isFinite(span) || span <= firing) return null
                   return (
-                    <Tip className="niche-tag" text={`Refill assumed: the ${magazineSize}-shot battery is empty after ${firing.toFixed(1)} s, so this ${span} s number includes refilling it (${reloadTime.toFixed(1)} s of weak point / direct hits with the normal form, every shot counting, plus 2x reload swapping back in). How long that really takes depends on your aim.`}>
+                    <Tip className="niche-tag" text={`Refill assumed: the ${magazineSize}-shot battery is empty after ${firing.toFixed(1)} s, so this ${span} s number includes refilling it (${reloadTime.toFixed(1)} s of weak point / direct hits with the normal form, every shot counting, plus one reload switching back in). How long that really takes depends on your aim.`}>
                       Refill
                     </Tip>
                   )

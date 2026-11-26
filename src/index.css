@@ -307,7 +307,12 @@ td:not(:first-child), th:not(:first-child) { padding-left: 10px; white-space: no
 .tip-anchor:focus-visible { box-shadow: 0 0 0 2px rgba(140, 180, 255, 0.6); border-radius: 4px; }
 .tip-bubble { position: fixed; z-index: 1000; padding: 8px 10px; border-radius: 6px; background: #1b1f2a; color: #e6e9f0;
   border: 1px solid rgba(140, 180, 255, 0.35); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45); font-size: 0.78rem; line-height: 1.4;
-  letter-spacing: normal; text-transform: none; font-weight: 400; white-space: pre-line; text-align: left; pointer-events: none; }
+  letter-spacing: normal; text-transform: none; font-weight: 400; white-space: pre-line; text-align: left; max-height: 70vh; overflow-y: auto; }
+.tip-bubble.rich { white-space: normal; }
+.tip-bubble.rich > * + * { margin-top: 6px; }
+.tip-bubble p, .tip-bubble ul { margin: 0; }
+.tip-bubble ul { padding-left: 18px; }
+.tip-bubble li + li { margin-top: 3px; }
 .multi-hit-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font-size: 0.68rem; letter-spacing: 0.02em; text-transform: none;
   color: #d9c7ff; border: 1px solid rgba(200, 170, 255, 0.5); cursor: default; }
 
@@ -465,7 +470,7 @@ code { font-size: 0.8rem; background: var(--bg); padding: 1px 5px; border-radius
 
 /* ---- damage cap tab ---- */
 .cap-input { width: 140px; }
-.cap-summary { margin: 10px 0; padding-left: 18px; display: grid; gap: 2px; }
+.cap-summary { margin: 10px 0; }
 .cap-summary b { color: var(--text); font-weight: 500; margin-right: 4px; }
 .cap-verdict { margin: 0 0 10px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); }
 .cap-verdict.capped { border-color: rgba(143, 209, 143, 0.6); background: rgba(143, 209, 143, 0.06); }
@@ -889,7 +894,7 @@ select { max-width: 100%; }
 .compact-table td, .compact-table th { padding: 3px 0 3px 12px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .compact-table td:first-child, .compact-table th:first-child { padding-left: 0; text-align: left; white-space: normal; }
 .compact-table th { font-weight: 500; font-size: 0.72rem; color: var(--muted); }
-.info { color: var(--muted); cursor: help; font-size: 0.85rem; }
+.info { color: var(--muted); cursor: help; font-size: 0.85rem; margin-left: 4px; font-weight: 400; text-transform: none; letter-spacing: normal; }
 .info:hover { color: var(--accent); }
 .share-bar { display: inline-block; width: 48px; height: 6px; margin-right: 6px; border-radius: 3px; background: var(--border); vertical-align: middle; overflow: hidden; }
 .share-bar > span { display: block; height: 100%; background: var(--muted); }
@@ -930,3 +935,22 @@ select { max-width: 100%; }
 .fight-controls input[type='number'] { width: 70px; }
 .fight-notes { font-size: 0.75rem; margin-top: 10px; }
 .tag-experimental { font-size: 0.7rem; font-weight: normal; border: 1px solid var(--accent); color: var(--accent); border-radius: 10px; padding: 1px 8px; margin-left: 6px; vertical-align: 2px; }
+
+/* local build storage: same floating box as the damage simulator, rows of builds with their buttons */
+.build-dialog { width: min(760px, calc(100vw - 24px)); }
+.build-dialog h3 { font-size: 0.9rem; margin: 14px 0 6px; color: var(--accent); }
+.build-warning { margin: 6px 0 0; font-size: 0.8rem; color: var(--muted); border-left: 2px solid var(--accent); padding-left: 8px; }
+.build-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 6px 0; border-top: 1px solid var(--border); }
+.build-label { min-width: 0; overflow-wrap: anywhere; }
+.build-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.build-actions button { padding: 3px 9px; font-size: 0.8rem; }
+.build-actions .danger { border-color: #ff6b6b; color: #ff8a8a; }
+.build-name { display: flex; gap: 6px; align-items: center; flex: 1 1 100%; }
+.build-name input { flex: 1; min-width: 0; }
+.build-copy-fallback { display: grid; gap: 4px; font-size: 0.8rem; color: var(--muted); margin-top: 6px; }
+.build-dialog .error { color: #ff8a8a; }
+.cap-focus { margin-top: 10px; }
+.cap-focus > summary { cursor: pointer; font-weight: 600; }
+.cap-focus[open] > summary { margin-bottom: 6px; }
+.cap-focus-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 8px; align-items: start; }
+.cap-focus-grid > .path-editor > button { justify-self: start; }

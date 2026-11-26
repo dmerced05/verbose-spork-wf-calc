@@ -1,3 +1,4 @@
+import { Info as InfoTip } from './Tip'
 import { SUSTAINED_FIGHT_SECONDS, type CalcResult } from '../calc/damage'
 import { INT_LIMIT, onScreen } from '../calc/damageCap'
 import type { KillEstimate } from '../calc/kill'
@@ -50,9 +51,7 @@ const whole = (value: number) => (Number.isFinite(value) ? Math.round(value).toL
 const seconds = (value: number) => (!Number.isFinite(value) ? 'never' : value < 10 ? `${value.toFixed(2)}s` : `${Math.round(value).toLocaleString()}s`)
 
 // the long explanations live behind this, on hover (and for screen readers)
-const Info = ({ text }: { text: string }) => (
-  <span className="info" title={text} aria-label={text} role="img">ⓘ</span>
-)
+const Info = ({ text }: { text: string }) => <InfoTip label={text} wide={false}>{text}</InfoTip>
 
 // one line in the key stats column. a breakdown, if given, pops up on hover/focus like PoB's Calcs tab
 function KeyStat({ label, value, sub, main, gold, breakdown }: { label: string; value: ReactNode; sub?: ReactNode; main?: boolean; gold?: boolean; breakdown?: [string, string][] }) {
@@ -311,7 +310,7 @@ export function StatsPanel({ result, body, head, arsenal, unmodded, canHeadshot,
                   <tr title="Every shot's damage plus the full DoT of its procs"><td>Damage per battery</td><td>{formatNumber(result.battery.damage, 0)}</td></tr>
                   <tr><td>Damage per second while it lasts</td><td>{formatNumber(result.battery.damage / Math.max(1e-9, result.battery.seconds), 0)}</td></tr>
                   {result.battery.refillSeconds !== null && (
-                    <tr title="Weak point (or direct) hits with the normal form, every shot counting, plus 2x the base reload to swap in and again to swap out. Real refills depend on your aim">
+                    <tr title="Weak point (or direct) hits with the normal form, every shot counting, plus one reload to switch back in (dropping out when the battery runs out is free). Real refills depend on your aim">
                       <td>Refill (best case)</td><td>{formatNumber(result.battery.refillSeconds, 2)}s</td>
                     </tr>
                   )}

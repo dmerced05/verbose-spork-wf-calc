@@ -1,6 +1,7 @@
 // your Warframe: pick the frame, mod it like the in-game screen (2x4 grid, aura, exilus; Jade gets two auras),
 // and the panel works out Ability Strength, armor and squad auras from the mods. under the mods: the frame's 4 abilities,
 // one of which can be swapped for a Helminth ability, then the allies' abilities (cast at the teammate strength)
+import { Info } from './Tip'
 import { useEffect, useMemo, useState } from 'react'
 import type { SlotPolarity } from '../calc/capacity'
 import { setSummary } from '../calc/modSets'
@@ -485,13 +486,13 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, 
           Extra Ability Strength %
           <input type="number" step={1} value={Math.round(extraStrength * 100)} onChange={(event) => setExtraStrength(Number(event.target.value) / 100)} />
         </label>
-        <label title="Anything not in the mods or the shard slots (+%). Null Star's particle count scales with it">
+        <label>
           Extra Ability Duration %
-          <input type="number" step={1} value={Math.round(extraDuration * 100)} onChange={(event) => setExtraDuration(Number(event.target.value) / 100)} />
+          <input type="number" step={1} value={Math.round(extraDuration * 100)} onChange={(event) => setExtraDuration(Number(event.target.value) / 100)} /> <Info>Anything not in the mods or the shard slots (+%). Null Star's particle count scales with it</Info>
         </label>
-        <label title="Flat armor not from the shard slots. Feeds Primary Bulwark (+1% damage per armor past 1,000)">
+        <label>
           Extra armor
-          <input type="number" min={0} step={10} value={extraArmor} onChange={(event) => setExtraArmor(Math.max(0, Number(event.target.value)))} />
+          <input type="number" min={0} step={10} value={extraArmor} onChange={(event) => setExtraArmor(Math.max(0, Number(event.target.value)))} /> <Info>Flat armor not from the shard slots. Feeds Primary Bulwark (+1% damage per armor past 1,000)</Info>
         </label>
       </div>
       <h3>Archon Shards</h3>
@@ -527,8 +528,8 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, 
       )}
       {totals.lines.length > 0 && <p className="proc-note">From mods: {totals.lines.join(' · ')}</p>}
       {setSummary(totals.setPieces).length > 0 && (
-        <p className="proc-note" title="Set pieces on the Warframe count together with the ones on the weapon in the calculator. The weapon side shows in the results">
-          Sets on the frame: {setSummary(totals.setPieces).map((set) => `${set.name} ${set.count}/${set.pieces}: ${set.text}`).join(' · ')}
+        <p className="proc-note">
+          Sets on the frame: {setSummary(totals.setPieces).map((set) => `${set.name} ${set.count}/${set.pieces}: ${set.text}`).join(' · ')} <Info>Set pieces on the Warframe count together with the ones on the weapon in the calculator. The weapon side shows in the results</Info>
         </p>
       )}
 
@@ -562,14 +563,17 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, 
             <input type="checkbox" checked={shieldInnateDr} onChange={(event) => setShieldInnateDr(event.target.checked)} />
             Shields' innate 50% DR
           </label>
-          <label className="inline-number" title="Any other damage reduction source (Gara, Baruuk, Rolling Guard...), stacked multiplicatively">
+          <label className="inline-number">
             Other DR %
-            <input type="number" min={0} max={99} step={1} value={Math.round(otherDr * 100)} onChange={(event) => setOtherDr(Math.min(0.99, Math.max(0, Number(event.target.value) / 100)))} />
+            <input type="number" min={0} max={99} step={1} value={Math.round(otherDr * 100)} onChange={(event) => setOtherDr(Math.min(0.99, Math.max(0, Number(event.target.value) / 100)))} /> <Info>Any other damage reduction source (Gara, Baruuk, Rolling Guard...), stacked multiplicatively</Info>
           </label>
         </div>
         <p className="muted">
-          Armor DR = armor / (armor + 300), health only. Every source multiplies with the others ("Sources of damage reduction
-          (including armor) stack multiplicatively with each other", wiki Damage_Reduction).
+          How damage reduction stacks
+          <Info>
+            Armor DR = armor / (armor + 300), health only. Every source multiplies with the others ("Sources of damage reduction
+            (including armor) stack multiplicatively with each other", wiki Damage_Reduction).
+          </Info>
         </p>
       </div>
 
@@ -622,9 +626,12 @@ export function WarframePanel({ isMelee, weapon, onWarframeChange, loadRequest, 
         })}
       </div>
       <p className="muted">
-        Max-rank wiki values × Ability Strength. Your abilities and your subsumed one use your strength (so your mods scale them),
-        allies' use the ally strength. Subsumed versions use the Helminth numbers where the wiki lists them (Roar, Eclipse, Nourish,
-        Warcry, Wrathful Advance). Hover for the wiki line. The leaderboard has no Warframe, so none of this changes the rankings.
+        Max-rank wiki values × Ability Strength
+        <Info>
+          Max-rank wiki values × Ability Strength. Your abilities and your subsumed one use your strength (so your mods scale them),
+          allies' use the ally strength. Subsumed versions use the Helminth numbers where the wiki lists them (Roar, Eclipse, Nourish,
+          Warcry, Wrathful Advance). Hover for the wiki line. The leaderboard has no Warframe, so none of this changes the rankings.
+        </Info>
       </p>
     </section>
   )

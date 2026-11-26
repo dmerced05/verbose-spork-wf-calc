@@ -56,6 +56,13 @@ const RULES: [RegExp, (match: RegExpMatchArray) => SpecialLine][] = [
   [/consume all Combo Multipliers to increase Secondary Weapon Critical Chance and Critical Damage by ([\d.]+)% per Combo consumed/i, (m) => ({
     trigger: 'Swapped from melee at a combo multiplier of (stacks):', maxStacks: 12, effects: [stat('critChance', pct(m[1])), stat('critDamage', pct(m[1]))],
   })],
+  // Arcane Hot Shot: "Gain 6% weapon Critical Chance for 10s, when using abilities to inflict Heat Status effect on enemies.
+  // Maximum 50x stacks." wiki: "Bonus is additive to mods such as Point Strike, Pistol Gambit and True Steel" (so it's a plain
+  // crit stat, not Arcane Avenger's flat-after kind, see damage.ts), one stack "per infliction of Heat status, not per proc",
+  // all stacks on one 10 s timer that each new stack refreshes. stacks = how many it's assumed to be at (default max)
+  [/^Gain ([\d.]+)% weapon Critical Chance for ([\d.]+)s, when using abilities to inflict Heat Status effect on enemies\. Maximum (\d+)x stacks/i, (m) => ({
+    trigger: 'On abilities inflicting Heat (stacks, 10 s):', maxStacks: Number(m[3]), effects: [stat('critChance', pct(m[1]))],
+  })],
   // Cascadia Empowered: "Deals +750 Damage matching the Damage Type of the Status Effect", wiki: "an extra instance of damage
   // when proccing a status effect", "Not affected by damage, element, physical ... or critical mods", "Affected by faction mods
   // and bonuses once", "Affected by Damage Vulnerability", "Not affected by weakspots"

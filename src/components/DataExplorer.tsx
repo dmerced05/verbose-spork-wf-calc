@@ -1,5 +1,6 @@
 // Experimental > Data Analysis: poking at the whole arsenal at once. base stats straight from the weapon data, how much
 // Enervate is really worth, how weapons changed across updates, and what the leaderboard's best builds actually pick
+import { Info } from './Tip'
 import { useEffect, useMemo, useState } from 'react'
 import { mods, weapons } from '../data'
 import introducedJson from '../data/introduced.json'
@@ -184,11 +185,13 @@ export function DataExplorer() {
   return (
     <>
       <section className="panel">
-        <h2>Data Analysis</h2>
-        <p className="muted">
-          Base stats before any mods, and "damage" is the attack's total base damage times its multishot. Exalted weapons are left out. The
-          leaderboard sections read the current leaderboard, so they show what the optimizer picked.
-        </p>
+        <h2>
+          Data Analysis
+          <Info>
+            Base stats before any mods, and "damage" is the attack's total base damage times its multishot. Exalted weapons are left out. The
+            leaderboard sections read the current leaderboard, so they show what the optimizer picked.
+          </Info>
+        </h2>
         <div className="row" style={{ marginTop: 10 }}>
           <span className="label">Attack:</span>
           {MODES.map((one) => <button key={one.id} className={one.id === mode ? 'active' : ''} onClick={() => setMode(one.id)}>{one.label}</button>)}
@@ -228,7 +231,7 @@ function ArsenalFacts({ rows }: { rows: Row[] }) {
           )
         })}
       </div>
-      <p className="muted">Average damage sits well above the median everywhere: a handful of launchers, bows and snipers hit for hundreds or thousands per shot and pull the average up.</p>
+      <p className="muted">Averages run well above medians <Info>Average damage sits well above the median everywhere: a handful of launchers, bows and snipers hit for hundreds or thousands per shot and pull the average up.</Info></p>
 
       <div className="chart-grid">
         <Histogram title={`${category} base crit chance`} values={inCategory.map((row) => row.crit)} binSize={0.05} max={0.6} fmt={(value) => pct(value)} xLabel="crit chance (last bar is 55%+)" color={COLOR[category]} />
@@ -278,12 +281,14 @@ function Subtypes({ rows, mode }: { rows: Row[]; mode: AttackMode }) {
   return (
     <section className="panel">
       <div className="row spread">
-        <h2>By weapon subtype</h2>
+        <h2>
+          By weapon subtype
+          <Info>
+            Guns split by type (rifles, shotguns, bows, snipers, launchers, spearguns, pistols, dual pistols, thrown), melee by the wiki's weapon classes
+            (glaives, heavy blades, nikanas...). Medians throughout, and no mods: DPS is each weapon's own (innate passives and its Incarnon evolutions only). Click a column header to sort by it, click a row to dig into that subtype.
+          </Info>
+        </h2>
       </div>
-      <p className="muted">
-        Guns split by type (rifles, shotguns, bows, snipers, launchers, spearguns, pistols, dual pistols, thrown), melee by the wiki's weapon classes
-        (glaives, heavy blades, nikanas...). Medians throughout, and no mods: DPS is each weapon's own (innate passives and its Incarnon evolutions only). Click a column header to sort by it, click a row to dig into that subtype.
-      </p>
       <Scatter title="Every subtype: median crit vs median status" xLabel="median crit chance" yLabel="median status chance" xFmt={(value) => pct(value)} yFmt={(value) => pct(value)}
         series={CATEGORIES.map((one) => ({ name: one, color: COLOR[one], points: groups.filter((one2) => one2.category === one).map((one2) => ({ x: one2.crit, y: one2.status, label: `${one2.name} (${one2.members.length})` })) }))}
         note="Each dot is a whole subtype. Hover for its name and size." />
@@ -352,12 +357,14 @@ function Enervate({ rows }: { rows: Row[] }) {
   const crossover = baseCrits.find((base) => base * (1 + gambit.value + crosshairs) >= enervateAverageCrit(base, 0.1, 6))
   return (
     <section className="panel">
-      <h2>How much crit does Enervate actually give?</h2>
-      <p className="muted">
-        Secondary Enervate reads "+10% crit per hit, resets after 6 Big Critical Hits". Under 100% crit there are no big crits, so the stacks climb
-        until crit passes 100%, then the 6 big crits that reset it come fast. Averaged over a whole cycle, almost every gun ends up a bit over 100%,
-        whatever it started at. So these use the weapon's base crit with no other crit mods: the only crit source on the build is Enervate.
-      </p>
+      <h2>
+        How much crit does Enervate actually give?
+        <Info>
+          Secondary Enervate reads "+10% crit per hit, resets after 6 Big Critical Hits". Under 100% crit there are no big crits, so the stacks climb
+          until crit passes 100%, then the 6 big crits that reset it come fast. Averaged over a whole cycle, almost every gun ends up a bit over 100%,
+          whatever it started at. So these use the weapon's base crit with no other crit mods: the only crit source on the build is Enervate.
+        </Info>
+      </h2>
       <div className="tiles">
         <Tile label="0% base crit" value={pct(withEnervate(0))} sub={`+${pct(withEnervate(0))} from Enervate`} />
         <Tile label={`median secondary (${pct(medianBase)} base)`} value={pct(withEnervate(medianBase))} sub={`+${pct(withEnervate(medianBase) - medianBase)} from Enervate`} />
@@ -390,11 +397,13 @@ function Trends({ rows }: { rows: Row[] }) {
   const secondHalf = rows.filter((row) => row.era !== null && row.era >= 30)
   return (
     <section className="panel">
-      <h2>Trends across updates</h2>
-      <p className="muted">
-        Weapons grouped by the update they came out in (the wiki's "Introduced", in buckets of {ERA_SIZE} updates; Primes and variants count when they
-        released, not when the original did). Medians, so one odd launcher doesn't swing a bucket.
-      </p>
+      <h2>
+        Trends across updates
+        <Info>
+          Weapons grouped by the update they came out in (the wiki's "Introduced", in buckets of {ERA_SIZE} updates; Primes and variants count when they
+          released, not when the original did). Medians, so one odd launcher doesn't swing a bucket.
+        </Info>
+      </h2>
       <div className="tiles">
         <Tile label="median crit, Update 0–19" value={pct(median(firstHalf.map((row) => row.crit)))} sub={`${firstHalf.length} weapons`} />
         <Tile label="median crit, Update 30+" value={pct(median(secondHalf.map((row) => row.crit)))} sub={`${secondHalf.length} weapons`} />
@@ -498,7 +507,10 @@ function LeaderboardMeta({ rows, board }: { rows: Row[]; board: Leaderboard | nu
           </select>
         </div>
       </div>
-      <p className="muted">Each weapon's best build on the {scoreName} board ({builds.length} {subtype === 'All' ? category.toLowerCase() : subtype.toLowerCase()} weapons), neutral target, no rivens.{boardKey === 'single' ? ' Guns score single hits on headshots, so Acuity and weak point builds show up there.' : ''}</p>
+      <p className="muted">
+        {builds.length} {subtype === 'All' ? category.toLowerCase() : subtype.toLowerCase()} weapons, best build on the {scoreName} board
+        <Info>Each weapon's best build on the {scoreName} board, neutral target, no rivens.{boardKey === 'single' ? ' Guns score single hits on headshots, so Acuity and weak point builds show up there.' : ''}</Info>
+      </p>
       <div className="tiles">
         <Tile label="median score" value={big(median(builds.map((entry) => entry.score)))} />
         <Tile label="best weapon" value={top10[0]?.weaponName ?? '–'} sub={top10[0] ? big(top10[0].score) : undefined} />
@@ -521,7 +533,7 @@ function LeaderboardMeta({ rows, board }: { rows: Row[]; board: Leaderboard | nu
           return <tr key={predictor.label}><td>{predictor.label}</td><td>{rho.toFixed(2)}</td><td>{strength}{strength !== 'none' ? (rho > 0 ? ', higher is better' : ', higher is worse') : ''}</td></tr>
         })}</tbody>
       </table>
-      <p className="muted">Spearman rank correlation over {joined.length} weapons: 1 means ranking weapons by that stat gives the leaderboard order exactly, 0 means it tells you nothing.</p>
+      <p className="muted">Spearman rank correlation over {joined.length} weapons <Info>1 means ranking weapons by that stat gives the leaderboard order exactly, 0 means it tells you nothing.</Info></p>
       {joined.length > 0 && <Scatter title={`Base crit chance vs ${scoreName}`} xLabel="base crit chance" yLabel={scoreName} logY xFmt={(value) => pct(value)} yFmt={big}
         series={[{ name: category, color: COLOR[category], points: joined.map((pair) => ({ x: pair.row.crit, y: pair.entry.score, label: rowLabel(pair.row), extra: evolutionLines(pair.row) })) }]}
         note="Log scale on the score, the top weapons are orders of magnitude above the bottom ones." />}

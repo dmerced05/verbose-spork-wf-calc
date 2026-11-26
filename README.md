@@ -29,8 +29,21 @@ Bump data after a patch with `npm update @wfcd/items` (dev/build regenerate the 
   around each candidate riven)
 - **Damage Cap**: can one hit pass the 32-bit damage limit, and what it takes. A ladder of layers (mods, headshot, solo priming,
   Warframe arcanes, shards, your frame, enemy debuffs, allies), each optimized for the biggest single instance
+  "Focus the search" takes the Compare tab's rules (lock mods in/out, arcane, Incarnon perks) plus locked Warframes and Warframe arcanes
 - **Data Analysis**: Warframe ability damage side by side against a real target (see Ability damage)
 - **Status Guide**: how each status scales and what it does, with the numbers the calc uses
+
+## Saved builds and build links
+
+- **Build links**: the address bar carries the current build as `?b=<loadout code>` while you're on the Calculator (updated a
+  second after each change with `replaceState`, so no extra history entries). Bookmark it or share it; opening it loads the
+  build on the Calculator tab. It's the query string, not the hash, so tab routing is untouched. Leaving the tab drops it.
+- **Local build storage** (button next to the loadout codes, `src/calc/buildStorage.ts`, `BuildStorageDialog.tsx`): the last
+  10 builds, recorded on their own (a load from anywhere, a copy, or 10 s without changes), plus a saved list you name,
+  rename and delete. Every entry can be loaded or copied as a link.
+- It's localStorage under `vs-` keys (every repo on one username.github.io shares the storage), best-effort: Safari wipes
+  script-writable storage after 7 days of use without a visit, and clearing site data deletes it, so links are the copy that
+  lasts. The first save asks for persistent storage once (`navigator.storage.persist()`, Safari may say no)
 
 ## How the math works
 
@@ -58,6 +71,8 @@ Arcanes: one arcane slot per weapon (primary arcanes on rifles, + shotgun arcane
 They go through the same parser as mods. Merciless/Deadhead/Dexterity damage is additive with Serration, Secondary Shiver adds +45% damage
 per Cold stack (also additive, direct hits only), Blight/Frostbite/Conjunction Voltage/Cascadia Flare stack per status proc, Primary Acuity /
 Cascadia Accuracy weak point crit only counts with Headshot on, Secondary Fortifier is x8 vs overguard. Conditional stacks default to max.
+Arcane Hot Shot (Warframe arcane) is +6% crit chance per stack, 50 max, additive with Point Strike/True Steel per the wiki; it's
+left out of Damage Cap's no-casting step, and the damage simulator can either hold it at max or build stacks from the weapon's own Heat hits.
 
 Headshots (wiki Weak_Point): body and head are always calculated side by side.
 `head factor = (head multiplier + 1.5 × weak point damage bonuses) × (1 + headshot multiplier bonuses)`, head multiplier 3x on most

@@ -1,4 +1,4 @@
-import{n as e,r as t,t as n}from"./index-ofK_elV7.js";var r=`// precomputes the leaderboard: runs the optimizer on every weapon attack for every ranking (objective) and
+import{n as e,r as t,t as n}from"./index-D1mfgcTR.js";var r=`// precomputes the leaderboard: runs the optimizer on every weapon attack for every ranking (objective) and
 // writes public/leaderboard.json, which the Leaderboard tab just reads. run with: npm run leaderboard
 //
 // it's incremental: each weapon's entries are stored with a fingerprint of everything that weapon depends on
@@ -365,6 +365,7 @@ export interface Algorithm {
 const OPT = 'src/optimizer/optimize.ts'
 const SIM = 'src/calc/simulate.ts'
 const DMG = 'src/calc/damage.ts'
+const FIGHT = 'src/calc/fight.ts'
 
 export const ALGORITHMS: Algorithm[] = [
   {
@@ -730,6 +731,46 @@ export const ALGORITHMS: Algorithm[] = [
     ],
   },
   {
+    id: 'fight',
+    title: 'Damage simulator',
+    where: 'Calculator (Damage simulator button)',
+    summary: 'One build against one enemy, shot by shot, until it dies, a few hundred seeded times. The enemy keeps state (overguard, shields, health, status stacks, Heat\\'s armor strip), so the kill time comes with its good-luck / bad-luck spread and the armor strip shows up over time.',
+    complexity: String.raw\`O\\big(R\\cdot (N_{shots}\\,\\bar p + N_{ticks})\\log Q \\;+\\; |S|\\cdot C\\big)\`,
+    sources: [
+      { file: FIGHT, symbol: 'runFight' },
+      { file: FIGHT, symbol: 'makePricer' },
+      { file: FIGHT, symbol: 'simulateFight' },
+      { file: FIGHT, symbol: 'overguardMultiplier' },
+      { file: FIGHT, symbol: 'EXIMUS_BASE_OVERGUARD' },
+      { file: FIGHT, symbol: 'HEAT_STAGES' },
+      { file: FIGHT, symbol: 'OVERGUARD_COLD_CAP' },
+    ],
+    steps: [
+      'Shot times come from the same shot model as the time windows (fire rate, magazine, reload, charge). Each pellet rolls head or body (the aim setting), its crit tier and its procs with a seeded mulberry32 RNG, seed + run index. Reloads come off the same clock (a shot interval after the last shot in a magazine, then the reload) and are shaded on the charts.',
+      'Every pellet and DoT tick is priced by the normal damage calc against the enemy\\'s state at that moment: layer, head or body, stacks of each status and the Heat strip stage. Prices are cached per state, so a fight only runs the calc for the few dozen states it reaches.',
+      'Damage goes overguard, then shields, then health. When a layer breaks mid-hit, what\\'s left of the hit is priced again against the next layer. Toxin goes around shields. Overguard takes no armor and no damage reduction, but Magnetic and Secondary Fortifier still count. Cascadia Empowered lands one flat hit on every real proc.',
+      'A shot\\'s procs count from the next shot on. Corrosive stacks last 8 s, the others 6 s, each on its own timer, at most 10 (the oldest is replaced). Heat strips {{src/calc/fight.ts#HEAT_STAGES}} of armor one step every {{src/calc/fight.ts#HEAT_UP_STEP}} s, and falls back a step every {{src/calc/fight.ts#HEAT_DOWN_STEP}} s once Heat ends. Status Duration stretches all of it.',
+      'Eximus overguard = {{src/calc/fight.ts#EXIMUS_BASE_OVERGUARD}} × the level multiplier below. While it\\'s up the enemy ignores crowd control (no lifted / knocked down bonus) and holds at most {{src/calc/fight.ts#OVERGUARD_COLD_CAP}} Cold stacks.',
+      'Incarnon forms (experimental toggle, never the leaderboard): instead of idling through the refill, the form fires its battery, drops straight back to the normal form with a full magazine (no switch when the battery runs out), the normal form fires while the charges come back (its hits count), and it switches back in; switching in is 2x the base reload, the same guess as the refill estimate. Switches, normal-form stretches and reloads are shaded on the charts.',
+      'Every fight is also run again with DoT ticks dealing nothing (the procs still land, so strips and Viral still help the hits). The gap between the two is the status damage, and the two kill times show when the hits alone would have killed.',
+      'Checked against the averages: with nothing changing on the enemy, the mean damage of 1,000 runs at 10 s is within 1% of the expected damage on a sample of leaderboard guns, and the 10th / 90th percentiles within 2% of the Monte Carlo range. Bosses are experimental: attenuation isn\\'t applied.',
+    ],
+    equations: [
+      {
+        name: 'Overguard level multiplier',
+        tex: String.raw\`m(L) = \\mathrm{f32}\\big(f_1 + \\mathrm{f32}(\\mathrm{f32}(f_2 - f_1)\\cdot s)\\big),\\quad f_1 = 1 + 0.0015\\,(L-1)^4,\\quad f_2 = 1 + 260\\,(L-1)^{0.9},\\quad s = \\mathrm{smoothstep}\\big(\\tfrac{L - 45}{5}\\big)\`,
+        complexity: 'O(1)',
+        note: 'f32 = round to a 32-bit float. L is the level the enemy spawns at (Steel Path adds 100).',
+      },
+      {
+        name: 'Overflow into the next layer',
+        tex: String.raw\`d_{next} = \\Big(1 - \\frac{P_{layer}}{d_{layer}}\\Big)\\, d_{next}^{\\,full}\`,
+        complexity: 'O(1)',
+        note: 'd_layer = the hit priced against the layer it broke, P_layer = what that layer had left.',
+      },
+    ],
+  },
+  {
     id: 'incarnon',
     title: 'Incarnon battery and refill',
     where: 'Calculator, Leaderboard',
@@ -739,7 +780,7 @@ export const ALGORITHMS: Algorithm[] = [
     steps: [
       'Charges come back per weak point hit (wiki: "each charge producing 3 rounds" on Vasto). Every normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits): the best case.',
       'Hits land at the normal form\\'s own rate (its fire rate mods count) times its projectiles, reloads included.',
-      'Switching forms takes {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}× the base form\\'s reload each way (reload speed mods don\\'t shorten it).',
+      'Switching back into the form takes {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}× the base form\\'s reload (reload speed mods don\\'t shorten it). Getting out is free: when the battery runs out the gun drops back to its normal form already reloaded.',
       'An attack is the Incarnon form when its name says so, plus Laetum\\'s Auto Radial Attack (the burst every form shot sets off), which runs on the form\\'s charges too. [Normal only] evolutions skip all of them.',
       'Ammo Efficiency (mods, arcanes, evolutions) never stretches the charges: they aren\\'t ammo.',
       'The refill\\'s reloads are the base form\\'s: shell-by-shell weapons (Felarx, Strun) reload shell by shell with the base form\\'s modded magazine. The swap uses the listed reload stat.',
@@ -747,7 +788,7 @@ export const ALGORITHMS: Algorithm[] = [
     equations: [
       {
         name: 'Refill time',
-        tex: String.raw\`t_{refill} = \\frac{Q / \\rho}{(1 + g)\\; r_{norm}\\; n_{proj}} + t_{reloads} + 2\\cdot {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}\\cdot R_{base}\`,
+        tex: String.raw\`t_{refill} = \\frac{Q / \\rho}{(1 + g)\\; r_{norm}\\; n_{proj}} + t_{reloads} + {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}\\cdot R_{base}\`,
         complexity: 'O(1)',
         note: 'Q = charges, ρ = rounds per hit, g = charge gain bonus (Incarnon Efficiency), t_reloads = the base form\\'s own reloads while filling (shell by shell where it applies), R_base = the listed reload.',
       },
@@ -1549,7 +1590,7 @@ export function buildPaths(input: CalcInput, score: Scorer, pool: EquippedMod[],
     ...(statusImmune ? [] : [pathWithArcane(input, score, pool, arcanes, 'Status', 'No crit chance / crit damage mods or arcanes.', without(['critChance', 'critDamage']), keep)]),
   ]
 }
-`,l=`// mod capacity + drain, per wiki.warframe.com/w/Polarity
+`,ee=`// mod capacity + drain, per wiki.warframe.com/w/Polarity
 //   matching polarity: drain halved, rounded up
 //   mismatched polarity: drain +25%, rounded up
 //   universal ("Any") slot matches everything except Umbra
@@ -1578,7 +1619,7 @@ export function auraCapacity(baseDrain: number, rank: number, modPolarity: strin
 
 export const nextPolarity = (current: SlotPolarity): SlotPolarity =>
   WEAPON_SLOT_POLARITIES[(WEAPON_SLOT_POLARITIES.indexOf(current) + 1) % WEAPON_SLOT_POLARITIES.length]
-`,u=`// how "per status type" bonuses (Condition Overload, Galvanized Aptitude/Savvy/Shot, Secondary Shiver) apply,
+`,te=`// how "per status type" bonuses (Condition Overload, Galvanized Aptitude/Savvy/Shot, Secondary Shiver) apply,
 // per wiki.warframe.com/w/Condition_Overload_(Mechanic) (pulled Oct 2026):
 //   "Adding" type:      base x [(most bonuses x other multipliers) + CO]   (intended, most common)
 //   "Multiplying" type: base x most bonuses x CO x other multipliers       (mostly projectiles, not intended)
@@ -1709,7 +1750,7 @@ export function resolveCoBehavior(weapon: Weapon, attack: Attack): CoBehavior {
 }
 
 export const CO_MODE_LABELS: Record<CoMode, string> = { add: 'Additive', multiply: 'Multiplicative', none: 'Doesn\\'t apply' }
-`,ee=`// all the game numbers live here so they're easy to check against the wiki
+`,ne=`// all the game numbers live here so they're easy to check against the wiki
 // sources: wiki.warframe.com/w/Damage/Calculation, /w/Status_Effect, /w/Damage/Overview_Table,
 // /w/Heat, /w/Cold, /w/Viral, /w/Faction_Damage_Bonus, /w/Enemy_Level_Scaling
 
@@ -1866,7 +1907,7 @@ export const MAX_HEAVY_EFFICIENCY = 0.9
 // Gladiator set bonus: +10% melee crit chance per piece, per combo multiplier, same shape as Blood Rush
 export const GLADIATOR_CRIT_PER_PIECE = 0.1
 export const GLADIATOR_MAX_PIECES = 6
-`,te=`// the damage pipeline, following wiki.warframe.com/w/Damage/Calculation:
+`,re=`// the damage pipeline, following wiki.warframe.com/w/Damage/Calculation:
 //   1. proportions of each damage type vs base damage (physical/elemental mods, element combining)
 //   2. quantize each type to the nearest 1/32 of base damage
 //   3. x modded base damage (base x (1 + damage mods)), x faction bonus, x crit
@@ -2024,7 +2065,7 @@ export interface CalcResult {
   attackTotal: number // one attack: every pellet/duplicate + the full DoT of its procs
   // an Incarnon form's whole battery: shots in it, time to fire them all, the damage they do (DoTs included), and the refill
   // (weak point hits + swaps) before the next one. null for anything that isn't a charged Incarnon form
-  battery: { rounds: number; shots: number; seconds: number; damage: number; refillSeconds: number | null } | null
+  battery: { rounds: number; shots: number; seconds: number; damage: number; refillSeconds: number | null; fillSeconds: number | null } | null // fillSeconds: the refill without the form switches (the damage simulator's cycle mode)
   duplicateStrikes: number // Melee Duplicate: average strikes per attack (1 without it)
   burstDps: number
   procsPerSecond: number
@@ -2042,6 +2083,10 @@ export interface CalcResult {
   damageInWindow: (seconds: number) => number // expected damage in the first \`seconds\`
   simulateWindows: (windows: number[], runs?: number) => DamageRange[] // Monte Carlo range (crit/status rolls)
   shotModel: ShotModel
+  // every status this attack lands, procs per pellet (shotModel.dots only carries the DoTs), and how much Status Duration
+  // stretches each one. the damage simulator (fight.ts) uses these to put stacks on the enemy
+  procsPerPellet: Record<string, number>
+  statusDurationScale: Record<string, number>
   fireRateLocked: boolean
   passives: string[] // names of the passives that are on for this attack
   abilities: string[] // Warframe abilities that apply to this weapon
@@ -2302,6 +2347,11 @@ function combineParts(results: CalcResult[], names: string[]): CalcResult {
     sustainedDps: add((result) => result.sustainedDps),
     timeToKill: null,
     partShotModels: results.map((result) => result.shotModel),
+    // procs per main-part pellet, every part's added in (the sim fires the parts together on the main part's shots)
+    procsPerPellet: results.reduce((total, result) => {
+      for (const [damageType, perPellet] of Object.entries(result.procsPerPellet)) total[damageType] = (total[damageType] ?? 0) + perPellet * scale(result)
+      return total
+    }, {} as Record<string, number>),
     steadyStateDps: add((result) => result.steadyStateDps),
     damageInWindow: (seconds: number) => sum(results.map((result) => result.damageInWindow(seconds))),
     // luck ranges added part by part, so the spread comes out a bit wider than one roll of the whole shot would be
@@ -3412,6 +3462,7 @@ function calculateOnce({
   // Vasto, "Individual Multishot bullets can build charges"). so a full form takes charges / rounds-per-hit weak point hits,
   // landed at the normal form's own rate: its fire rate (same fire rate mods) x its projectiles, reloads included. every
   // normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits instead), so this is the best case
+  let refillFilling: number | null = null // earning the charges back, switches left out
   const refill = incarnonCharges && attack.incarnonRefill ? (() => {
     const normal = weapon.attacks.find((candidate) => !isIncarnonAttackName(candidate.name) && !candidate.parts && !candidate.heavy)
     if (!normal) return null
@@ -3422,14 +3473,16 @@ function calculateOnce({
     const pullsPerSecond = normalMagazine ? normalMagazine / (normalMagazine / pullRate + normalReloadTime) : pullRate
     const hits = incarnonCharges / attack.incarnonRefill.roundsPerHit / (1 + incarnonChargeBonus)
     const filling = hits / (pullsPerSecond * projectiles)
-    // switching takes a reload both ways: "Mode switching is not instantaneous and has an animation equal to the weapon's
-    // reload speed" (every Genesis page), and "When Incarnon Form ends, the weapon's magazine will be refilled ... as if it were
-    // reloaded" (wiki Incarnon). reload mods don't shorten it: Phenmor's reload perk "Does not affect transition from Incarnon
-    // back to base form" and only reaches the way in "with a well-timed manual reload". in game the swap runs longer than a
-    // plain reload (my call, no source gives a timing), so each swap is 2x the base reload, in and out
-    const switching = 2 * INCARNON_SWAP_RELOADS * (weapon.reloadTime ?? 0)
+    // switching in costs time, getting out doesn't: when the battery runs out the gun drops back to its normal form already
+    // reloaded, no switch (Daniel's call; wiki Incarnon: "When Incarnon Form ends, the weapon's magazine will be refilled ...
+    // as if it were reloaded"). the way in: "Mode switching is not instantaneous and has an animation equal to the weapon's
+    // reload speed" (every Genesis page), and reload mods don't shorten it (Phenmor's reload perk "Does not affect transition
+    // from Incarnon back to base form", only reaching the way in "with a well-timed manual reload"). in game the swap runs
+    // longer than a plain reload (my call, no source gives a timing), so it's 2x the base reload
+    const switching = INCARNON_SWAP_RELOADS * (weapon.reloadTime ?? 0)
     const seconds = filling + switching
-    requirements.push(\`Incarnon form refill: \${Math.round(hits)} \${attack.incarnonRefill.directHits ? 'direct' : 'weak point'} hits with the normal form (\${(pullsPerSecond * projectiles).toFixed(1)}/s, every normal shot assumed to count) = \${filling.toFixed(1)} s, plus \${switching.toFixed(1)} s switching in and out = \${seconds.toFixed(1)} s per \${incarnonCharges}-round form\`)
+    requirements.push(\`Incarnon form refill: \${Math.round(hits)} \${attack.incarnonRefill.directHits ? 'direct' : 'weak point'} hits with the normal form (\${(pullsPerSecond * projectiles).toFixed(1)}/s, every normal shot assumed to count) = \${filling.toFixed(1)} s, plus \${switching.toFixed(1)} s switching back in = \${seconds.toFixed(1)} s per \${incarnonCharges}-round form\`)
+    refillFilling = filling
     return seconds
   })() : null
   const reloadTime = refill ?? normalReload
@@ -3552,7 +3605,7 @@ function calculateOnce({
     attackTotal,
     battery: incarnonCharges && shotsPerMagazine ? {
       rounds: incarnonCharges, shots: shotsPerMagazine, seconds: shotsPerMagazine / fireRate,
-      damage: attackTotal * shotsPerMagazine, refillSeconds: reloadTime,
+      damage: attackTotal * shotsPerMagazine, refillSeconds: reloadTime, fillSeconds: refillFilling,
     } : null,
     duplicateStrikes: strikes,
     burstDps,
@@ -3570,6 +3623,8 @@ function calculateOnce({
     damageInWindow,
     simulateWindows,
     shotModel,
+    procsPerPellet: Object.fromEntries(procTypes.map((damageType) => [damageType, pelletsPerSecondForModel > 0 ? procRates[damageType] / pelletsPerSecondForModel : 0])),
+    statusDurationScale: Object.fromEntries(procTypes.map((damageType) => [damageType, 1 + bonus.statusDuration + (statusDurationByType['*'] ?? 0) + (statusDurationByType[damageType] ?? 0)])),
     fireRateLocked,
     passives: activePassives,
     abilities: activeAbilities,
@@ -3614,7 +3669,7 @@ function comboAfterSpending(weaponName: string, combo: number, efficiency: numbe
   const kept = Math.floor(hits * Math.min(MAX_HEAVY_EFFICIENCY, Math.max(0, efficiency)))
   return Math.min(maxComboFor(weaponName), 1 + Math.floor(kept / perTier))
 }
-`,ne=`// the 32-bit damage limit. damage isn't capped there: anything past it shows on screen as -2,147,483,648 (the float
+`,ie=`// the 32-bit damage limit. damage isn't capped there: anything past it shows on screen as -2,147,483,648 (the float
 // doesn't fit in an int, so it lands on the bottom value instead of wrapping), and the game log writes the real
 // value under a "number too large" error. so I show both
 export const INT_LIMIT = 2_147_483_647
@@ -3625,7 +3680,7 @@ export function onScreen(value: number): number {
   const rounded = Math.round(value)
   return rounded <= INT_LIMIT ? rounded : INT_MIN
 }
-`,re=`// Incarnon evolutions change the weapon itself (the form's base damage, crit, status, fire rate...), so anywhere I talk
+`,ae=`// Incarnon evolutions change the weapon itself (the form's base damage, crit, status, fire rate...), so anywhere I talk
 // about a weapon's "base stats" (Compare Weapons, the Rivens page) it's the evolved numbers, not the raw data. a weapon
 // with an Incarnon form opens on that form, since that's how it's actually played
 import { calculate } from './damage'
@@ -3703,7 +3758,632 @@ export function incarnonPool(leaderboard: Leaderboard | null, group: string): Po
   cache.set(group, pool)
   return pool
 }
-`,ie=`// turns the hand-collected Incarnon perk text (src/data/incarnon.ts) into effects the calc understands
+`,oe=`// the damage simulator: one build vs one enemy, shot by shot, until it dies. the enemy keeps state (overguard, shields,
+// health, status stacks, Heat's armor strip) and every pellet and DoT tick is priced by calculate() against that state at
+// that moment, so damage.ts stays the only damage math. prices are cached per state, a fight only visits a few dozen.
+// runs are seeded (seed + run index) so the same setup gives the same fight every time
+import { INCARNON_SWAP_RELOADS, calculate, type CalcInput, type CalcResult } from './damage'
+import { isIncarnonAttackName } from './incarnonForm'
+import { rng, shotTimes, type ShotModel } from './simulate'
+import type { TargetLayer } from '../types'
+
+// ---- overguard scaling ----
+// "All Eximus units have a base Overguard of 12." the multiplier blends two curves between levels 45 and 50 with a smoothstep,
+// in 32-bit floats: f32(f1 + f32(f32(f2 - f1) x s)), f1 = 1 + 0.0015(x - 1)^4, f2 = 1 + 260(x - 1)^0.9 (Daniel's numbers
+// from the wiki's Enemy Level Scaling, checked against its chart: x8,634 at 50, x16,258 at 100, x30,476 at 200)
+export const EXIMUS_BASE_OVERGUARD = 12
+const f32 = Math.fround
+export function overguardMultiplier(level: number): number {
+  const low = 1 + 0.0015 * (level - 1) ** 4
+  const high = 1 + 260 * (level - 1) ** 0.9
+  const t = Math.min(1, Math.max(0, (level - 45) / 5))
+  const s = t * t * (3 - 2 * t)
+  return f32(low + f32(f32(high - low) * s))
+}
+// Steel Path doesn't multiply overguard (Daniel's call): it's just a higher enemy level, and the level is what scales it
+export const scaleOverguard = (baseOverguard: number, effectiveLevel: number) => baseOverguard * overguardMultiplier(effectiveLevel)
+
+// ---- status timers ----
+// Corrosive (wiki): "degrades the armor of the afflicted target by 20% for 8 seconds ... with each stack having its own
+// duration. Any stacks applied after the 10th will replace the oldest stack." Viral: "for 6 seconds ... with each stack having
+// their own duration". Cold: "It lasts 6 seconds and stacks to a maximum of 10, with each stack having its own duration."
+// Puncture/Magnetic/the rest: 6 s. Status Duration stretches all of them
+const BASE_DURATION: Record<string, number> = { corrosive: 8 }
+const MAX_STACKS = 10
+// Cold (wiki): "Bosses, as well as enemies with active Overguard, can receive a maximum of 4 Cold stacks."
+const OVERGUARD_COLD_CAP = 4
+// the statuses damage.ts reads by stack count. everything else only matters for being there (Condition Overload)
+const COUNTED = new Set(['viral', 'magnetic', 'corrosive', 'cold', 'puncture', 'tau'])
+const DOT_TYPES = new Set(['slash', 'heat', 'toxin', 'electricity', 'gas', 'blast'])
+
+// Heat (wiki Heat_Damage): "Every 0.5 seconds after the initial proc, the enemy will have 15%, then 30%, 40%, and finally 50%
+// of its armor stripped." and "After the proc ends, the target will regain armor every 1.5 seconds for 6 seconds. The enemy's
+// armor strip will decrease as follows: 50%, 40%, 30%, 15%, 0%." "Status Duration mods will increase the time intervals for
+// the armor strip as expected."
+const HEAT_STAGES = [0, 0.15, 0.3, 0.4, 0.5]
+const HEAT_UP_STEP = 0.5
+const HEAT_DOWN_STEP = 1.5
+
+export interface FightSetup {
+  input: CalcInput // the Calculator's calcInput + target, as is
+  pools: { overguard: number; shield: number; health: number }
+  runs: number
+  seconds: number // fight cap
+  headshotShare: number // 0 = body only, 1 = head only
+  seed?: number
+  // test mode: nothing changes on the enemy (no stacks, no strip, no layers), just damage dealt on the starting layer
+  frozen?: boolean
+  // the what-if: DoT ticks deal nothing, but the procs still land (strips, Viral...), so it's when the hits alone would kill
+  directOnly?: boolean
+  // experimental, Incarnon forms only: instead of sitting idle while the form refills, switch out, fire the normal form for the
+  // refill time (its hits do damage), switch back in. never used by the leaderboard (see incarnonCycle)
+  cycle?: IncarnonCycle
+}
+export interface IncarnonCycle { normalInput: CalcInput; swapSeconds: number; fillSeconds: number }
+export type ShadeKind = 'reload' | 'refill' | 'switch' | 'normal'
+export interface Shade { start: number; end: number; kind: ShadeKind }
+
+export type FightLayer = 'overguard' | 'shield' | 'health'
+export interface FightEvent { t: number; kind: 'shot' | 'hit' | 'proc' | 'tick' | 'break' | 'kill'; text: string; damage?: number; layer?: FightLayer }
+export interface ProcMark { t: number; type: string; hp: number } // hp = total enemy HP left when it landed
+export interface Band { p10: number[]; median: number[]; p90: number[] }
+export interface FightSummary {
+  runs: number
+  seconds: number
+  pools: { overguard: number; shield: number; health: number; armor: number }
+  killTimes: number[] // sorted, Infinity = alive at the cap
+  kills: number
+  ttk: { p10: number; median: number; p90: number }
+  times: number[] // sample times for the curves
+  curves: Record<FightLayer | 'armor', Band>
+  shotsToKill: number | null // median over runs that killed
+  reloadsToKill: number | null
+  runsWithReload: number
+  armorZeroAt: number | null // median time armor hit 0, over runs where it did
+  runsArmorZero: number
+  minArmor: number // median of each run's lowest armor
+  log: FightEvent[] // the median run, step by step
+  // direct hits vs status damage: the same fights with DoT ticks dealing nothing
+  direct: { killTimes: number[]; kills: number; ttk: { p10: number; median: number; p90: number } }
+  statusShare: number // DoT damage / all damage dealt, over every run
+  reloads: Shade[] // reloads, Incarnon refills, switching and normal-form stretches (the same in every run), for shading the charts
+  // the median run (same seed) with and without its DoTs: total enemy HP left on the sample grid, and where every proc landed
+  race: { withStatus: number[]; directOnly: number[]; killAt: number; directKillAt: number; statusShare: number; procs: ProcMark[] }
+  states: number // prices worked out
+}
+
+interface Priced {
+  layer: FightLayer
+  result: CalcResult
+  hit: { normal: number; crit: number }
+  critFloor: number
+  critUp: number
+  multishot: number
+  procFloor: number
+  procUp: number
+  kinds: { type: string; dot: number }[] // what a proc can be: a DoT (index into dots) or a plain status (-1)
+  weights: number[]
+  dots: { label: string; type: string; normal: number; crit: number; ticks: number; firstTickAt: number; refreshes: boolean }[]
+  toxinShare: number // share of the hit that's Toxin (it skips shields)
+}
+
+const quantile = (sorted: number[], q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]
+const medianOf = (values: number[]) => (values.length ? quantile([...values].sort((a, b) => a - b), 0.5) : null)
+
+// small binary heap of timed events
+interface Timed { t: number; seq: number; dot: string; crit: boolean; head: boolean; left: number; heatChain: number; normal: boolean } // heatChain -1 = not Heat, normal = fired by the normal form (cycle mode)
+class Queue {
+  items: Timed[] = []
+  push(item: Timed) {
+    const items = this.items
+    items.push(item)
+    let i = items.length - 1
+    while (i > 0) {
+      const parent = (i - 1) >> 1
+      if (!before(items[i], items[parent])) break
+      ;[items[i], items[parent]] = [items[parent], items[i]]
+      i = parent
+    }
+  }
+  pop(): Timed | undefined {
+    const items = this.items
+    const top = items[0]
+    const last = items.pop()
+    if (items.length && last) {
+      items[0] = last
+      let i = 0
+      while (true) {
+        const left = 2 * i + 1, right = left + 1
+        let best = i
+        if (left < items.length && before(items[left], items[best])) best = left
+        if (right < items.length && before(items[right], items[best])) best = right
+        if (best === i) break
+        ;[items[i], items[best]] = [items[best], items[i]]
+        i = best
+      }
+    }
+    return top
+  }
+  peek() { return this.items[0] }
+}
+const before = (a: Timed, b: Timed) => a.t < b.t || (a.t === b.t && a.seq < b.seq)
+
+export function makePricer(input: CalcInput, frozen: boolean) {
+  const cache = new Map<string, Priced>()
+  const base = input.debuffs
+  return {
+    get size() { return cache.size },
+    price(layer: TargetLayer, head: boolean, stacks: Record<string, number>, heatStrip: number, overguardUp: boolean): Priced {
+      const key = \`\${layer}|\${head ? 1 : 0}|\${heatStrip}|\${overguardUp ? 1 : 0}|\${Object.entries(stacks).filter(([, n]) => n > 0).map(([type, n]) => \`\${type}\${n}\`).sort().join(',')}\`
+      let priced = cache.get(key)
+      if (priced) return priced
+      // my stacks go on top of whatever the Debuffs panel already put there (teammates, abilities), capped at 10
+      const merged: Record<string, number> = { ...base.stacks }
+      for (const [type, n] of Object.entries(stacks)) merged[type] = Math.min(MAX_STACKS, (merged[type] ?? 0) + n)
+      const debuffs = frozen ? base : {
+        ...base,
+        stacks: merged,
+        heatArmorStrip: Math.max(base.heatArmorStrip, heatStrip),
+        // the user's call: while Overguard is up the enemy "will completely ignore the crowd control effects", so no lifted /
+        // knocked down bonus until it breaks
+        liftedOrKnockedDown: base.liftedOrKnockedDown && !overguardUp,
+        // my guess: Condition Overload counts what's really on the enemy right now, not the build's assumed set
+        statusTypeSource: 'debuffs' as const,
+      }
+      const result = calculate({ ...input, debuffs, target: { ...input.target, headshot: head, layer } })
+      const model = result.shotModel
+      // same tier split as simulateDamage: floor tier vs next tier up, rescaled so the mean stays right
+      const critFloor = Math.floor(model.critChance)
+      const critUp = model.critChance - critFloor
+      const tierMean = (1 - critUp) * model.hit.normal + critUp * model.hit.crit
+      const hitScale = tierMean > 0 ? model.hit.average / tierMean : 1
+      const kinds: Priced['kinds'] = []
+      const weights: number[] = []
+      model.dots.forEach((dot, index) => {
+        // Cascadia Empowered isn't a status of its own: it's one flat hit on every real proc (handled in runFight)
+        if (dot.damageType === 'cascadia') return
+        kinds.push({ type: dot.damageType.split(' (')[0], dot: index })
+        weights.push(dot.procsPerPellet)
+      })
+      for (const [type, perPellet] of Object.entries(result.procsPerPellet)) {
+        if (DOT_TYPES.has(type) || perPellet <= 0) continue
+        kinds.push({ type, dot: -1 })
+        weights.push(perPellet)
+      }
+      const procsPerPellet = weights.reduce((a, b) => a + b, 0)
+      const rows = result.damageTypes
+      const rowTotal = rows.reduce((total, row) => total + row.vsTarget, 0)
+      priced = {
+        layer: layer as FightLayer,
+        result,
+        hit: { normal: model.hit.normal * hitScale, crit: model.hit.crit * hitScale },
+        critFloor,
+        critUp,
+        multishot: model.multishot,
+        procFloor: Math.floor(procsPerPellet),
+        procUp: procsPerPellet - Math.floor(procsPerPellet),
+        kinds,
+        weights: weights.map((weight) => weight / (procsPerPellet || 1)),
+        dots: model.dots.map((dot) => {
+          const mean = (1 - critUp) * dot.tick.normal + critUp * dot.tick.crit
+          const scale = mean > 0 ? dot.tick.average / mean : 1
+          return { label: dot.damageType, type: dot.damageType.split(' (')[0], normal: dot.tick.normal * scale, crit: dot.tick.crit * scale, ticks: dot.ticks, firstTickAt: dot.firstTickAt, refreshes: dot.refreshes && !model.instantDots }
+        }),
+        toxinShare: rowTotal > 0 ? (rows.find((row) => row.damageType === 'toxin')?.vsTarget ?? 0) / rowTotal : 0,
+      }
+      cache.set(key, priced)
+      return priced
+    },
+  }
+}
+
+interface RunResult {
+  killTime: number
+  shots: number
+  reloads: number
+  armorZeroAt: number | null
+  minArmor: number
+  samples: { overguard: Float64Array; shield: Float64Array; health: Float64Array; armor: Float64Array }
+  dealtBy: (seconds: number) => number // frozen mode: damage dealt before \`seconds\`
+  directDealt: number
+  dotDealt: number
+  procs: ProcMark[] // only with a log
+  model: ShotModel // the shot model the run fired on (for the reload windows)
+}
+
+const SAMPLES = 240
+
+export function runFight(setup: FightSetup, run: number, pricer: ReturnType<typeof makePricer>, log?: FightEvent[], horizon = setup.seconds, normalPricer?: ReturnType<typeof makePricer>): RunResult {
+  const { input, frozen } = setup
+  const random = rng((setup.seed ?? 12345) + run)
+  const cap = setup.seconds
+  const step = horizon / SAMPLES // the curves' sample grid, out to \`horizon\` (simulateFight picks it from a few pilot runs)
+  const pools = { ...setup.pools }
+  const startLayer: FightLayer = frozen ? (input.target.layer as FightLayer) : pools.overguard > 0 ? 'overguard' : pools.shield > 0 ? 'shield' : 'health'
+  const say = (event: FightEvent) => { if (log && log.length < 3000) log.push(event) }
+
+  // enemy state
+  const stackTimers: Record<string, number[]> = {} // expiry times, oldest first
+  const pending: { type: string; expiry: number }[] = []
+  let heatExpiry = -Infinity, heatRampStart = 0, heatRampFrom = 0, heatEndStage = 0, heatChain = 0
+  const heatStageAt = (t: number) => {
+    if (frozen || heatExpiry === -Infinity) return 0
+    const k = heatScale
+    if (t < heatExpiry) return Math.min(4, heatRampFrom + Math.floor((t - heatRampStart) / (HEAT_UP_STEP * k) + 1e-9))
+    return Math.max(0, heatEndStage - Math.floor((t - heatExpiry) / (HEAT_DOWN_STEP * k) + 1e-9))
+  }
+  let heatScale = 1
+  const stacksNow = (t: number): Record<string, number> => {
+    const out: Record<string, number> = {}
+    if (frozen) return out
+    for (const [type, timers] of Object.entries(stackTimers)) {
+      while (timers.length && timers[0] <= t) timers.shift()
+      if (!timers.length) continue
+      out[type] = COUNTED.has(type) ? timers.length : 1
+    }
+    return out
+  }
+  const layerNow = (): FightLayer => (frozen ? startLayer : pools.overguard > 0 ? 'overguard' : pools.shield > 0 ? 'shield' : 'health')
+  let firingNormal = false // cycle mode: the shot going off now is the normal form's
+  const priceAt = (t: number, layer: FightLayer, head: boolean, normal = firingNormal) =>
+    (normal && normalPricer ? normalPricer : pricer).price(layer, head, stacksNow(t), HEAT_STAGES[heatStageAt(t)], !frozen && pools.overguard > 0)
+
+  let dealtTimes: number[] = [], dealtAmounts: number[] = []
+  let directDealt = 0, dotDealt = 0
+  const procMarks: ProcMark[] = []
+  const hpLeft = () => pools.overguard + pools.shield + pools.health
+  let killTime = Infinity
+  // damage into the layers: what's left of a hit after a layer breaks gets priced again vs the next one
+  const deal = (t: number, amountFor: (layer: FightLayer) => number, label: string, skipsShields: boolean, kind: 'hit' | 'tick' = 'hit'): boolean => {
+    if (frozen) {
+      const amount = amountFor(startLayer)
+      dealtTimes.push(t); dealtAmounts.push(amount)
+      return false
+    }
+    if (kind === 'tick' && setup.directOnly) return false
+    let share = 1
+    const count = (amount: number) => { if (kind === 'tick') dotDealt += amount; else directDealt += amount }
+    while (share > 1e-12) {
+      let layer = layerNow()
+      if (layer === 'shield' && skipsShields) layer = 'health'
+      const amount = amountFor(layer) * share
+      if (amount <= 0) return false
+      const left = pools[layer]
+      if (amount < left) {
+        pools[layer] = left - amount
+        count(amount)
+        say({ t, kind, text: label, damage: amount, layer })
+        return false
+      }
+      pools[layer] = 0
+      count(left)
+      say({ t, kind, text: label, damage: left, layer })
+      share *= 1 - left / amount
+      if (layer === 'health') {
+        killTime = t
+        say({ t, kind: 'kill', text: 'killed' })
+        return true
+      }
+      say({ t, kind: 'break', text: \`\${layer} broken\`, layer })
+    }
+    return false
+  }
+
+  const queue = new Queue()
+  let seq = 0
+  const armorNow = (t: number) => priceAt(t, 'health', false).result.armor.after
+  let minArmor = Infinity, armorZeroAt: number | null = null
+  const samples = { overguard: new Float64Array(SAMPLES + 1), shield: new Float64Array(SAMPLES + 1), health: new Float64Array(SAMPLES + 1), armor: new Float64Array(SAMPLES + 1) }
+  let nextSample = 0
+  const sampleUpTo = (t: number) => {
+    while (nextSample <= SAMPLES && nextSample * step <= t) {
+      const at = nextSample * step
+      const armor = frozen ? 0 : armorNow(at)
+      samples.overguard[nextSample] = pools.overguard
+      samples.shield[nextSample] = pools.shield
+      samples.health[nextSample] = pools.health
+      samples.armor[nextSample] = armor
+      if (!frozen) {
+        minArmor = Math.min(minArmor, armor)
+        if (armor <= 0 && armorZeroAt === null) armorZeroAt = at
+      }
+      nextSample++
+    }
+  }
+
+  // a DoT tick, priced vs the enemy as it is now. Toxin skips shields but not Overguard (Daniel's call), Overguard takes all of it
+  const tick = (event: Timed): boolean => {
+    const dotType = event.dot.split(' (')[0]
+    const amountFor = (layer: FightLayer) => {
+      const priced = priceAt(event.t, layer, event.head, event.normal)
+      const dot = priced.dots.find((candidate) => candidate.label === event.dot)
+      return dot ? (event.crit ? dot.crit : dot.normal) : 0
+    }
+    return deal(event.t, amountFor, \`\${event.dot} tick\`, dotType === 'toxin', 'tick')
+  }
+
+  const base = priceAt(0, startLayer, false)
+  const schedule = setup.cycle && normalPricer
+    ? cycleSchedule(base.result.shotModel, normalPricer.price(startLayer, false, {}, 0, false).result.shotModel, setup.cycle.swapSeconds, setup.cycle.fillSeconds, cap).shots
+    : shotTimes(base.result.shotModel, cap).map((t) => ({ t, normal: false }))
+  const times = schedule.map((shot) => shot.t)
+  const magazine = base.result.shotModel.magazineSize
+  heatScale = base.result.statusDurationScale.heat ?? 1
+  let shotsFired = 0
+
+  const runQueueUntil = (t: number): boolean => {
+    while (queue.peek() && queue.peek()!.t < t) {
+      const event = queue.pop()!
+      if (event.t >= cap) return false
+      sampleUpTo(event.t)
+      // Heat stacks all die together when the chain runs out (a later chain doesn't bring old stacks back)
+      if (event.heatChain >= 0 && (event.heatChain !== heatChain || event.t > heatExpiry + 1e-9)) continue
+      if (tick(event)) return true
+      if (event.heatChain >= 0) queue.push({ ...event, t: event.t + 1, seq: seq++ })
+      else if (event.left > 1) queue.push({ ...event, t: event.t + 1, left: event.left - 1, seq: seq++ })
+    }
+    return false
+  }
+
+  let dead = false
+  for (const shot of schedule) {
+    const time = shot.t
+    if (runQueueUntil(time)) { dead = true; break }
+    firingNormal = shot.normal
+    sampleUpTo(time)
+    shotsFired++
+    // every pellet of this shot sees the enemy as it was when the shot went off; its own procs count from the next shot
+    const body = priceAt(time, layerNow(), false)
+    let headPrice: { layer: FightLayer; priced: Priced } | null = null
+    const pellets = Math.floor(body.multishot) + (random() < body.multishot - Math.floor(body.multishot) ? 1 : 0)
+    say({ t: time, kind: 'shot', text: \`shot \${shotsFired}, \${pellets} pellet\${pellets === 1 ? '' : 's'}\` })
+    for (let pellet = 0; pellet < pellets && !dead; pellet++) {
+      const head = setup.headshotShare > 0 && (setup.headshotShare >= 1 || random() < setup.headshotShare)
+      const layer = layerNow()
+      const first = head ? (headPrice && headPrice.layer === layer ? headPrice.priced : (headPrice = { layer, priced: priceAt(time, layer, true) }).priced) : body
+      const crit = random() < first.critUp
+      const tier = first.critFloor + (crit ? 1 : 0)
+      // the hit: Toxin's share goes around shields straight to health
+      const hitOn = (layer: FightLayer, part: 'all' | 'nonToxin' | 'toxin') => {
+        const priced = layer === first.layer ? first : priceAt(time, layer, head)
+        const hit = crit ? priced.hit.crit : priced.hit.normal
+        return part === 'all' ? hit : part === 'toxin' ? hit * priced.toxinShare : hit * (1 - priced.toxinShare)
+      }
+      const label = \`\${head ? 'head' : 'body'} \${tier === 0 ? 'no crit' : ['yellow', 'orange', 'red'][Math.min(2, tier - 1)] + (tier > 3 ? \` x\${tier}\` : '')}\`
+      if (!frozen && layerNow() === 'shield' && first.toxinShare > 0) {
+        if (deal(time, (layer) => hitOn(layer, 'nonToxin'), label, false)) { dead = true; break }
+        if (deal(time, (layer) => (layer === 'health' ? hitOn('health', 'toxin') : 0), \`\${label} (Toxin)\`, true)) { dead = true; break }
+      } else if (deal(time, (layer) => hitOn(layer, 'all'), label, false)) { dead = true; break }
+
+      const procs = first.procFloor + (random() < first.procUp ? 1 : 0)
+      for (let proc = 0; proc < procs; proc++) {
+        let pick = random()
+        let index = 0
+        while (index < first.weights.length - 1 && pick >= first.weights[index]) pick -= first.weights[index++]
+        const kind = first.kinds[index]
+        if (!kind) continue
+        if (!frozen) {
+          const scale = first.result.statusDurationScale[kind.type] ?? 1
+          pending.push({ type: kind.type, expiry: time + (BASE_DURATION[kind.type] ?? 6) * scale })
+        }
+        say({ t: time, kind: 'proc', text: kind.type })
+        // Cascadia Empowered (wiki): "Creates an extra instance of damage when proccing a status effect", priced per proc by
+        // damage.ts (750 x faction x vulnerability x the proc mix's armor/weakness), counted as status damage
+        if (first.dots.some((candidate) => candidate.label === 'cascadia')) {
+          const cascadiaOn = (layer: FightLayer) => priceAt(time, layer, head).dots.find((candidate) => candidate.label === 'cascadia')?.normal ?? 0
+          if (deal(time, cascadiaOn, 'Cascadia Empowered', false, 'tick')) { dead = true; break }
+        }
+        if (log) procMarks.push({ t: time, type: kind.type, hp: hpLeft() })
+        if (kind.dot < 0) continue
+        const dot = first.dots[kind.dot]
+        if (first.result.shotModel.instantDots) {
+          if (deal(time, (layer) => { const p = priceAt(time, layer, head).dots[kind.dot]; return p ? (crit ? p.crit : p.normal) * p.ticks : 0 }, 'detonation', dot.type === 'toxin', 'tick')) { dead = true; break }
+          continue
+        }
+        if (dot.refreshes) {
+          // "a Heat proc both adds a stack and refreshes the duration of all currently active heat stacks on the target"
+          if (time >= heatExpiry) { heatRampFrom = heatStageAt(time); heatRampStart = time; heatChain++ }
+          heatExpiry = Math.max(heatExpiry, time + dot.ticks)
+          if (!frozen) heatEndStage = Math.min(4, heatRampFrom + Math.floor((heatExpiry - heatRampStart) / (HEAT_UP_STEP * heatScale) + 1e-9))
+          queue.push({ t: time + dot.firstTickAt, seq: seq++, dot: dot.label, crit, head, left: Infinity, heatChain, normal: firingNormal })
+        } else {
+          queue.push({ t: time + dot.firstTickAt, seq: seq++, dot: dot.label, crit, head, left: dot.ticks, heatChain: -1, normal: firingNormal })
+        }
+      }
+    }
+    if (dead) break
+    // the shot's procs land now: Viral (wiki) "Attacks deal their initial damage before they apply Viral status effects",
+    // and the same for Corrosive/Heat strips (the user's call: they count from the next hit on)
+    for (const { type, expiry } of pending) {
+      const timers = (stackTimers[type] ??= [])
+      while (timers.length && timers[0] <= time) timers.shift()
+      if (type === 'cold' && pools.overguard > 0 && timers.length >= OVERGUARD_COLD_CAP) continue
+      if (timers.length >= MAX_STACKS) timers.shift()
+      timers.push(expiry)
+      timers.sort((a, b) => a - b)
+    }
+    pending.length = 0
+  }
+  if (!dead) dead = runQueueUntil(cap)
+  sampleUpTo(cap)
+  // after the kill the curves sit at 0
+  for (let i = nextSample; i <= SAMPLES; i++) {
+    samples.overguard[i] = pools.overguard; samples.shield[i] = pools.shield; samples.health[i] = pools.health
+    samples.armor[i] = samples.armor[Math.max(0, nextSample - 1)]
+  }
+  const shotsToKill = Number.isFinite(killTime) ? times.filter((time) => time <= killTime).length : shotsFired
+  const reloads = setup.cycle ? 0 : magazine && base.result.shotModel.reloadTime ? Math.floor(Math.max(0, shotsToKill - 1) / magazine) : 0
+  return {
+    killTime,
+    shots: shotsToKill,
+    reloads,
+    armorZeroAt,
+    minArmor: Number.isFinite(minArmor) ? minArmor : 0,
+    samples,
+    directDealt,
+    dotDealt,
+    procs: procMarks,
+    model: base.result.shotModel,
+    dealtBy: (seconds: number) => {
+      let total = 0
+      for (let i = 0; i < dealtTimes.length; i++) if (dealtTimes[i] < seconds) total += dealtAmounts[i]
+      return total
+    },
+  }
+}
+
+export function simulateFight(setup: FightSetup, onProgress?: (done: number) => void): FightSummary {
+  const pricer = makePricer(setup.input, Boolean(setup.frozen))
+  const normalPricer = setup.cycle ? makePricer(setup.cycle.normalInput, Boolean(setup.frozen)) : undefined
+  // a few pilot runs to see roughly when it dies, so the curves get their 240 samples over the fight and not over a 60 s cap
+  // when the kill takes 1 s
+  // the direct-only fights die later, so they set the grid
+  const directSetup: FightSetup = { ...setup, directOnly: true }
+  const pilot = Array.from({ length: Math.min(setup.runs, 20) }, (_, run) => runFight(directSetup, run, pricer, undefined, setup.seconds, normalPricer).killTime).sort((a, b) => a - b)
+  const slowest = pilot[pilot.length - 1]
+  const horizon = Number.isFinite(slowest) ? Math.min(setup.seconds, Math.max(0.5, slowest * 1.25)) : setup.seconds
+  const results: RunResult[] = []
+  const directResults: RunResult[] = []
+  for (let run = 0; run < setup.runs; run++) {
+    results.push(runFight(setup, run, pricer, undefined, horizon, normalPricer))
+    directResults.push(runFight(directSetup, run, pricer, undefined, horizon, normalPricer))
+    if (onProgress && run % 25 === 24) onProgress(run + 1)
+  }
+  const order = results.map((result, run) => ({ run, t: result.killTime })).sort((a, b) => a.t - b.t)
+  const killTimes = order.map((entry) => entry.t)
+  const medianRun = order[Math.floor(order.length / 2)].run
+  const log: FightEvent[] = []
+  const median = runFight(setup, medianRun, pricer, log, horizon, normalPricer)
+  const medianDirect = directResults[medianRun]
+  const totalHp = (result: RunResult) => Array.from(result.samples.health, (health, i) => health + result.samples.shield[i] + result.samples.overguard[i])
+  const directKillTimes = directResults.map((result) => result.killTime).sort((a, b) => a - b)
+  const share = (rs: RunResult[]) => { const dot = rs.reduce((t, r) => t + r.dotDealt, 0), all = rs.reduce((t, r) => t + r.dotDealt + r.directDealt, 0); return all > 0 ? dot / all : 0 }
+
+  const band = (pick: (result: RunResult) => Float64Array): Band => {
+    const out: Band = { p10: [], median: [], p90: [] }
+    const column: number[] = new Array(results.length)
+    for (let i = 0; i <= SAMPLES; i++) {
+      results.forEach((result, run) => { column[run] = pick(result)[i] })
+      column.sort((a, b) => a - b)
+      out.p10.push(quantile(column, 0.1)); out.median.push(quantile(column, 0.5)); out.p90.push(quantile(column, 0.9))
+    }
+    return out
+  }
+  const killed = results.filter((result) => Number.isFinite(result.killTime))
+  const armorZero = results.filter((result) => result.armorZeroAt !== null)
+  const startArmor = makePricer(setup.input, Boolean(setup.frozen)).price('health', false, {}, 0, setup.pools.overguard > 0).result.armor.after
+  return {
+    runs: setup.runs,
+    seconds: setup.seconds,
+    pools: { ...setup.pools, armor: startArmor },
+    killTimes,
+    kills: killed.length,
+    ttk: { p10: quantile(killTimes, 0.1), median: quantile(killTimes, 0.5), p90: quantile(killTimes, 0.9) },
+    times: Array.from({ length: SAMPLES + 1 }, (_, i) => (i * horizon) / SAMPLES),
+    curves: { overguard: band((r) => r.samples.overguard), shield: band((r) => r.samples.shield), health: band((r) => r.samples.health), armor: band((r) => r.samples.armor) },
+    shotsToKill: medianOf(killed.map((result) => result.shots)),
+    reloadsToKill: medianOf(killed.map((result) => result.reloads)),
+    runsWithReload: killed.filter((result) => result.reloads > 0).length,
+    armorZeroAt: medianOf(armorZero.map((result) => result.armorZeroAt!)),
+    runsArmorZero: armorZero.length,
+    minArmor: medianOf(results.map((result) => result.minArmor)) ?? 0,
+    log,
+    direct: {
+      killTimes: directKillTimes,
+      kills: directKillTimes.filter(Number.isFinite).length,
+      ttk: { p10: quantile(directKillTimes, 0.1), median: quantile(directKillTimes, 0.5), p90: quantile(directKillTimes, 0.9) },
+    },
+    statusShare: share(results),
+    reloads: setup.cycle && normalPricer
+      ? cycleSchedule(median.model, normalPricer.price('health', false, {}, 0, false).result.shotModel, setup.cycle.swapSeconds, setup.cycle.fillSeconds, setup.seconds).windows
+      : reloadWindows(median.model, setup.seconds, isIncarnonAttackName(setup.input.attack.name) ? 'refill' : 'reload'),
+    race: { withStatus: totalHp(median), directOnly: totalHp(medianDirect), killAt: median.killTime, directKillAt: medianDirect.killTime, statusShare: share([median]), procs: median.procs },
+    states: pricer.size,
+  }
+}
+
+// reload windows on the shot model's clock: after a magazine's last shot comes one shot interval, then the reload
+// (Felarx & co. reload shell by shell, reloadTime already has that in it). on an Incarnon form the "reload" is the whole
+// refill: earning the charges back with the normal form plus switching out and in (damage.ts), so it's shaded as that
+export function reloadWindows(model: ShotModel, seconds: number, kind: ShadeKind = 'reload'): Shade[] {
+  if (!model.magazineSize || !model.reloadTime) return []
+  const times = shotTimes(model, seconds)
+  const windows: Shade[] = []
+  for (let i = model.magazineSize - 1; i < times.length; i += model.magazineSize) {
+    const start = times[i] + 1 / model.fireRate
+    if (start < seconds) windows.push({ start, end: Math.min(seconds, start + model.reloadTime), kind })
+  }
+  return windows
+}
+
+// experimental cycle mode for an Incarnon form: fire the battery, drop straight back to the normal form with a full magazine
+// (no switch animation when the battery runs out, Daniel's call; wiki Incarnon: "When Incarnon Form ends, the weapon's
+// magazine will be refilled ... as if it were reloaded"), fire it for as long as the charges take to earn back (damage.ts's
+// fill time), switch back in (the one switch that costs time), repeat
+export function cycleSchedule(incarnon: ShotModel, normal: ShotModel, swapSeconds: number, fill: number, seconds: number) {
+  const shots: { t: number; normal: boolean }[] = []
+  const windows: Shade[] = []
+  const battery = incarnon.magazineSize ?? 0
+  if (!battery) return { shots: shotTimes(incarnon, seconds).map((t) => ({ t, normal: false })), windows }
+  let cycleStart = 0
+  while (cycleStart < seconds && shots.length < 200000) {
+    const firstShot = cycleStart + (incarnon.firstShotAt ?? 0)
+    for (let k = 0; k < battery; k++) {
+      const t = firstShot + k / incarnon.fireRate
+      if (t >= seconds) return { shots, windows }
+      shots.push({ t, normal: false })
+    }
+    const normalStart = firstShot + battery / incarnon.fireRate
+    const normalEnd = normalStart + fill
+    if (normalStart < seconds) windows.push({ start: normalStart, end: Math.min(seconds, normalEnd), kind: 'normal' })
+    for (const t of shotTimes(normal, fill)) if (normalStart + t < seconds) shots.push({ t: normalStart + t, normal: true })
+    for (const reload of reloadWindows(normal, fill)) if (normalStart + reload.start < seconds) windows.push({ start: normalStart + reload.start, end: Math.min(seconds, normalStart + reload.end), kind: 'reload' })
+    if (normalEnd < seconds) windows.push({ start: normalEnd, end: Math.min(seconds, normalEnd + swapSeconds), kind: 'switch' })
+    cycleStart = normalEnd + swapSeconds
+  }
+  return { shots, windows }
+}
+
+// can this attack run the cycle mode? an Incarnon form with a battery, and the weapon's normal form to fall back on (same
+// pick as damage.ts's refill: the first non-Incarnon attack that isn't merged or a heavy). switching in is
+// INCARNON_SWAP_RELOADS x the base reload, like the refill estimate
+export function incarnonCycle(input: CalcInput, result: CalcResult): IncarnonCycle | null {
+  if (!isIncarnonAttackName(input.attack.name) || result.battery?.fillSeconds == null) return null
+  const normal = input.weapon.attacks.find((candidate) => !isIncarnonAttackName(candidate.name) && !candidate.parts && !candidate.heavy)
+  if (!normal) return null
+  return { normalInput: { ...input, attack: normal }, swapSeconds: INCARNON_SWAP_RELOADS * (input.weapon.reloadTime ?? 0), fillSeconds: result.battery.fillSeconds }
+}
+
+// frozen-target damage by window, for the accuracy checks against expectedDamage / simulateDamage
+export function frozenDamage(setup: Omit<FightSetup, 'frozen' | 'pools'>, windows: number[]): number[][] {
+  const full: FightSetup = { ...setup, frozen: true, pools: { overguard: 0, shield: 0, health: Infinity }, seconds: Math.max(...windows) }
+  const pricer = makePricer(full.input, true)
+  const perWindow = windows.map(() => [] as number[])
+  for (let run = 0; run < full.runs; run++) {
+    const result = runFight(full, run, pricer)
+    windows.forEach((window, w) => perWindow[w].push(result.dealtBy(window)))
+  }
+  return perWindow
+}
+`,se=`// runs the damage simulator's fights off the main thread, like the Compare tab's worker
+import { simulateFight, type FightSetup, type FightSummary } from './fight'
+
+export type FightMessage =
+  | { type: 'progress'; id: number; done: number; total: number }
+  | { type: 'done'; id: number; summary: FightSummary; ms: number }
+  | { type: 'error'; id: number; message: string }
+
+self.onmessage = (event: MessageEvent<{ id: number; setup: FightSetup }>) => {
+  const { id, setup } = event.data
+  const started = performance.now()
+  try {
+    const summary = simulateFight(setup, (done) => self.postMessage({ type: 'progress', id, done, total: setup.runs } satisfies FightMessage))
+    self.postMessage({ type: 'done', id, summary, ms: performance.now() - started } satisfies FightMessage)
+  } catch (error) {
+    self.postMessage({ type: 'error', id, message: String(error) } satisfies FightMessage)
+  }
+}
+`,ce=`// turns the hand-collected Incarnon perk text (src/data/incarnon.ts) into effects the calc understands
 import { INCARNON_FAMILIES } from '../data/incarnon'
 import { parseStatLine, triggerUptime, type ModEffect, type TriggerContext } from './parseMod'
 
@@ -3969,12 +4649,12 @@ export function stackingNote(effect: PerkEffect | null): string | null {
         \`\${effect.stat === 'critChance' ? 'crit' : 'status'} chance (max \${Math.round(effect.max * 100)}%), so \${effect.stat === 'critChance' ? 'crit' : 'status'} mods then multiply it.\`
   }
 }
-`,ae=`// which attacks only fire in the Incarnon form. nearly all of them say so in their name; Laetum's Auto Radial Attack
+`,l=`// which attacks only fire in the Incarnon form. nearly all of them say so in their name; Laetum's Auto Radial Attack
 // (the burst every Incarnon form shot sets off) is the one that doesn't, so it's listed. everything that asks "is this
 // the Incarnon form" (charges, no Ammo Efficiency, [Normal only] / [Incarnon only] perks, boards, analysis) goes through here
 const FORM_ONLY = /incarnon|^Auto Radial Attack$/i
 export const isIncarnonAttackName = (name: string) => FORM_ONLY.test(name)
-`,d=`// shots / time to kill vs a scaled enemy. this works off average damage (crits averaged in), so a lucky
+`,u=`// shots / time to kill vs a scaled enemy. this works off average damage (crits averaged in), so a lucky
 // or unlucky string of crits will land on either side of it.
 import type { CalcResult } from './damage'
 import { timeToDeal } from './simulate'
@@ -4026,7 +4706,7 @@ export function estimateKill(health: number, shield: number, vsHealth: CalcResul
     oneShot: shotsToKill === 1,
   }
 }
-`,f=`// loadout codes: the whole calculator setup (weapon side and Warframe side) as one string to copy and paste back.
+`,d=`// loadout codes: the whole calculator setup (weapon side and Warframe side) as one string to copy and paste back.
 // it's the setup as JSON, deflated, then base64url so it's only letters, numbers, - and _. the "VS1." prefix is the format
 // version, so if the shape ever changes an old code can still be read (or turned down cleanly) instead of half-loading
 const PREFIX = 'VS1.'
@@ -4062,7 +4742,7 @@ export async function decodeLoadout(code: string): Promise<unknown> {
     throw new Error('That loadout code is cut off or garbled')
   }
 }
-`,p=`// tags for the niche mechanics an attack has that the game doesn't spell out (beam multishot, multiplicative CO...).
+`,f=`// tags for the niche mechanics an attack has that the game doesn't spell out (beam multishot, multiplicative CO...).
 // everything here comes from flags the calc already uses, so a tag means the calc is treating it that way
 import { resolveCoBehavior } from './conditionOverload'
 import type { Attack, Weapon } from '../types'
@@ -4162,7 +4842,7 @@ export function mechanicTags(weapon: Weapon, attack: Attack): MechanicTag[] {
 
   return tags
 }
-`,m=`// which mods can't be equipped together. the export has no incompatibility field, so it's three checks:
+`,p=`// which mods can't be equipped together. the export has no incompatibility field, so it's three checks:
 //  1. same name (the game doesn't allow duplicates)
 //  2. same internal mod: Primed / Galvanized / Spectral copies reuse the base mod's path with a suffix
 //     (Hell's Chamber = .../Shotgun/WeaponFireIterationsMod, Galvanized Hell = .../Shotgun/WeaponFireIterationsSPMod)
@@ -4238,7 +4918,7 @@ export const modsConflict = (a: Mod, b: Mod) => {
 
 // the first equipped mod that blocks \`candidate\`, for the "incompatible with X" label
 export const blockingMod = (candidate: Mod, equipped: Mod[]) => equipped.find((mod) => modsConflict(candidate, mod)) ?? null
-`,h=`// mod set bonuses. sets count every equipped piece across the Warframe and the weapon being calculated (companion and other
+`,m=`// mod set bonuses. sets count every equipped piece across the Warframe and the weapon being calculated (companion and other
 // weapons aren't modeled), the set text per piece count comes from the export (src/data/modSets.json).
 // what does something here:
 //  - Umbra / Sacrificial: "Enhance mods in this set". Umbral Fiber/Vitality +30% / +80% of their values with 2 / 3 pieces,
@@ -4294,7 +4974,7 @@ export const setSummary = (pieces: SetPieces) =>
       const capped = Math.min(count, info.pieces)
       return { set, name: info.name, count: capped, pieces: info.pieces, text: info.stats[capped - 1] ?? '' }
     })
-`,g=`// which of two mods that do the same wins: the one without a catch. Serration over Heavy Caliber (same +165%, but
+`,h=`// which of two mods that do the same wins: the one without a catch. Serration over Heavy Caliber (same +165%, but
 // -55% accuracy), Vital Sense over Bladed Rounds (same +120% crit damage, but only after kills while aiming). the calc
 // counts conditionals at full stacks, so on paper they tie and list order would decide
 import { nicheNote } from './nicheMods'
@@ -4310,7 +4990,7 @@ export function modCatch(mod: Mod): number {
   cache.set(mod, value)
   return value
 }
-`,_=`// mods the calc models at full strength that are hard to keep fully on in a real fight. I don't change their numbers
+`,g=`// mods the calc models at full strength that are hard to keep fully on in a real fight. I don't change their numbers
 // (that's a judgement call per weapon), they just get a "Niche" tag with the catch on hover
 const SPAM_TIP = 'The calc counts it the whole time.'
 
@@ -4331,7 +5011,7 @@ export function nicheNote(levelStats: string[][], rank = levelStats.length - 1):
   if (/On Reload:/.test(text)) return \`Builds up over one magazine and pays off on the next, so it's off for the first magazine. \${SPAM_TIP}\`
   return null
 }
-`,v=`import { DAMAGE_TYPES } from './constants'
+`,_=`import { DAMAGE_TYPES } from './constants'
 import { specialLine, type SpecialLine } from './specialLines'
 
 export type StatKey =
@@ -4713,7 +5393,7 @@ export const utilityValue = (levelStats: string[][], rank: number, singleHit = f
     0,
   )
 }
-`,y=`// riven mods (wiki Riven_Mods, Riven_Splicer). the user types in their riven's stats, I turn it into a normal Mod so
+`,v=`// riven mods (wiki Riven_Mods, Riven_Splicer). the user types in their riven's stats, I turn it into a normal Mod so
 // the calc treats it like anything else. never offered to the optimizer or leaderboard since rolls are pure RNG.
 //
 // value at max rank = base x disposition x layout weight x roll, roll is 90%..110% ("randomly chosen between 90% and 110%
@@ -4916,7 +5596,7 @@ export function rivenMod(weapon: Weapon, config: RivenConfig): Mod | null {
       stats.map((stat) => statLine(statDef(type, stat.tag)!, (stat.value * (rank + 1)) / (RIVEN_MAX_RANK + 1), Boolean(weapon.isBow)))),
   }
 }
-`,b=`// the "why" next to the god-roll search: what about this weapon's base stats makes some riven stats better than others.
+`,y=`// the "why" next to the god-roll search: what about this weapon's base stats makes some riven stats better than others.
 // these are rules of thumb from the base numbers, the search underneath is what actually measures it
 import { resolveCoBehavior } from './conditionOverload'
 import { rivenPool, type RivenType } from './riven'
@@ -5006,7 +5686,7 @@ export function rivenHints(weapon: Weapon, rawAttack: Attack, type: RivenType, b
   }
   return hints
 }
-`,x=`// damage over a stretch of time: shots on the fire rate, magazine + reload, and status procs ticking on their own
+`,b=`// damage over a stretch of time: shots on the fire rate, magazine + reload, and status procs ticking on their own
 // clocks. two versions share one shot model:
 //  - expectedDamage: the average, deterministic and fast (the optimizer calls it thousands of times per attack)
 //  - simulateDamage: Monte Carlo, rolls crits and procs per pellet, so the UI can show a bad-luck / good-luck range
@@ -5098,7 +5778,7 @@ export function expectedDamage(model: ShotModel, seconds: number): number {
 }
 
 // small seeded RNG (mulberry32) so the range doesn't jump around on every re-render
-function rng(seed: number) {
+export function rng(seed: number) {
   let state = seed >>> 0
   return () => {
     state = (state + 0x6d2b79f5) >>> 0
@@ -5283,7 +5963,7 @@ export function attenuatedTimeToKill(shieldModels: ShotModel[] | null, shield: n
     horizon *= 2
   }
 }
-`,S=`// weapon augment lines too odd for the normal stat patterns, one rule each. values come from the line itself so lower
+`,x=`// weapon augment lines too odd for the normal stat patterns, one rule each. values come from the line itself so lower
 // ranks still scale. the trigger text ends up in the results' "This build assumes" list, so it says what has to happen.
 // lines that don't change damage at all (ammo, accuracy, projectile speed...) are dropped instead of listed as "not modeled"
 import type { ModEffect } from './parseMod'
@@ -5403,7 +6083,7 @@ export function specialLine(text: string): SpecialLine | null {
   }
   return null
 }
-`,C=`import { CORROSIVE_PROJECTION_PER_AURA, corrosiveArmorReduction } from './constants'
+`,S=`import { CORROSIVE_PROJECTION_PER_AURA, corrosiveArmorReduction } from './constants'
 import type { Debuffs } from '../types'
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
@@ -5488,7 +6168,7 @@ export function scaleShield(baseShield: number, levelsAboveBase: number, faction
   const curves = SHIELD_CURVES[SCALING_GROUP[faction] ?? 'standard'] ?? SHIELD_CURVES.standard
   return baseShield * scalingMultiplier(curves, levelsAboveBase) * (steelPath ? STEEL_PATH_HEALTH_SHIELD_MULTIPLIER : 1)
 }
-`,w=`// what the Warframe build adds up to: Ability Strength, armor/health/shields, damage reduction, and the auras that buff
+`,C=`// what the Warframe build adds up to: Ability Strength, armor/health/shields, damage reduction, and the auras that buff
 // weapons. mod and arcane text goes through the same parser as weapon mods (frameStat effects), auras and a few odd lines
 // are read straight from the text here ("Squad receives +60% Melee Damage", Power Donation, Growing Power)
 // damage reduction (wiki Damage_Reduction): "Sources of damage reduction (including armor) stack multiplicatively with each
@@ -5749,7 +6429,7 @@ export function warframeStateFor(build: WarframeBuild, totals: WarframeTotals): 
     shardStrength: totals.shardStrength,
   }
 }
-`,T=`// where a weapon's base numbers sit among its own category (primaries vs primaries, melee vs melee), plus the plain
+`,w=`// where a weapon's base numbers sit among its own category (primaries vs primaries, melee vs melee), plus the plain
 // "is this good?" lines the Compare Weapons and Rivens pages show. all from the unmodded attack data, so it says what
 // the weapon brings to a build, not what a build does with it
 import { weapons } from '../data'
@@ -5993,7 +6673,7 @@ export function profileLines(weapon: Weapon, attack: Attack, metrics: AttackMetr
   const order = { good: 0, bad: 1, neutral: 2 }
   return lines.sort((a, b) => order[a.tone] - order[b.tone])
 }
-`,E=`// Experimental > Data Analysis: poking at the whole arsenal at once. base stats straight from the weapon data, how much
+`,T=`// Experimental > Data Analysis: poking at the whole arsenal at once. base stats straight from the weapon data, how much
 // Enervate is really worth, how weapons changed across updates, and what the leaderboard's best builds actually pick
 import { useEffect, useMemo, useState } from 'react'
 import { mods, weapons } from '../data'
@@ -6523,7 +7203,7 @@ function LeaderboardMeta({ rows, board }: { rows: Row[]; board: Leaderboard | nu
     </section>
   )
 }
-`,D=`// weapons that reload one shell at a time (wiki Reload_Speed lists them). total reload =
+`,E=`// weapons that reload one shell at a time (wiki Reload_Speed lists them). total reload =
 // (start + end delay + per shell x magazine) / (1 + reload speed), so a bigger magazine means a longer reload.
 // numbers from each weapon's wiki page, they add up to the data's reload time at base magazine
 export const SHELL_BY_SHELL_RELOAD: Record<string, { delay: number; perShell: number }> = {
@@ -6535,7 +7215,7 @@ export const SHELL_BY_SHELL_RELOAD: Record<string, { delay: number; perShell: nu
   Corinth: { delay: 1.2, perShell: 0.22 }, // 5 -> 2.3s (Corinth Prime reloads the whole magazine)
   Zarr: { delay: 0.75, perShell: 0.5 }, // 3 -> 2.25s
 }
-`,O=`// which kind of attack a leaderboard entry is, for the attack-type filter. the export has no such field, so it's the
+`,D=`// which kind of attack a leaderboard entry is, for the attack-type filter. the export has no such field, so it's the
 // weapon category + the data's AoE flag (explosions, radial hits) + the attack name. names are free text, so the
 // alt-fire list is a best guess: anything that isn't recognised as alt-fire on a gun counts as primary fire
 import type { Attack, Weapon } from '../types'
@@ -6570,7 +7250,7 @@ export function attackKind(weapon: Weapon, attack: Pick<Attack, 'name' | 'isAoE'
   if (ALT_FIRE.test(name)) return 'altFire'
   return 'primaryFire'
 }
-`,k=`// the Boss Damage leaderboard: one tough target that doesn't die and takes status capped. built by
+`,O=`// the Boss Damage leaderboard: one tough target that doesn't die and takes status capped. built by
 // \`npm run leaderboard -- --boss\` into public/boss-leaderboard.json, separate from the main boards so neither one
 // reruns the other.
 //  - status capped at 4 stacks of each type (most bosses; Heat, Slash, Viral... stop growing early)
@@ -6682,7 +7362,7 @@ export function optimizeWeaponBoss(weapon: Weapon): Record<string, WeaponEntry[]
   }
   return boards
 }
-`,A=`// runs the Damage Cap ladder off the main thread
+`,k=`// runs the Damage Cap ladder off the main thread
 import { runCapLadder, type CapPath, type CapRequest, type CapStepResult } from './damageCap'
 
 export type CapMessage =
@@ -6704,7 +7384,7 @@ self.onmessage = (event: MessageEvent<{ id: number; request: CapRequest }>) => {
     self.postMessage({ type: 'error', id, message: String(error) } satisfies CapMessage)
   }
 }
-`,j=`// the Compare tab: optimize one weapon attack several times, each under a different set of rules (a "path"), for a
+`,A=`// the Compare tab: optimize one weapon attack several times, each under a different set of rules (a "path"), for a
 // few goals. pure data in and out so it can run in a Web Worker (src/optimizer/compareWorker.ts) and in tests
 import { arcanesById, modsById, weaponsById } from '../data'
 import { rivenMod, type RivenConfig, RIVEN_MOD_ID } from '../calc/riven'
@@ -6805,7 +7485,7 @@ export const boardsFor = (attack: { heavy?: boolean }) =>
 
 export const isRivenId = (id: string) => id === RIVEN_MOD_ID
 export { boardKey }
-`,M=`// runs Compare tab requests off the main thread so the page doesn't freeze while it searches
+`,j=`// runs Compare tab requests off the main thread so the page doesn't freeze while it searches
 import { runPath, type CompareRequest, type CompareResult } from './compare'
 
 export type CompareMessage =
@@ -6826,7 +7506,7 @@ self.onmessage = (event: MessageEvent<{ id: number; request: CompareRequest }>) 
     self.postMessage({ type: 'error', id, message: String(error) } satisfies CompareMessage)
   }
 }
-`,N=`// Damage Cap tab: how much has to stack up for one hit of a weapon to pass the damage limit. a ladder where each step
+`,M=`// Damage Cap tab: how much has to stack up for one hit of a weapon to pass the damage limit. a ladder where each step
 // adds a layer and is optimized for the biggest single instance:
 //   1. mods, weapon arcane and Incarnon   2. + headshot
 //   3. + solo priming: the statuses the build applies itself plus what a Diriga primes, kept on through steps 4-6
@@ -7518,7 +8198,7 @@ export function runCapLadder(request: CapRequest, onStep: (result: CapStepResult
   const preferred = isMelee ? ranked.find((path) => !path.situational.length) ?? ranked[0] : ranked[0]
   onPaths(paths, preferred?.index ?? 0)
 }
-`,P=`// a real Warframe mod build for the Damage Cap ladder: 8 slots, aura(s) and exilus, the ability augments locked in, and the
+`,N=`// a real Warframe mod build for the Damage Cap ladder: 8 slots, aura(s) and exilus, the ability augments locked in, and the
 // rest picked from the frame mods that change weapon damage somewhere (Strength, Max Energy for Violet shards, squad auras,
 // Gladiator / Nira / Vigilante pieces that count toward weapon set bonuses, Umbral pieces that enhance Umbral Intensify).
 // conditionals are off (Final Act's low health, Archon Intensify's heal), Growing Power is assumed up like in the panel
@@ -7686,7 +8366,7 @@ export const describeLoadout = (loadout: FrameLoadout) => [
   ...loadout.aura.map((mod) => \`\${mod.name} (aura)\`),
   ...(loadout.exilus ? [\`\${loadout.exilus.name} (exilus)\`] : []),
 ]
-`,oe=`// the leaderboard JSON, fetched once per page load and only when a tab needs it (Compare, Compare Weapons)
+`,P=`// the leaderboard JSON, fetched once per page load and only when a tab needs it (Compare, Compare Weapons)
 import { expandLeaderboard, type Leaderboard, type LeaderboardFile } from './leaderboardTypes'
 
 let leaderboardPromise: Promise<Leaderboard | null> | null = null
@@ -7959,7 +8639,7 @@ export function optimizeWeapon(weapon: Weapon, seeds: SeedBuild[] = [], onlyBoar
   }
   return boards
 }
-`,L=`// which mods are worth trying for an attack, and which ones can't be equipped together
+`,le=`// which mods are worth trying for an attack, and which ones can't be equipped together
 import { modsConflict } from '../calc/modConflicts'
 import { parseUpgrade, raisesFireRate, type ModEffect } from '../calc/parseMod'
 import { BANE_TARGET } from '../calc/constants'
@@ -8034,7 +8714,7 @@ export function damageModPool(
 
 // same rules as the calculator's mod browser (src/calc/modConflicts.ts)
 export const conflicts = (a: Mod, b: Mod) => modsConflict(a, b)
-`,R=`import type { CalcResult } from '../calc/damage'
+`,L=`import type { CalcResult } from '../calc/damage'
 import type { HeavyMode } from '../data/heavyAttacks'
 
 // what the leaderboard can rank by. each one is optimized separately, since the best build for sustained DPS
@@ -8127,7 +8807,7 @@ export const BOARDS: BoardSpec[] = [
   ),
   { key: FULL_HEAVY_BOARD, objective: objectiveById('single'), allowFireRateMods: true, heavyMode: 'fullCombo', heavyOnly: true },
 ]
-`,z=`// finds a strong build for one attack + objective in the fixed leaderboard scenario.
+`,R=`// finds a strong build for one attack + objective in the fixed leaderboard scenario.
 // beam search over a pruned mod pool, then single swaps, Incarnon perks, arcane, and elemental slot order.
 // it's a heuristic, not a proof of the best build, but it's checked against hand-built meta builds.
 import { resolveCoBehavior } from '../calc/conditionOverload'
@@ -8481,7 +9161,7 @@ export function optimizeAttack(
   }
   return winner
 }
-`,B=`// the Rivens page's god-roll finder: which riven stats raise this attack the most once the other 7 mods are rebuilt
+`,z=`// the Rivens page's god-roll finder: which riven stats raise this attack the most once the other 7 mods are rebuilt
 // around it. a riven is never worth much on its own (a Heat riven is worth less next to Hellfire, Multishot less next
 // to Galvanized Chamber), so every candidate goes through the full optimizer with the riven locked in.
 //  1. screen: each stat alone on a 2-stat + curse riven, at the roll you picked
@@ -8687,7 +9367,7 @@ export function searchRivens(request: RivenSearchRequest, onProgress: (progress:
 
   return { baseline: { score: baseline.score, entry: toEntry(baseline) }, stats, twoStat, threeStat, curses, harmlessCurse: name(curse) }
 }
-`,V=`// runs the Rivens page's god-roll search off the main thread, it's ~100 optimizer runs
+`,B=`// runs the Rivens page's god-roll search off the main thread, it's ~100 optimizer runs
 import { searchRivens, type RivenProgress, type RivenSearchRequest, type RivenSearchResult } from './rivenSearch'
 
 export type RivenMessage =
@@ -8704,7 +9384,7 @@ self.onmessage = (event: MessageEvent<{ id: number; request: RivenSearchRequest 
     self.postMessage({ type: 'error', id, message: String(error) } satisfies RivenMessage)
   }
 }
-`,H=`// the fixed setup every leaderboard build is scored against. the leaderboard is precomputed, so this has to be
+`,V=`// the fixed setup every leaderboard build is scored against. the leaderboard is precomputed, so this has to be
 // one neutral scenario: no faction, no armor, body shots, conditionals at max, and Condition Overload/Galvanized
 // counting only the status types the build itself deals (base physical + modded elements)
 import { STATUS_TYPES } from '../calc/constants'
@@ -8746,9 +9426,9 @@ export const SCENARIO_COMBO = 13
 export const SCENARIO_BUFFS: Buffs = { roar: 0, combo: SCENARIO_COMBO, gladiatorWarframePieces: 0 }
 
 export const SCENARIO_HEADSHOT = { target: SCENARIO_HEADSHOT_TARGET, armor: 0, debuffs: SCENARIO_DEBUFFS, buffs: SCENARIO_BUFFS }
-`,U=t(),W=`src/optimizer/optimize.ts`,G=`src/calc/simulate.ts`,K=`src/calc/damage.ts`,q=[{id:`leaderboard`,title:`Leaderboard rebuild`,where:`Leaderboard, Compare, Data Analysis`,summary:`Precomputes the best build for every weapon attack on every ranking, offline, and only redoes the weapons whose inputs changed.`,complexity:String.raw`O\!\left(\frac{|W_s|\,\bar A\,|\mathcal B|\;T_{opt}}{p}\right)`,sources:[{file:`scripts/build-leaderboard.ts`,symbol:`main`},{file:`scripts/build-leaderboard.ts`,symbol:`runShard`},{file:`scripts/build-leaderboard.ts`,symbol:`writeFile`},{file:`scripts/leaderboardFingerprint.ts`},{file:`src/optimizer/leaderboardWeapon.ts`,symbol:`optimizeWeapon`},{file:`src/optimizer/objectives.ts`,symbol:`BOARDS`}],steps:[`Fingerprint: one engine hash over the generic code every weapon runs through (comment lines and whitespace stripped), and one hash per weapon over its own data plus the outputs of every lookup it hits (the parsed mods it can equip, its passives, Incarnon perks, stance...).`,`A weapon is stale when the engine hash or its own hash changed (or it was named with --only). --boards limits the re-optimizing to some boards and keeps the rest from the old file.`,`Stale weapons are dealt round-robin to one worker process per core (max 12), each running a pre-bundled copy of the script.`,`Per weapon: every attack that does damage (reload/expiry/turret events and headshot-only parts skipped) × every board goes through the build optimizer. Heavies and gated alt-fires skip the fire-rate boards. Guns on the Single damage instance board are scored on headshots.`,`On fire-rate boards, the build found without fire-rate mods replaces the normal one if it scores higher (the search is a heuristic).`,`Whole shots ("A + B") are re-scored with every build found for their parts, plus any saved Compare seeds; a seed only replaces the entry if it scores higher.`,`Kept and new entries are merged, each board is sorted by score, and the file is written compact: mods, arcanes and weapons become indexes into shared tables.`],equations:[{name:`Total work`,tex:String.raw`T = \frac{1}{p}\sum_{w \in W_s}\;\sum_{a \in A_w}\;\sum_{b \in \mathcal{B}} T_{opt}(w, a, b)`,complexity:String.raw`O\!\left(|W_s|\,\bar A\,|\mathcal B|\,T_{opt} / p\right)`,note:`W_s = stale weapons, A_w = the weapon's attacks, 𝓑 = boards (11 today), p = worker processes. T_opt is the build optimizer below.`},{name:`Staleness test`,tex:String.raw`\text{stale}(w) \iff H_{engine} \neq H'_{engine} \;\lor\; H_w \neq H'_w \;\lor\; w \in \text{--only}, \qquad H = \operatorname{sha256}(\cdot)_{[0,16)}`,complexity:String.raw`O(|\text{source}| + \sum_w |\text{lookups}_w|)`},{name:`Fire-rate fallback and seeds`,tex:String.raw`E_b(w,a) = \operatorname*{arg\,max}_{x \,\in\, \{x_b,\; x_{b\text{-nofr}}\} \,\cup\, \{\text{seed}(s) : s \in \text{parts}(a) \cup \text{seeds}\}} f_b(x)`,complexity:String.raw`O(|\text{seeds}|\cdot C)`},{name:`Merge and sort`,tex:String.raw`\text{board}_b = \operatorname{sort}_{\downarrow f}\big(\text{kept}_b \cup \text{new}_b\big)`,complexity:String.raw`O\!\left(\textstyle\sum_b N_b \log N_b\right)`}]},{id:`optimizer`,title:`Build optimizer (beam search)`,where:`Leaderboard, Compare, Rivens, Damage Cap, Boss board`,summary:`Finds a strong 8-mod build plus arcane, Incarnon evolutions, bonus element and element order for one attack and one goal. A heuristic, not an exhaustive search: checked against hand-built meta builds.`,complexity:String.raw`O\big((SB|P| + 2RS|P| + 2|\mathcal A| + 2\textstyle\sum_t|E_t| + 120)\,C\,(1+g)\big)`,sources:[{file:W,symbol:`optimizeAttack`},{file:W,symbol:`SLOT_COUNT`},{file:W,symbol:`BEAM_WIDTH`},{file:W,symbol:`MAX_SWAP_PASSES`},{file:W,symbol:`MAX_ELEMENT_ORDERS`},{file:W,symbol:`critViolation`},{file:`src/optimizer/modPool.ts`,symbol:`damageModPool`},{file:`src/optimizer/modPool.ts`,symbol:`usefulEffect`}],steps:[`Pool: one copy per mod name (highest rank), only mods with an effect that can raise this goal's number (fire rate / magazine / reload only on time-based goals, banes only against their faction, weak point mods and Acuity only on headshots, heavy-only stats only on heavies).`,`Bonus element (Kuva / Tenet / Coda): each element tried at the max value.`,`Beam search: grow builds one mod at a time, keep the best B = {{src/optimizer/optimize.ts#BEAM_WIDTH}} distinct mod sets at each size, for S = {{src/optimizer/optimize.ts#SLOT_COUNT}} slots. Incompatible pairs (same family, exclusive mods) are skipped.`,`Then, twice over: re-pick the bonus element, pick the best evolution per Incarnon tier, pick the arcane (ties go to the one with headshot / reload value), single-mod swaps until nothing improves (up to {{src/optimizer/optimize.ts#MAX_SWAP_PASSES}} passes), and try every slot order of the elemental mods (they combine in slot order), up to {{src/optimizer/optimize.ts#MAX_ELEMENT_ORDERS}} orders.`,`Against a real target (faction or headshot), the whole search runs again on the plain pool and the better one wins: a bane can crowd out a better crit build early.`,`Status-gated evolutions that weren't picked (Furis's Stormburst needs Electricity) each get a full search with the evolution locked in, since the mods never had a reason to add the status it needs.`],equations:[{name:`Search score`,tex:String.raw`s(M) = f(M)\,\Big(1 - 10^{-7}\!\sum_{m \in M}\kappa(m)\Big)\cdot\begin{cases}1 & \mu = 0\\[2pt] 10^{-3}\,e^{-20\mu} & \mu > 0\end{cases},\qquad \mu = \max(0, c - c_{max}) + \max(0, c_{min} - c)`,complexity:`O(C)`,note:`f = the goal's score from one damage calc, κ = 1 per catch (conditional or Niche mod) so ties go to the cleaner mod, μ = how far the crit chance c is outside the Compare tab's crit limits. The penalty is steep but smooth so the search still has a slope.`},{name:`Beam step`,tex:String.raw`\mathcal{B}_{k+1} = \operatorname{top}_{B}\Big\{\, M \cup \{m\} \;:\; M \in \mathcal{B}_k,\; m \in P,\; m \perp M \,\Big\},\qquad B = {{src/optimizer/optimize.ts#BEAM_WIDTH}},\; k < S = {{src/optimizer/optimize.ts#SLOT_COUNT}}`,complexity:String.raw`O(S\,B\,|P|\cdot C)`,note:`Builds are keyed by their sorted mod set, so the same set reached in two orders counts once.`},{name:`Swap pass`,tex:String.raw`M \leftarrow M[i \mapsto m] \;\text{ if }\; s(M[i \mapsto m]) > s(M)(1 + 10^{-9}),\qquad i \le S,\; m \in P,\; \le R = {{src/optimizer/optimize.ts#MAX_SWAP_PASSES}} \text{ passes}`,complexity:String.raw`O(R\,S\,|P|\cdot C)`},{name:`Evolutions, arcane, element order`,tex:String.raw`e_t^* = \operatorname*{arg\,max}_{e \in E_t \cup \{\varnothing\}} s(M \mid e),\quad a^* = \operatorname*{arg\,max}_{a \in \mathcal{A} \cup \{\varnothing\}} s(M \mid a),\quad \sigma^* = \operatorname*{arg\,max}_{\sigma \in \mathfrak{S}_k} s(\sigma M)`,complexity:String.raw`O\big((\textstyle\sum_t |E_t| + |\mathcal A| + \min(k!, 120))\cdot C\big)`,note:`k = elemental mods in the build, so 5 elements = 120 orders.`},{name:`Retries`,tex:String.raw`x^* = \operatorname*{arg\,max}\big\{x,\; x_{\text{plain pool}},\; x_{e_1 \text{ locked}},\dots, x_{e_g \text{ locked}}\big\}`,complexity:String.raw`O\big((1 + [\text{real target}] + g)\,T_{opt}\big)`,note:`g = status-gated evolutions not picked by the first search.`}]},{id:`damage-cap`,title:`Damage Cap ladder`,where:`Damage Cap`,summary:`How much has to stack up for one hit to pass the damage limit, as a ladder of steps that each add one layer and re-optimize for the biggest single instance.`,complexity:String.raw`O\big(8\,T_{opt} + |F|\,K\,C + \tbinom{n+4}{5}\, T_{frame}\big)`,sources:[{file:`src/optimizer/damageCap.ts`,symbol:`runCapLadder`},{file:`src/optimizer/damageCap.ts`,symbol:`combos`},{file:`src/optimizer/damageCap.ts`,symbol:`searchFrames`},{file:`src/optimizer/damageCap.ts`,symbol:`searchShards`},{file:`src/optimizer/damageCap.ts`,symbol:`searchPriming`},{file:`src/optimizer/damageCap.ts`,symbol:`searchAllies`},{file:`src/optimizer/frameBuild.ts`,symbol:`optimizeFrameMods`}],steps:[`1. Mods, weapon arcane and Incarnon, optimized for the peak hit against a level 9,999 Steel Path Heavy Gunner. 2. + headshot (never on AoE, off for melee unless asked).`,`3. + solo priming: the statuses the build applies itself plus a companion's (Diriga stands in for every primer). Companion picked, mods re-optimized for those debuffs, companion picked again on the new build.`,`4. + Warframe arcanes and 5. + Archon Shards on "any Warframe" with nothing cast: every Tauforged 5-shard multiset, each with a quick frame mod search, then the best few searched properly.`,`6. + your Warframe: every frame's own modeled abilities (every combination of one option per ability, capped at 400) plus one Helminth subsume, screened at a reference Strength; the shortlist gets a real frame mod build (beam search over 8 slots + aura + exilus, sets placed whole) and the weapon mods re-optimized.`,`7. + enemy debuffs maxed, 8. + allies: one teammate at a time, the frame that adds the most on top.`],equations:[{name:`Peak hit (what each step maximizes)`,tex:String.raw`\text{peak} = D_{\text{vs target, no crit}}\cdot\big(1 + \lceil c\rceil (M - 1)\big)\cdot \text{beamMerge}\cdot\text{batteryScale}`,complexity:`O(C)`,note:`The top crit tier, not the average: the cap is about the biggest number one hit can show.`},{name:`Ability setups per frame`,tex:String.raw`|\text{setups}| = \min\Big(400,\; \prod_{g \in G} \big(|O_g| + [g \text{ optional}]\big)\Big) \times |\text{subsumes}|`,complexity:String.raw`O(|F|\cdot K \cdot C)`,note:`F = frames, K = setups per frame after the cap.`},{name:`Archon Shard sets`,tex:String.raw`\#\text{multisets} = \binom{n + 5 - 1}{5}`,complexity:String.raw`O\big(\tbinom{n+4}{5}\, T_{frame}\big)`,note:`n = shard options that can matter for this weapon class, 5 slots, order doesn't matter.`},{name:`Frame mod beam`,tex:String.raw`\mathcal{L}_{r+1} = \operatorname{top}_{6}\big\{\, \text{place}(L, m) : L \in \mathcal{L}_r,\; m \in P_f \cup \text{sets}\,\big\},\quad r \le 8 + \text{aura} + 1`,complexity:String.raw`O\big((8 + a)\cdot 6 \cdot |P_f| \cdot C\big)`}]},{id:`riven`,title:`Riven god-roll search`,where:`Rivens`,summary:`Which riven stats raise an attack the most once the other 7 mods are rebuilt around it. Every candidate riven goes through the full optimizer with the riven locked in.`,complexity:String.raw`O\big((1 + |S_r| + 84 + |K_r|)\,T_{opt}\big)`,sources:[{file:`src/optimizer/rivenSearch.ts`,symbol:`searchRivens`},{file:`src/optimizer/rivenSearch.ts`,symbol:`rollRiven`}],steps:[`Baseline: the attack's best build with no riven.`,`Screen: each stat alone on a 2-stat + curse riven, at the max or average roll, full optimizer run each.`,`Shortlist: at most the 3 best elements (a second element mostly just combines with the first) and the best of everything else, 8 in all.`,`Combine: every 2- and 3-stat riven from the shortlist with at most one spliced stat. Each also tries the builds already found for its smaller parts with the riven dropped in, so a 3-stat riven never scores below its 2-stat parts.`,`Curses: the best riven's build with each curse swapped in, same positives, to see which curses cost nothing.`],equations:[{name:`Candidates`,tex:String.raw`|R| = \binom{8}{2} + \binom{8}{3} = 28 + 56 = 84 \;(\text{minus rivens with two spliced stats})`,complexity:String.raw`O(84\, T_{opt})`},{name:`Riven value`,tex:String.raw`v(r) = \frac{\max\big(f(x^*_r),\; \max_{r' \subset r} f(x^*_{r'} \oplus r)\big)}{f(x^*_\varnothing)} - 1`,complexity:String.raw`O(2^{|r|}\,C)`,note:`x*_r = the optimizer's build with riven r locked, x ⊕ r = an existing build with r dropped into its weakest slot.`}]},{id:`boss`,title:`Boss time-to-kill and damage attenuation`,where:`Leaderboard (Boss board)`,summary:`Ranks builds by seconds to strip a Steel Path boss's shields and health, solo, with the wiki's damage attenuation model on top of normal damage.`,complexity:String.raw`O\big(T_{opt}^{est} + \tfrac{T_{max}}{\Delta t}\,\bar n\big)`,sources:[{file:`src/optimizer/bossLeaderboard.ts`,symbol:`optimizeWeaponBoss`},{file:`src/optimizer/bossLeaderboard.ts`,symbol:`BOSS_ATTENUATION`},{file:G,symbol:`attenuationBins`},{file:G,symbol:`attenuatedTimeToKill`},{file:G,symbol:`BIN`},{file:G,symbol:`LAMBDA`},{file:K,symbol:`timeToReach`},{file:K,symbol:`calculate`},{file:K,symbol:`SHOTGUN_COMPENSATION`}],steps:[`The search scores builds on a quick estimate (attenuation applied to the average rate), then the winner is re-scored with the exact bin simulation. Score = 1 / seconds.`,`Per trigger, Reinhard tone mapping caps one shot's damage softly at MDPT; a bucket B tracks the mapped damage of the last second and scales everything down by MDPS / B when it's over.`,`The caps are shares of the boss's max health (health only, no shields): {{src/optimizer/bossLeaderboard.ts#BOSS_ATTENUATION}}. The per-trigger 5% is on both Hemocyte's and Lephantis's wiki pages; the per-second 20% only on Hemocyte's. Multi-pellet weapons get {{src/calc/damage.ts#SHOTGUN_COMPENSATION}}× the per-trigger cap (the standardized model's ShotgunCompensation; where it applies is my guess). The boards are marked untested.`,`Steps of Δt = {{src/calc/simulate.ts#BIN}} s out to 600 s. DoT ticks go into the bucket but skip the per-trigger step. Merged attacks (Onos's beam + blast) map each part's hits separately.`,`Without attenuation, time to reach an amount: secant steps from the steady rate, then a few halvings over the killing shot's interval. Past 10 minutes it's extrapolated so weak builds still have a slope.`],equations:[{name:`Per-trigger mapping (Reinhard)`,tex:String.raw`\hat d = \frac{M_t\, D}{D + M_t},\qquad D = \bar h\cdot\text{multishot},\qquad M_t = \text{perTrigger}\cdot HP\cdot k_{sg},\quad k_{sg} = \begin{cases}{{src/calc/damage.ts#SHOTGUN_COMPENSATION}} & \text{base multishot} > 1\\ 1 & \text{otherwise}\end{cases}`,complexity:`O(1)`},{name:`Rate bucket (damped follower)`,tex:String.raw`B'' + 2\lambda B' + \lambda^2 B = \lambda^2 Q,\quad \lambda = {{src/calc/simulate.ts#LAMBDA}},\qquad d_{out} = \hat d\cdot\min\!\Big(1, \frac{M_s}{B}\Big),\quad M_s = \text{perSecond}\cdot HP`,complexity:String.raw`O(T_{max}/\Delta t)`,note:`Q = mapped damage over the last 1 s. B jumps up to Q when Q > B and decays toward it otherwise.`},{name:`Time to reach (no attenuation)`,tex:String.raw`t_{n+1} = t_n + \frac{A - D(t_n)}{\dot D},\;\; n < N_{sec};\qquad \text{then bisect } [t_k - \tfrac1r,\, t_k] \text{ five times}`,complexity:String.raw`O\big((N_{sec} + 5)\cdot N_{shots}\big)`}]},{id:`compare`,title:`Compare build paths`,where:`Compare › Build Paths`,summary:`Runs the build optimizer once per path (a set of rules: locked or banned mods, a riven, a fixed arcane or evolution, crit limits) per goal, so different build philosophies can be compared side by side.`,complexity:String.raw`O(|\text{paths}|\cdot|\text{boards}|\cdot T_{opt})`,sources:[{file:`src/optimizer/compare.ts`,symbol:`runPath`},{file:`src/optimizer/compare.ts`,symbol:`constraintsFor`}],steps:[`Each path becomes optimizer constraints: locked mods (a riven too), excluded mods, locked or excluded arcane and evolutions, min / max crit chance.`,`"Thorough" doubles the beam width (8 → 16). Runs in a Web Worker so the page stays responsive.`],equations:[{name:`One cell`,tex:String.raw`x_{p,b} = \operatorname{optimize}\big(w, a, b \mid \text{constraints}(p)\big),\qquad B = \begin{cases}16 & \text{thorough}\\ 8 & \text{otherwise}\end{cases}`,complexity:String.raw`O(S\,B\,|P|\cdot C)`}]},{id:`advisor`,title:`Build Advisor`,where:`Calculator`,summary:`How much each stat is worth to this exact build right now, the best real mod for it, which slots carry the least, and greedy build paths. Everything is measured by running the calc with one more or one less mod.`,complexity:String.raw`O\big((|\Lambda| + S + |P| + 3 S |P|)\cdot C\big)`,sources:[{file:`src/calc/advisor.ts`,symbol:`advise`},{file:`src/calc/advisor.ts`,symbol:`greedyPath`},{file:`src/calc/advisor.ts`,symbol:`pathWithArcane`},{file:`src/calc/advisor.ts`,symbol:`buildPaths`},{file:`src/calc/advisor.ts`,symbol:`rankingScorer`},{file:`src/calc/advisor.ts`,symbol:`DOT_WEIGHT_OFF_DOT_WEAPON`}],steps:[`Lever weights: each stat (damage, crit, each element, faction...) is added at one typical mod's worth (or the biggest mod still available for it) and the score change is read off.`,`Slot values: the build with each mod vs without it.`,`Best and cheapest real mod per stat: added to a free slot, or swapped for the weakest slot when the build is full; cheapest = most gain per capacity point.`,`Over-stacking: a stat with 2+ mods where swapping one of them for the best mod of another stat makes the build bigger.`,`Build paths: greedy, one slot at a time, always the mod that adds the most right now; then the best arcane, then the mods again with it in, until it settles. Three forks: pure greedy, crit only, status only.`,`Status DoTs count at {{src/calc/advisor.ts#DOT_WEIGHT_OFF_DOT_WEAPON}}× in the rankings unless the weapon is built for them (25%+ base status, a beam, or forced procs).`],equations:[{name:`Lever weight`,tex:String.raw`w_\ell = \frac{f(M \oplus \delta_\ell) - f(M)}{f(M)}`,complexity:String.raw`O(|\Lambda|\cdot C)`,note:`Damage is a product of buckets, so adding to a bucket that's already big moves the product less: that's over-stacking in numbers.`},{name:`Slot contribution`,tex:String.raw`\gamma_m = \frac{f(M)}{f(M \setminus \{m\})} - 1`,complexity:String.raw`O(S\cdot C)`},{name:`Greedy path`,tex:String.raw`M_{k+1} = M_k \cup \Big\{\operatorname*{arg\,max}_{m \in P,\, m \perp M_k} f(M_k \cup \{m\})\Big\}`,complexity:String.raw`O(S\,|P|\cdot C)\text{ per pass}`}]},{id:`damage`,title:`Damage calculation`,where:`Every page`,summary:`One attack, one build, one target: base damage through mods, element combining, quantization, crit, multishot, armor and faction, status procs and DoTs, then magazine and reload. Everything else on the site calls this.`,complexity:String.raw`O(L + T + N_{shots})`,sources:[{file:K,symbol:`calculateOnce`},{file:K,symbol:`calculate`},{file:K,symbol:`quantize`},{file:`src/calc/target.ts`,symbol:`scaleArmor`},{file:`src/calc/target.ts`,symbol:`armorDamageMultiplier`},{file:`src/calc/constants.ts`,symbol:`COMBINED_ELEMENTS`}],steps:[`Collect every mod, arcane, passive, Warframe ability, combo and Incarnon effect into stat buckets. Conditionals at the scenario's stacks (per-shell stacks like Felarx's Mounting Momentum capped at the base form's magazine).`,`Damage types: physical types scaled by their own mods, elements added in slot order and combined two at a time, each final type quantized to 1/32 of base damage.`,`Crit (tiers above 100%, headcrit, Cold's crit damage, Melee Doughty's extra multiplier on the Puncture part only), faction, multishot, fire rate.`,`Target: armor (scaled by level, clamped, stripped by Heat / Corrosive / Corrosive Projection), faction weaknesses, headshot, vulnerability.`,`Status: procs per second split by each type's share of damage, DoT ticks per proc, Heat stacks refreshing together.`,`Magazine and reload (shell-by-shell where it applies), Incarnon battery and refill, then the sustained and time-window numbers via the shot simulator.`],equations:[{name:`Quantization`,tex:String.raw`q(p) = \frac{\operatorname{sgn}(p)\,\big\lfloor 32|p| + 0.5\big\rfloor}{32},\qquad D_t = q\!\left(p_t\right)\cdot D_{base}(1 + \beta)`,complexity:`O(T)`,note:`p_t = the type's share of base damage after its mods, β = base damage mods (Serration...).`},{name:`Crit`,tex:String.raw`\bar m_{crit} = 1 + c\,(M - 1),\qquad m_{\text{low tier}} = 1 + \lfloor c\rfloor (M-1),\qquad m_{\text{high tier}} = 1 + \lceil c\rceil (M-1)`,complexity:`O(1)`,note:`Above 100% crit the lowest tier is the "normal" hit and the next tier up is the "crit". M includes headcrit (×2 on the base) and Cold's bonus.`},{name:`Armor`,tex:String.raw`A(q) = \operatorname{clamp}\!\Big(A_0\big(\ell + (h - \ell)\,s\big),\,200,\,2700\Big),\;\; \ell = 1 + 0.005\,q^{1.75},\; h = 1 + 0.4\,q^{0.75},\; s = \operatorname{smoothstep}\!\Big(\tfrac{q - 70}{10}\Big)`,complexity:`O(1)`},{name:`Armor damage multiplier`,tex:String.raw`\text{DM}(A) = 1 - 0.9\sqrt{A / 2700}`,complexity:`O(1)`},{name:`Status procs`,tex:String.raw`\lambda_t = s \cdot n_{hit} \cdot r \cdot \frac{w_t}{\sum_u w_u}`,complexity:`O(T)`,note:`s = status chance, n_hit = hits per attack, r = fire rate, w_t = the type's modded damage (separate elements excluded).`}]},{id:`simulate`,title:`Time windows and sustained DPS`,where:`Calculator, Leaderboard`,summary:`Damage over a stretch of time: shots on the fire rate, magazine and reload, status procs ticking on their own clocks. A deterministic expected version for the optimizer and a Monte Carlo version for the bad-luck / good-luck range.`,complexity:String.raw`O(N_{shots}\cdot T\cdot \bar k)`,sources:[{file:G,symbol:`shotTimes`},{file:G,symbol:`expectedDamage`},{file:G,symbol:`simulateDamage`},{file:G,symbol:`heatExpiries`},{file:G,symbol:`ticksInside`}],steps:[`Shot times from t = 0: a full magazine at the fire rate, then a reload, and so on, until the window closes.`,`Each shot adds its expected direct damage and, per status type, its expected procs' DoT ticks that land inside the window (and before the proc expires).`,`Heat: every stack refreshes on a new Heat proc, so stacks die together only when no new Heat proc lands within one duration.`,`Monte Carlo: crits and procs rolled per pellet with a seeded mulberry32 RNG, runs capped at ~400k pellet rolls (60–300 runs).`],equations:[{name:`Shot times`,tex:String.raw`t_{k+1} = t_k + \frac1r + R\cdot\big[(k+1) \bmod m = 0\big]`,complexity:String.raw`O(N_{shots})`},{name:`Expected damage in a window`,tex:String.raw`E[D(T)] = \sum_{k} \Big(\bar h + \sum_{t} \pi_t\, \bar\tau_t \cdot \#\{\, j : t_k + \phi_t + j < \min(T,\; t_k + d_t) \,\}\Big)`,complexity:String.raw`O(N_{shots}\cdot T\cdot \bar k)`,note:`π_t = expected procs of type t per shot, τ̄_t = average tick, φ_t = first tick delay, d_t = duration, k̄ = ticks per proc.`}]},{id:`incarnon`,title:`Incarnon battery and refill`,where:`Calculator, Leaderboard`,summary:`Incarnon forms fire a fixed battery of charges, then have to be refilled from the normal form with weak point hits. The refill counts as the form's "reload".`,complexity:`O(1)`,sources:[{file:K,symbol:`INCARNON_SWAP_RELOADS`},{file:K,symbol:`calculateOnce`},{file:`src/data/reloads.ts`,symbol:`SHELL_BY_SHELL_RELOAD`},{file:`src/calc/incarnonForm.ts`,symbol:`isIncarnonAttackName`}],steps:[`Charges come back per weak point hit (wiki: "each charge producing 3 rounds" on Vasto). Every normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits): the best case.`,`Hits land at the normal form's own rate (its fire rate mods count) times its projectiles, reloads included.`,`Switching forms takes {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}× the base form's reload each way (reload speed mods don't shorten it).`,`An attack is the Incarnon form when its name says so, plus Laetum's Auto Radial Attack (the burst every form shot sets off), which runs on the form's charges too. [Normal only] evolutions skip all of them.`,`Ammo Efficiency (mods, arcanes, evolutions) never stretches the charges: they aren't ammo.`,`The refill's reloads are the base form's: shell-by-shell weapons (Felarx, Strun) reload shell by shell with the base form's modded magazine. The swap uses the listed reload stat.`],equations:[{name:`Refill time`,tex:String.raw`t_{refill} = \frac{Q / \rho}{(1 + g)\; r_{norm}\; n_{proj}} + t_{reloads} + 2\cdot {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}\cdot R_{base}`,complexity:`O(1)`,note:`Q = charges, ρ = rounds per hit, g = charge gain bonus (Incarnon Efficiency), t_reloads = the base form's own reloads while filling (shell by shell where it applies), R_base = the listed reload.`},{name:`Sustained DPS of the form`,tex:String.raw`\text{DPS} = \frac{D_{battery}}{t_{fire} + t_{refill}}`,complexity:`O(1)`}]},{id:`percentile`,title:`Weapon standing (percentiles)`,where:`Compare › Weapons, Rivens`,summary:`Where a weapon's base numbers sit among its own subtype (shotguns vs shotguns, glaives vs glaives), from the unmodded attack data.`,complexity:String.raw`O(n)\text{ per stat}`,sources:[{file:`src/calc/weaponProfile.ts`,symbol:`standing`},{file:`src/calc/weaponProfile.ts`,symbol:`MIN_GROUP`},{file:`src/calc/weaponProfile.ts`,symbol:`rankGroup`}],steps:[`Each weapon counts once per pool, by its first attack (or first Incarnon attack for the Incarnon pool). Exalted weapons are left out.`,`A subtype with fewer than {{src/calc/weaponProfile.ts#MIN_GROUP}} weapons falls back to the whole category.`,`Ties count half, so a value most weapons share reads as typical, not the lowest. "Highest" / "lowest" only when few weapons share the value.`],equations:[{name:`Share beaten`,tex:String.raw`\text{beats}(v) = \frac{\#\{u < v\} + \max(0,\, \#\{u = v\} - 1)/2}{n - 1}`,complexity:`O(n)`,note:`Flipped (counts u > v) for stats where lower is better, like reload time.`}]},{id:`enervate`,title:`Secondary Enervate average crit`,where:`Calculator, Data Analysis`,summary:`Enervate adds +10% crit per hit and resets after 6 big crits. The calc averages crit over a whole build-up-and-reset cycle as a small Markov chain.`,complexity:String.raw`O(K\cdot J)`,sources:[{file:K,symbol:`enervateAverageCrit`}],steps:[`State = (hit number k, big crits so far j). A big crit (orange or red) happens with chance crit − 100% once crit is past 100%.`,`The 6th big crit ends the cycle. Run until the remaining probability mass is under 10⁻¹².`],equations:[{name:`Chain`,tex:String.raw`c_k = c_0 + 0.1k,\quad p_k = \operatorname{clamp}(c_k - 1, 0, 1),\quad \pi_{k+1,j} = \pi_{k,j}(1 - p_k) + \pi_{k,j-1}\,p_k \;\; (j < 6)`,complexity:String.raw`O(K\cdot J),\; J = 6`},{name:`Average crit`,tex:String.raw`\bar c = \frac{\sum_k c_k \sum_j \pi_{k,j}}{\sum_k \sum_j \pi_{k,j}}`,complexity:`O(K)`,note:`Past 200% every hit is a big crit, so it resets every 6 hits: (0 + 10 + … + 50%) / 6 = +25%.`}]},{id:`analysis`,title:`Data Analysis statistics`,where:`Experimental › Data Analysis`,summary:`Arsenal-wide summaries: medians, histograms, release-update buckets, Prime uplift and how well base stats predict leaderboard score.`,complexity:String.raw`O(n \log n)`,sources:[{file:`src/components/DataExplorer.tsx`,symbol:`median`},{file:`src/components/DataExplorer.tsx`,symbol:`spearman`},{file:`src/components/DataExplorer.tsx`,symbol:`pickShot`},{file:`src/components/DataExplorer.tsx`,symbol:`applyEvolutions`},{file:`src/components/DataExplorer.tsx`,symbol:`ERA_SIZE`},{file:`src/components/DataExplorer.tsx`,symbol:`rowsFor`}],steps:[`Per weapon, one shot per attack mode (normal, alt-fire / special, Incarnon, melee heavy): merged parts summed, the hardest-hitting one when there are several.`,`Incarnon weapons get the base-stat lines of the evolutions the leaderboard picked for that attack.`,`Unmodded DPS: each weapon run through the damage calculation with no mods and no arcane, only its innate passives and those evolutions, sustained DPS on the neutral target (one whole heavy for melee heavies). The subtype section uses only this; the leaderboard section is the only place with modded builds.`,`Release trends bucket the wiki's "Introduced" update into groups of {{src/components/DataExplorer.tsx#ERA_SIZE}} updates.`],equations:[{name:`Median`,tex:String.raw`\tilde x = \begin{cases} x_{((n+1)/2)} & n \text{ odd}\\ \tfrac12\big(x_{(n/2)} + x_{(n/2+1)}\big) & n \text{ even}\end{cases}`,complexity:String.raw`O(n\log n)`},{name:`Spearman rank correlation`,tex:String.raw`\rho = \frac{\sum_i (R_i - \bar R)(S_i - \bar S)}{\sqrt{\sum_i (R_i - \bar R)^2 \sum_i (S_i - \bar S)^2}}`,complexity:String.raw`O(n\log n)`,note:`R, S = ranks of the base stat and the score, ties share their average rank.`},{name:`Prime uplift`,tex:String.raw`\Delta = \operatorname{median}_{(b,\,p)}\Big(\frac{x_p}{x_b} - 1\Big)`,complexity:`O(n log n)`}]},{id:`about-sync`,title:`This page's sync check`,where:`About`,summary:`Every write-up here cites the functions it describes and is stamped with a hash of them. When the code changes, the write-up is flagged as out of date and the project's checks fail until it's reread and restamped.`,complexity:String.raw`O(|\text{source}|)`,sources:[{file:`src/about/sync.ts`}],steps:[`Each cited function is cut out of its file by bracket matching from its declaration; comment-only lines and whitespace are dropped so rewording a comment doesn't count.`,`Numbers written as placeholders are read out of the code when the page renders, so a changed constant updates itself.`],equations:[{name:`Stamp`,tex:String.raw`h = \operatorname{FNV1a}_{32}\Big(\textstyle\bigoplus_{s \in \text{sources}} \operatorname{normalize}(\operatorname{extract}(s))\Big),\qquad \text{stale} \iff h \ne h_{verified}`,complexity:String.raw`O(|\text{source}|)`}]}];function se(e){return e.split(`
+`,H=t(),U=`src/optimizer/optimize.ts`,W=`src/calc/simulate.ts`,G=`src/calc/damage.ts`,K=`src/calc/fight.ts`,q=[{id:`leaderboard`,title:`Leaderboard rebuild`,where:`Leaderboard, Compare, Data Analysis`,summary:`Precomputes the best build for every weapon attack on every ranking, offline, and only redoes the weapons whose inputs changed.`,complexity:String.raw`O\!\left(\frac{|W_s|\,\bar A\,|\mathcal B|\;T_{opt}}{p}\right)`,sources:[{file:`scripts/build-leaderboard.ts`,symbol:`main`},{file:`scripts/build-leaderboard.ts`,symbol:`runShard`},{file:`scripts/build-leaderboard.ts`,symbol:`writeFile`},{file:`scripts/leaderboardFingerprint.ts`},{file:`src/optimizer/leaderboardWeapon.ts`,symbol:`optimizeWeapon`},{file:`src/optimizer/objectives.ts`,symbol:`BOARDS`}],steps:[`Fingerprint: one engine hash over the generic code every weapon runs through (comment lines and whitespace stripped), and one hash per weapon over its own data plus the outputs of every lookup it hits (the parsed mods it can equip, its passives, Incarnon perks, stance...).`,`A weapon is stale when the engine hash or its own hash changed (or it was named with --only). --boards limits the re-optimizing to some boards and keeps the rest from the old file.`,`Stale weapons are dealt round-robin to one worker process per core (max 12), each running a pre-bundled copy of the script.`,`Per weapon: every attack that does damage (reload/expiry/turret events and headshot-only parts skipped) × every board goes through the build optimizer. Heavies and gated alt-fires skip the fire-rate boards. Guns on the Single damage instance board are scored on headshots.`,`On fire-rate boards, the build found without fire-rate mods replaces the normal one if it scores higher (the search is a heuristic).`,`Whole shots ("A + B") are re-scored with every build found for their parts, plus any saved Compare seeds; a seed only replaces the entry if it scores higher.`,`Kept and new entries are merged, each board is sorted by score, and the file is written compact: mods, arcanes and weapons become indexes into shared tables.`],equations:[{name:`Total work`,tex:String.raw`T = \frac{1}{p}\sum_{w \in W_s}\;\sum_{a \in A_w}\;\sum_{b \in \mathcal{B}} T_{opt}(w, a, b)`,complexity:String.raw`O\!\left(|W_s|\,\bar A\,|\mathcal B|\,T_{opt} / p\right)`,note:`W_s = stale weapons, A_w = the weapon's attacks, 𝓑 = boards (11 today), p = worker processes. T_opt is the build optimizer below.`},{name:`Staleness test`,tex:String.raw`\text{stale}(w) \iff H_{engine} \neq H'_{engine} \;\lor\; H_w \neq H'_w \;\lor\; w \in \text{--only}, \qquad H = \operatorname{sha256}(\cdot)_{[0,16)}`,complexity:String.raw`O(|\text{source}| + \sum_w |\text{lookups}_w|)`},{name:`Fire-rate fallback and seeds`,tex:String.raw`E_b(w,a) = \operatorname*{arg\,max}_{x \,\in\, \{x_b,\; x_{b\text{-nofr}}\} \,\cup\, \{\text{seed}(s) : s \in \text{parts}(a) \cup \text{seeds}\}} f_b(x)`,complexity:String.raw`O(|\text{seeds}|\cdot C)`},{name:`Merge and sort`,tex:String.raw`\text{board}_b = \operatorname{sort}_{\downarrow f}\big(\text{kept}_b \cup \text{new}_b\big)`,complexity:String.raw`O\!\left(\textstyle\sum_b N_b \log N_b\right)`}]},{id:`optimizer`,title:`Build optimizer (beam search)`,where:`Leaderboard, Compare, Rivens, Damage Cap, Boss board`,summary:`Finds a strong 8-mod build plus arcane, Incarnon evolutions, bonus element and element order for one attack and one goal. A heuristic, not an exhaustive search: checked against hand-built meta builds.`,complexity:String.raw`O\big((SB|P| + 2RS|P| + 2|\mathcal A| + 2\textstyle\sum_t|E_t| + 120)\,C\,(1+g)\big)`,sources:[{file:U,symbol:`optimizeAttack`},{file:U,symbol:`SLOT_COUNT`},{file:U,symbol:`BEAM_WIDTH`},{file:U,symbol:`MAX_SWAP_PASSES`},{file:U,symbol:`MAX_ELEMENT_ORDERS`},{file:U,symbol:`critViolation`},{file:`src/optimizer/modPool.ts`,symbol:`damageModPool`},{file:`src/optimizer/modPool.ts`,symbol:`usefulEffect`}],steps:[`Pool: one copy per mod name (highest rank), only mods with an effect that can raise this goal's number (fire rate / magazine / reload only on time-based goals, banes only against their faction, weak point mods and Acuity only on headshots, heavy-only stats only on heavies).`,`Bonus element (Kuva / Tenet / Coda): each element tried at the max value.`,`Beam search: grow builds one mod at a time, keep the best B = {{src/optimizer/optimize.ts#BEAM_WIDTH}} distinct mod sets at each size, for S = {{src/optimizer/optimize.ts#SLOT_COUNT}} slots. Incompatible pairs (same family, exclusive mods) are skipped.`,`Then, twice over: re-pick the bonus element, pick the best evolution per Incarnon tier, pick the arcane (ties go to the one with headshot / reload value), single-mod swaps until nothing improves (up to {{src/optimizer/optimize.ts#MAX_SWAP_PASSES}} passes), and try every slot order of the elemental mods (they combine in slot order), up to {{src/optimizer/optimize.ts#MAX_ELEMENT_ORDERS}} orders.`,`Against a real target (faction or headshot), the whole search runs again on the plain pool and the better one wins: a bane can crowd out a better crit build early.`,`Status-gated evolutions that weren't picked (Furis's Stormburst needs Electricity) each get a full search with the evolution locked in, since the mods never had a reason to add the status it needs.`],equations:[{name:`Search score`,tex:String.raw`s(M) = f(M)\,\Big(1 - 10^{-7}\!\sum_{m \in M}\kappa(m)\Big)\cdot\begin{cases}1 & \mu = 0\\[2pt] 10^{-3}\,e^{-20\mu} & \mu > 0\end{cases},\qquad \mu = \max(0, c - c_{max}) + \max(0, c_{min} - c)`,complexity:`O(C)`,note:`f = the goal's score from one damage calc, κ = 1 per catch (conditional or Niche mod) so ties go to the cleaner mod, μ = how far the crit chance c is outside the Compare tab's crit limits. The penalty is steep but smooth so the search still has a slope.`},{name:`Beam step`,tex:String.raw`\mathcal{B}_{k+1} = \operatorname{top}_{B}\Big\{\, M \cup \{m\} \;:\; M \in \mathcal{B}_k,\; m \in P,\; m \perp M \,\Big\},\qquad B = {{src/optimizer/optimize.ts#BEAM_WIDTH}},\; k < S = {{src/optimizer/optimize.ts#SLOT_COUNT}}`,complexity:String.raw`O(S\,B\,|P|\cdot C)`,note:`Builds are keyed by their sorted mod set, so the same set reached in two orders counts once.`},{name:`Swap pass`,tex:String.raw`M \leftarrow M[i \mapsto m] \;\text{ if }\; s(M[i \mapsto m]) > s(M)(1 + 10^{-9}),\qquad i \le S,\; m \in P,\; \le R = {{src/optimizer/optimize.ts#MAX_SWAP_PASSES}} \text{ passes}`,complexity:String.raw`O(R\,S\,|P|\cdot C)`},{name:`Evolutions, arcane, element order`,tex:String.raw`e_t^* = \operatorname*{arg\,max}_{e \in E_t \cup \{\varnothing\}} s(M \mid e),\quad a^* = \operatorname*{arg\,max}_{a \in \mathcal{A} \cup \{\varnothing\}} s(M \mid a),\quad \sigma^* = \operatorname*{arg\,max}_{\sigma \in \mathfrak{S}_k} s(\sigma M)`,complexity:String.raw`O\big((\textstyle\sum_t |E_t| + |\mathcal A| + \min(k!, 120))\cdot C\big)`,note:`k = elemental mods in the build, so 5 elements = 120 orders.`},{name:`Retries`,tex:String.raw`x^* = \operatorname*{arg\,max}\big\{x,\; x_{\text{plain pool}},\; x_{e_1 \text{ locked}},\dots, x_{e_g \text{ locked}}\big\}`,complexity:String.raw`O\big((1 + [\text{real target}] + g)\,T_{opt}\big)`,note:`g = status-gated evolutions not picked by the first search.`}]},{id:`damage-cap`,title:`Damage Cap ladder`,where:`Damage Cap`,summary:`How much has to stack up for one hit to pass the damage limit, as a ladder of steps that each add one layer and re-optimize for the biggest single instance.`,complexity:String.raw`O\big(8\,T_{opt} + |F|\,K\,C + \tbinom{n+4}{5}\, T_{frame}\big)`,sources:[{file:`src/optimizer/damageCap.ts`,symbol:`runCapLadder`},{file:`src/optimizer/damageCap.ts`,symbol:`combos`},{file:`src/optimizer/damageCap.ts`,symbol:`searchFrames`},{file:`src/optimizer/damageCap.ts`,symbol:`searchShards`},{file:`src/optimizer/damageCap.ts`,symbol:`searchPriming`},{file:`src/optimizer/damageCap.ts`,symbol:`searchAllies`},{file:`src/optimizer/frameBuild.ts`,symbol:`optimizeFrameMods`}],steps:[`1. Mods, weapon arcane and Incarnon, optimized for the peak hit against a level 9,999 Steel Path Heavy Gunner. 2. + headshot (never on AoE, off for melee unless asked).`,`3. + solo priming: the statuses the build applies itself plus a companion's (Diriga stands in for every primer). Companion picked, mods re-optimized for those debuffs, companion picked again on the new build.`,`4. + Warframe arcanes and 5. + Archon Shards on "any Warframe" with nothing cast: every Tauforged 5-shard multiset, each with a quick frame mod search, then the best few searched properly.`,`6. + your Warframe: every frame's own modeled abilities (every combination of one option per ability, capped at 400) plus one Helminth subsume, screened at a reference Strength; the shortlist gets a real frame mod build (beam search over 8 slots + aura + exilus, sets placed whole) and the weapon mods re-optimized.`,`7. + enemy debuffs maxed, 8. + allies: one teammate at a time, the frame that adds the most on top.`],equations:[{name:`Peak hit (what each step maximizes)`,tex:String.raw`\text{peak} = D_{\text{vs target, no crit}}\cdot\big(1 + \lceil c\rceil (M - 1)\big)\cdot \text{beamMerge}\cdot\text{batteryScale}`,complexity:`O(C)`,note:`The top crit tier, not the average: the cap is about the biggest number one hit can show.`},{name:`Ability setups per frame`,tex:String.raw`|\text{setups}| = \min\Big(400,\; \prod_{g \in G} \big(|O_g| + [g \text{ optional}]\big)\Big) \times |\text{subsumes}|`,complexity:String.raw`O(|F|\cdot K \cdot C)`,note:`F = frames, K = setups per frame after the cap.`},{name:`Archon Shard sets`,tex:String.raw`\#\text{multisets} = \binom{n + 5 - 1}{5}`,complexity:String.raw`O\big(\tbinom{n+4}{5}\, T_{frame}\big)`,note:`n = shard options that can matter for this weapon class, 5 slots, order doesn't matter.`},{name:`Frame mod beam`,tex:String.raw`\mathcal{L}_{r+1} = \operatorname{top}_{6}\big\{\, \text{place}(L, m) : L \in \mathcal{L}_r,\; m \in P_f \cup \text{sets}\,\big\},\quad r \le 8 + \text{aura} + 1`,complexity:String.raw`O\big((8 + a)\cdot 6 \cdot |P_f| \cdot C\big)`}]},{id:`riven`,title:`Riven god-roll search`,where:`Rivens`,summary:`Which riven stats raise an attack the most once the other 7 mods are rebuilt around it. Every candidate riven goes through the full optimizer with the riven locked in.`,complexity:String.raw`O\big((1 + |S_r| + 84 + |K_r|)\,T_{opt}\big)`,sources:[{file:`src/optimizer/rivenSearch.ts`,symbol:`searchRivens`},{file:`src/optimizer/rivenSearch.ts`,symbol:`rollRiven`}],steps:[`Baseline: the attack's best build with no riven.`,`Screen: each stat alone on a 2-stat + curse riven, at the max or average roll, full optimizer run each.`,`Shortlist: at most the 3 best elements (a second element mostly just combines with the first) and the best of everything else, 8 in all.`,`Combine: every 2- and 3-stat riven from the shortlist with at most one spliced stat. Each also tries the builds already found for its smaller parts with the riven dropped in, so a 3-stat riven never scores below its 2-stat parts.`,`Curses: the best riven's build with each curse swapped in, same positives, to see which curses cost nothing.`],equations:[{name:`Candidates`,tex:String.raw`|R| = \binom{8}{2} + \binom{8}{3} = 28 + 56 = 84 \;(\text{minus rivens with two spliced stats})`,complexity:String.raw`O(84\, T_{opt})`},{name:`Riven value`,tex:String.raw`v(r) = \frac{\max\big(f(x^*_r),\; \max_{r' \subset r} f(x^*_{r'} \oplus r)\big)}{f(x^*_\varnothing)} - 1`,complexity:String.raw`O(2^{|r|}\,C)`,note:`x*_r = the optimizer's build with riven r locked, x ⊕ r = an existing build with r dropped into its weakest slot.`}]},{id:`boss`,title:`Boss time-to-kill and damage attenuation`,where:`Leaderboard (Boss board)`,summary:`Ranks builds by seconds to strip a Steel Path boss's shields and health, solo, with the wiki's damage attenuation model on top of normal damage.`,complexity:String.raw`O\big(T_{opt}^{est} + \tfrac{T_{max}}{\Delta t}\,\bar n\big)`,sources:[{file:`src/optimizer/bossLeaderboard.ts`,symbol:`optimizeWeaponBoss`},{file:`src/optimizer/bossLeaderboard.ts`,symbol:`BOSS_ATTENUATION`},{file:W,symbol:`attenuationBins`},{file:W,symbol:`attenuatedTimeToKill`},{file:W,symbol:`BIN`},{file:W,symbol:`LAMBDA`},{file:G,symbol:`timeToReach`},{file:G,symbol:`calculate`},{file:G,symbol:`SHOTGUN_COMPENSATION`}],steps:[`The search scores builds on a quick estimate (attenuation applied to the average rate), then the winner is re-scored with the exact bin simulation. Score = 1 / seconds.`,`Per trigger, Reinhard tone mapping caps one shot's damage softly at MDPT; a bucket B tracks the mapped damage of the last second and scales everything down by MDPS / B when it's over.`,`The caps are shares of the boss's max health (health only, no shields): {{src/optimizer/bossLeaderboard.ts#BOSS_ATTENUATION}}. The per-trigger 5% is on both Hemocyte's and Lephantis's wiki pages; the per-second 20% only on Hemocyte's. Multi-pellet weapons get {{src/calc/damage.ts#SHOTGUN_COMPENSATION}}× the per-trigger cap (the standardized model's ShotgunCompensation; where it applies is my guess). The boards are marked untested.`,`Steps of Δt = {{src/calc/simulate.ts#BIN}} s out to 600 s. DoT ticks go into the bucket but skip the per-trigger step. Merged attacks (Onos's beam + blast) map each part's hits separately.`,`Without attenuation, time to reach an amount: secant steps from the steady rate, then a few halvings over the killing shot's interval. Past 10 minutes it's extrapolated so weak builds still have a slope.`],equations:[{name:`Per-trigger mapping (Reinhard)`,tex:String.raw`\hat d = \frac{M_t\, D}{D + M_t},\qquad D = \bar h\cdot\text{multishot},\qquad M_t = \text{perTrigger}\cdot HP\cdot k_{sg},\quad k_{sg} = \begin{cases}{{src/calc/damage.ts#SHOTGUN_COMPENSATION}} & \text{base multishot} > 1\\ 1 & \text{otherwise}\end{cases}`,complexity:`O(1)`},{name:`Rate bucket (damped follower)`,tex:String.raw`B'' + 2\lambda B' + \lambda^2 B = \lambda^2 Q,\quad \lambda = {{src/calc/simulate.ts#LAMBDA}},\qquad d_{out} = \hat d\cdot\min\!\Big(1, \frac{M_s}{B}\Big),\quad M_s = \text{perSecond}\cdot HP`,complexity:String.raw`O(T_{max}/\Delta t)`,note:`Q = mapped damage over the last 1 s. B jumps up to Q when Q > B and decays toward it otherwise.`},{name:`Time to reach (no attenuation)`,tex:String.raw`t_{n+1} = t_n + \frac{A - D(t_n)}{\dot D},\;\; n < N_{sec};\qquad \text{then bisect } [t_k - \tfrac1r,\, t_k] \text{ five times}`,complexity:String.raw`O\big((N_{sec} + 5)\cdot N_{shots}\big)`}]},{id:`compare`,title:`Compare build paths`,where:`Compare › Build Paths`,summary:`Runs the build optimizer once per path (a set of rules: locked or banned mods, a riven, a fixed arcane or evolution, crit limits) per goal, so different build philosophies can be compared side by side.`,complexity:String.raw`O(|\text{paths}|\cdot|\text{boards}|\cdot T_{opt})`,sources:[{file:`src/optimizer/compare.ts`,symbol:`runPath`},{file:`src/optimizer/compare.ts`,symbol:`constraintsFor`}],steps:[`Each path becomes optimizer constraints: locked mods (a riven too), excluded mods, locked or excluded arcane and evolutions, min / max crit chance.`,`"Thorough" doubles the beam width (8 → 16). Runs in a Web Worker so the page stays responsive.`],equations:[{name:`One cell`,tex:String.raw`x_{p,b} = \operatorname{optimize}\big(w, a, b \mid \text{constraints}(p)\big),\qquad B = \begin{cases}16 & \text{thorough}\\ 8 & \text{otherwise}\end{cases}`,complexity:String.raw`O(S\,B\,|P|\cdot C)`}]},{id:`advisor`,title:`Build Advisor`,where:`Calculator`,summary:`How much each stat is worth to this exact build right now, the best real mod for it, which slots carry the least, and greedy build paths. Everything is measured by running the calc with one more or one less mod.`,complexity:String.raw`O\big((|\Lambda| + S + |P| + 3 S |P|)\cdot C\big)`,sources:[{file:`src/calc/advisor.ts`,symbol:`advise`},{file:`src/calc/advisor.ts`,symbol:`greedyPath`},{file:`src/calc/advisor.ts`,symbol:`pathWithArcane`},{file:`src/calc/advisor.ts`,symbol:`buildPaths`},{file:`src/calc/advisor.ts`,symbol:`rankingScorer`},{file:`src/calc/advisor.ts`,symbol:`DOT_WEIGHT_OFF_DOT_WEAPON`}],steps:[`Lever weights: each stat (damage, crit, each element, faction...) is added at one typical mod's worth (or the biggest mod still available for it) and the score change is read off.`,`Slot values: the build with each mod vs without it.`,`Best and cheapest real mod per stat: added to a free slot, or swapped for the weakest slot when the build is full; cheapest = most gain per capacity point.`,`Over-stacking: a stat with 2+ mods where swapping one of them for the best mod of another stat makes the build bigger.`,`Build paths: greedy, one slot at a time, always the mod that adds the most right now; then the best arcane, then the mods again with it in, until it settles. Three forks: pure greedy, crit only, status only.`,`Status DoTs count at {{src/calc/advisor.ts#DOT_WEIGHT_OFF_DOT_WEAPON}}× in the rankings unless the weapon is built for them (25%+ base status, a beam, or forced procs).`],equations:[{name:`Lever weight`,tex:String.raw`w_\ell = \frac{f(M \oplus \delta_\ell) - f(M)}{f(M)}`,complexity:String.raw`O(|\Lambda|\cdot C)`,note:`Damage is a product of buckets, so adding to a bucket that's already big moves the product less: that's over-stacking in numbers.`},{name:`Slot contribution`,tex:String.raw`\gamma_m = \frac{f(M)}{f(M \setminus \{m\})} - 1`,complexity:String.raw`O(S\cdot C)`},{name:`Greedy path`,tex:String.raw`M_{k+1} = M_k \cup \Big\{\operatorname*{arg\,max}_{m \in P,\, m \perp M_k} f(M_k \cup \{m\})\Big\}`,complexity:String.raw`O(S\,|P|\cdot C)\text{ per pass}`}]},{id:`damage`,title:`Damage calculation`,where:`Every page`,summary:`One attack, one build, one target: base damage through mods, element combining, quantization, crit, multishot, armor and faction, status procs and DoTs, then magazine and reload. Everything else on the site calls this.`,complexity:String.raw`O(L + T + N_{shots})`,sources:[{file:G,symbol:`calculateOnce`},{file:G,symbol:`calculate`},{file:G,symbol:`quantize`},{file:`src/calc/target.ts`,symbol:`scaleArmor`},{file:`src/calc/target.ts`,symbol:`armorDamageMultiplier`},{file:`src/calc/constants.ts`,symbol:`COMBINED_ELEMENTS`}],steps:[`Collect every mod, arcane, passive, Warframe ability, combo and Incarnon effect into stat buckets. Conditionals at the scenario's stacks (per-shell stacks like Felarx's Mounting Momentum capped at the base form's magazine).`,`Damage types: physical types scaled by their own mods, elements added in slot order and combined two at a time, each final type quantized to 1/32 of base damage.`,`Crit (tiers above 100%, headcrit, Cold's crit damage, Melee Doughty's extra multiplier on the Puncture part only), faction, multishot, fire rate.`,`Target: armor (scaled by level, clamped, stripped by Heat / Corrosive / Corrosive Projection), faction weaknesses, headshot, vulnerability.`,`Status: procs per second split by each type's share of damage, DoT ticks per proc, Heat stacks refreshing together.`,`Magazine and reload (shell-by-shell where it applies), Incarnon battery and refill, then the sustained and time-window numbers via the shot simulator.`],equations:[{name:`Quantization`,tex:String.raw`q(p) = \frac{\operatorname{sgn}(p)\,\big\lfloor 32|p| + 0.5\big\rfloor}{32},\qquad D_t = q\!\left(p_t\right)\cdot D_{base}(1 + \beta)`,complexity:`O(T)`,note:`p_t = the type's share of base damage after its mods, β = base damage mods (Serration...).`},{name:`Crit`,tex:String.raw`\bar m_{crit} = 1 + c\,(M - 1),\qquad m_{\text{low tier}} = 1 + \lfloor c\rfloor (M-1),\qquad m_{\text{high tier}} = 1 + \lceil c\rceil (M-1)`,complexity:`O(1)`,note:`Above 100% crit the lowest tier is the "normal" hit and the next tier up is the "crit". M includes headcrit (×2 on the base) and Cold's bonus.`},{name:`Armor`,tex:String.raw`A(q) = \operatorname{clamp}\!\Big(A_0\big(\ell + (h - \ell)\,s\big),\,200,\,2700\Big),\;\; \ell = 1 + 0.005\,q^{1.75},\; h = 1 + 0.4\,q^{0.75},\; s = \operatorname{smoothstep}\!\Big(\tfrac{q - 70}{10}\Big)`,complexity:`O(1)`},{name:`Armor damage multiplier`,tex:String.raw`\text{DM}(A) = 1 - 0.9\sqrt{A / 2700}`,complexity:`O(1)`},{name:`Status procs`,tex:String.raw`\lambda_t = s \cdot n_{hit} \cdot r \cdot \frac{w_t}{\sum_u w_u}`,complexity:`O(T)`,note:`s = status chance, n_hit = hits per attack, r = fire rate, w_t = the type's modded damage (separate elements excluded).`}]},{id:`simulate`,title:`Time windows and sustained DPS`,where:`Calculator, Leaderboard`,summary:`Damage over a stretch of time: shots on the fire rate, magazine and reload, status procs ticking on their own clocks. A deterministic expected version for the optimizer and a Monte Carlo version for the bad-luck / good-luck range.`,complexity:String.raw`O(N_{shots}\cdot T\cdot \bar k)`,sources:[{file:W,symbol:`shotTimes`},{file:W,symbol:`expectedDamage`},{file:W,symbol:`simulateDamage`},{file:W,symbol:`heatExpiries`},{file:W,symbol:`ticksInside`}],steps:[`Shot times from t = 0: a full magazine at the fire rate, then a reload, and so on, until the window closes.`,`Each shot adds its expected direct damage and, per status type, its expected procs' DoT ticks that land inside the window (and before the proc expires).`,`Heat: every stack refreshes on a new Heat proc, so stacks die together only when no new Heat proc lands within one duration.`,`Monte Carlo: crits and procs rolled per pellet with a seeded mulberry32 RNG, runs capped at ~400k pellet rolls (60–300 runs).`],equations:[{name:`Shot times`,tex:String.raw`t_{k+1} = t_k + \frac1r + R\cdot\big[(k+1) \bmod m = 0\big]`,complexity:String.raw`O(N_{shots})`},{name:`Expected damage in a window`,tex:String.raw`E[D(T)] = \sum_{k} \Big(\bar h + \sum_{t} \pi_t\, \bar\tau_t \cdot \#\{\, j : t_k + \phi_t + j < \min(T,\; t_k + d_t) \,\}\Big)`,complexity:String.raw`O(N_{shots}\cdot T\cdot \bar k)`,note:`π_t = expected procs of type t per shot, τ̄_t = average tick, φ_t = first tick delay, d_t = duration, k̄ = ticks per proc.`}]},{id:`fight`,title:`Damage simulator`,where:`Calculator (Damage simulator button)`,summary:`One build against one enemy, shot by shot, until it dies, a few hundred seeded times. The enemy keeps state (overguard, shields, health, status stacks, Heat's armor strip), so the kill time comes with its good-luck / bad-luck spread and the armor strip shows up over time.`,complexity:String.raw`O\big(R\cdot (N_{shots}\,\bar p + N_{ticks})\log Q \;+\; |S|\cdot C\big)`,sources:[{file:K,symbol:`runFight`},{file:K,symbol:`makePricer`},{file:K,symbol:`simulateFight`},{file:K,symbol:`overguardMultiplier`},{file:K,symbol:`EXIMUS_BASE_OVERGUARD`},{file:K,symbol:`HEAT_STAGES`},{file:K,symbol:`OVERGUARD_COLD_CAP`}],steps:[`Shot times come from the same shot model as the time windows (fire rate, magazine, reload, charge). Each pellet rolls head or body (the aim setting), its crit tier and its procs with a seeded mulberry32 RNG, seed + run index. Reloads come off the same clock (a shot interval after the last shot in a magazine, then the reload) and are shaded on the charts.`,`Every pellet and DoT tick is priced by the normal damage calc against the enemy's state at that moment: layer, head or body, stacks of each status and the Heat strip stage. Prices are cached per state, so a fight only runs the calc for the few dozen states it reaches.`,`Damage goes overguard, then shields, then health. When a layer breaks mid-hit, what's left of the hit is priced again against the next layer. Toxin goes around shields. Overguard takes no armor and no damage reduction, but Magnetic and Secondary Fortifier still count. Cascadia Empowered lands one flat hit on every real proc.`,`A shot's procs count from the next shot on. Corrosive stacks last 8 s, the others 6 s, each on its own timer, at most 10 (the oldest is replaced). Heat strips {{src/calc/fight.ts#HEAT_STAGES}} of armor one step every {{src/calc/fight.ts#HEAT_UP_STEP}} s, and falls back a step every {{src/calc/fight.ts#HEAT_DOWN_STEP}} s once Heat ends. Status Duration stretches all of it.`,`Eximus overguard = {{src/calc/fight.ts#EXIMUS_BASE_OVERGUARD}} × the level multiplier below. While it's up the enemy ignores crowd control (no lifted / knocked down bonus) and holds at most {{src/calc/fight.ts#OVERGUARD_COLD_CAP}} Cold stacks.`,`Incarnon forms (experimental toggle, never the leaderboard): instead of idling through the refill, the form fires its battery, drops straight back to the normal form with a full magazine (no switch when the battery runs out), the normal form fires while the charges come back (its hits count), and it switches back in; switching in is 2x the base reload, the same guess as the refill estimate. Switches, normal-form stretches and reloads are shaded on the charts.`,`Every fight is also run again with DoT ticks dealing nothing (the procs still land, so strips and Viral still help the hits). The gap between the two is the status damage, and the two kill times show when the hits alone would have killed.`,`Checked against the averages: with nothing changing on the enemy, the mean damage of 1,000 runs at 10 s is within 1% of the expected damage on a sample of leaderboard guns, and the 10th / 90th percentiles within 2% of the Monte Carlo range. Bosses are experimental: attenuation isn't applied.`],equations:[{name:`Overguard level multiplier`,tex:String.raw`m(L) = \mathrm{f32}\big(f_1 + \mathrm{f32}(\mathrm{f32}(f_2 - f_1)\cdot s)\big),\quad f_1 = 1 + 0.0015\,(L-1)^4,\quad f_2 = 1 + 260\,(L-1)^{0.9},\quad s = \mathrm{smoothstep}\big(\tfrac{L - 45}{5}\big)`,complexity:`O(1)`,note:`f32 = round to a 32-bit float. L is the level the enemy spawns at (Steel Path adds 100).`},{name:`Overflow into the next layer`,tex:String.raw`d_{next} = \Big(1 - \frac{P_{layer}}{d_{layer}}\Big)\, d_{next}^{\,full}`,complexity:`O(1)`,note:`d_layer = the hit priced against the layer it broke, P_layer = what that layer had left.`}]},{id:`incarnon`,title:`Incarnon battery and refill`,where:`Calculator, Leaderboard`,summary:`Incarnon forms fire a fixed battery of charges, then have to be refilled from the normal form with weak point hits. The refill counts as the form's "reload".`,complexity:`O(1)`,sources:[{file:G,symbol:`INCARNON_SWAP_RELOADS`},{file:G,symbol:`calculateOnce`},{file:`src/data/reloads.ts`,symbol:`SHELL_BY_SHELL_RELOAD`},{file:`src/calc/incarnonForm.ts`,symbol:`isIncarnonAttackName`}],steps:[`Charges come back per weak point hit (wiki: "each charge producing 3 rounds" on Vasto). Every normal-form bullet is assumed to land on a weak point (Torid / Angstrum count direct hits): the best case.`,`Hits land at the normal form's own rate (its fire rate mods count) times its projectiles, reloads included.`,`Switching back into the form takes {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}× the base form's reload (reload speed mods don't shorten it). Getting out is free: when the battery runs out the gun drops back to its normal form already reloaded.`,`An attack is the Incarnon form when its name says so, plus Laetum's Auto Radial Attack (the burst every form shot sets off), which runs on the form's charges too. [Normal only] evolutions skip all of them.`,`Ammo Efficiency (mods, arcanes, evolutions) never stretches the charges: they aren't ammo.`,`The refill's reloads are the base form's: shell-by-shell weapons (Felarx, Strun) reload shell by shell with the base form's modded magazine. The swap uses the listed reload stat.`],equations:[{name:`Refill time`,tex:String.raw`t_{refill} = \frac{Q / \rho}{(1 + g)\; r_{norm}\; n_{proj}} + t_{reloads} + {{src/calc/damage.ts#INCARNON_SWAP_RELOADS}}\cdot R_{base}`,complexity:`O(1)`,note:`Q = charges, ρ = rounds per hit, g = charge gain bonus (Incarnon Efficiency), t_reloads = the base form's own reloads while filling (shell by shell where it applies), R_base = the listed reload.`},{name:`Sustained DPS of the form`,tex:String.raw`\text{DPS} = \frac{D_{battery}}{t_{fire} + t_{refill}}`,complexity:`O(1)`}]},{id:`percentile`,title:`Weapon standing (percentiles)`,where:`Compare › Weapons, Rivens`,summary:`Where a weapon's base numbers sit among its own subtype (shotguns vs shotguns, glaives vs glaives), from the unmodded attack data.`,complexity:String.raw`O(n)\text{ per stat}`,sources:[{file:`src/calc/weaponProfile.ts`,symbol:`standing`},{file:`src/calc/weaponProfile.ts`,symbol:`MIN_GROUP`},{file:`src/calc/weaponProfile.ts`,symbol:`rankGroup`}],steps:[`Each weapon counts once per pool, by its first attack (or first Incarnon attack for the Incarnon pool). Exalted weapons are left out.`,`A subtype with fewer than {{src/calc/weaponProfile.ts#MIN_GROUP}} weapons falls back to the whole category.`,`Ties count half, so a value most weapons share reads as typical, not the lowest. "Highest" / "lowest" only when few weapons share the value.`],equations:[{name:`Share beaten`,tex:String.raw`\text{beats}(v) = \frac{\#\{u < v\} + \max(0,\, \#\{u = v\} - 1)/2}{n - 1}`,complexity:`O(n)`,note:`Flipped (counts u > v) for stats where lower is better, like reload time.`}]},{id:`enervate`,title:`Secondary Enervate average crit`,where:`Calculator, Data Analysis`,summary:`Enervate adds +10% crit per hit and resets after 6 big crits. The calc averages crit over a whole build-up-and-reset cycle as a small Markov chain.`,complexity:String.raw`O(K\cdot J)`,sources:[{file:G,symbol:`enervateAverageCrit`}],steps:[`State = (hit number k, big crits so far j). A big crit (orange or red) happens with chance crit − 100% once crit is past 100%.`,`The 6th big crit ends the cycle. Run until the remaining probability mass is under 10⁻¹².`],equations:[{name:`Chain`,tex:String.raw`c_k = c_0 + 0.1k,\quad p_k = \operatorname{clamp}(c_k - 1, 0, 1),\quad \pi_{k+1,j} = \pi_{k,j}(1 - p_k) + \pi_{k,j-1}\,p_k \;\; (j < 6)`,complexity:String.raw`O(K\cdot J),\; J = 6`},{name:`Average crit`,tex:String.raw`\bar c = \frac{\sum_k c_k \sum_j \pi_{k,j}}{\sum_k \sum_j \pi_{k,j}}`,complexity:`O(K)`,note:`Past 200% every hit is a big crit, so it resets every 6 hits: (0 + 10 + … + 50%) / 6 = +25%.`}]},{id:`analysis`,title:`Data Analysis statistics`,where:`Experimental › Data Analysis`,summary:`Arsenal-wide summaries: medians, histograms, release-update buckets, Prime uplift and how well base stats predict leaderboard score.`,complexity:String.raw`O(n \log n)`,sources:[{file:`src/components/DataExplorer.tsx`,symbol:`median`},{file:`src/components/DataExplorer.tsx`,symbol:`spearman`},{file:`src/components/DataExplorer.tsx`,symbol:`pickShot`},{file:`src/components/DataExplorer.tsx`,symbol:`applyEvolutions`},{file:`src/components/DataExplorer.tsx`,symbol:`ERA_SIZE`},{file:`src/components/DataExplorer.tsx`,symbol:`rowsFor`}],steps:[`Per weapon, one shot per attack mode (normal, alt-fire / special, Incarnon, melee heavy): merged parts summed, the hardest-hitting one when there are several.`,`Incarnon weapons get the base-stat lines of the evolutions the leaderboard picked for that attack.`,`Unmodded DPS: each weapon run through the damage calculation with no mods and no arcane, only its innate passives and those evolutions, sustained DPS on the neutral target (one whole heavy for melee heavies). The subtype section uses only this; the leaderboard section is the only place with modded builds.`,`Release trends bucket the wiki's "Introduced" update into groups of {{src/components/DataExplorer.tsx#ERA_SIZE}} updates.`],equations:[{name:`Median`,tex:String.raw`\tilde x = \begin{cases} x_{((n+1)/2)} & n \text{ odd}\\ \tfrac12\big(x_{(n/2)} + x_{(n/2+1)}\big) & n \text{ even}\end{cases}`,complexity:String.raw`O(n\log n)`},{name:`Spearman rank correlation`,tex:String.raw`\rho = \frac{\sum_i (R_i - \bar R)(S_i - \bar S)}{\sqrt{\sum_i (R_i - \bar R)^2 \sum_i (S_i - \bar S)^2}}`,complexity:String.raw`O(n\log n)`,note:`R, S = ranks of the base stat and the score, ties share their average rank.`},{name:`Prime uplift`,tex:String.raw`\Delta = \operatorname{median}_{(b,\,p)}\Big(\frac{x_p}{x_b} - 1\Big)`,complexity:`O(n log n)`}]},{id:`about-sync`,title:`This page's sync check`,where:`About`,summary:`Every write-up here cites the functions it describes and is stamped with a hash of them. When the code changes, the write-up is flagged as out of date and the project's checks fail until it's reread and restamped.`,complexity:String.raw`O(|\text{source}|)`,sources:[{file:`src/about/sync.ts`}],steps:[`Each cited function is cut out of its file by bracket matching from its declaration; comment-only lines and whitespace are dropped so rewording a comment doesn't count.`,`Numbers written as placeholders are read out of the code when the page renders, so a changed constant updates itself.`],equations:[{name:`Stamp`,tex:String.raw`h = \operatorname{FNV1a}_{32}\Big(\textstyle\bigoplus_{s \in \text{sources}} \operatorname{normalize}(\operatorname{extract}(s))\Big),\qquad \text{stale} \iff h \ne h_{verified}`,complexity:String.raw`O(|\text{source}|)`}]}];function ue(e){return e.split(`
 `).map(e=>e.trim()).filter(e=>e&&!e.startsWith(`//`)).join(`
-`).replace(/\s+/g,` `)}function ce(e,t){let n=e.search(RegExp(`(?:function\\*?|const|let|class|interface|type)\\s+${t}\\b`));if(n<0)return null;let r=0;for(let t=n;t<e.length;t++){let i=e[t];if(`([{`.includes(i))r++;else if(`)]}`.includes(i))r--;else if(i===`
-`&&r<=0&&!/(=>|[=(,:?+\-*/|&])\s*$/.test(e.slice(n,t)))return e.slice(n,t)}return e.slice(n)}function le(e){let t=2166136261;for(let n=0;n<e.length;n++)t^=e.charCodeAt(n),t=Math.imul(t,16777619);return(t>>>0).toString(16).padStart(8,`0`)}function ue(e,t){let n=[];return{hash:le(e.map(({file:e,symbol:r})=>{let i=t(e),a=i===null?null:r?ce(i,r):i;return a===null&&n.push(r?`${e}#${r}`:e),se(a??``)}).join(`
+`).replace(/\s+/g,` `)}function de(e,t){let n=e.search(RegExp(`(?:function\\*?|const|let|class|interface|type)\\s+${t}\\b`));if(n<0)return null;let r=0;for(let t=n;t<e.length;t++){let i=e[t];if(`([{`.includes(i))r++;else if(`)]}`.includes(i))r--;else if(i===`
+`&&r<=0&&!/(=>|[=(,:?+\-*/|&])\s*$/.test(e.slice(n,t)))return e.slice(n,t)}return e.slice(n)}function fe(e){let t=2166136261;for(let n=0;n<e.length;n++)t^=e.charCodeAt(n),t=Math.imul(t,16777619);return(t>>>0).toString(16).padStart(8,`0`)}function pe(e,t){let n=[];return{hash:fe(e.map(({file:e,symbol:r})=>{let i=t(e),a=i===null?null:r?de(i,r):i;return a===null&&n.push(r?`${e}#${r}`:e),ue(a??``)}).join(`
 \0
-`)),missing:n}}var de=/\{\{([^#}]+)#([A-Za-z_$][\w$]*)\}\}/g;function J(e,t){if(!e)return null;let n=e.match(RegExp(`(?:const|let)\\s+${t}\\s*(?::[^=]+)?=\\s*([^\\n;]+)`));return n?n[1].replace(/\s*\/\/.*$/,``).replace(/\bas const\b/,``).trim():null}function Y(e,t,n){return e.replace(de,(e,r,i)=>{let a=J(t(r),i);return a===null&&n?.push(`${r}#${i}`),a??`?`})}var fe={leaderboard:`1d5da096`,optimizer:`d3a60601`,"damage-cap":`e121e1ae`,riven:`bcedefbd`,boss:`2f183160`,compare:`6c5a0a5a`,advisor:`7694965c`,damage:`4d0ac709`,simulate:`1b0e5a9b`,incarnon:`cfa44cc7`,percentile:`e894b8bf`,enervate:`4b57406d`,analysis:`5e812991`,"about-sync":`f43c485c`},X=e(),pe=Object.assign({"/scripts/build-leaderboard.ts":r,"/scripts/leaderboardFingerprint.ts":i,"/src/about/algorithms.ts":a,"/src/about/sync.ts":o,"/src/calc/abilityDamage.ts":s,"/src/calc/advisor.ts":c,"/src/calc/capacity.ts":l,"/src/calc/conditionOverload.ts":u,"/src/calc/constants.ts":ee,"/src/calc/damage.ts":te,"/src/calc/damageCap.ts":ne,"/src/calc/evolved.ts":re,"/src/calc/incarnon.ts":ie,"/src/calc/incarnonForm.ts":ae,"/src/calc/kill.ts":d,"/src/calc/loadoutCode.ts":f,"/src/calc/mechanicTags.ts":p,"/src/calc/modConflicts.ts":m,"/src/calc/modSets.ts":h,"/src/calc/modTieBreak.ts":g,"/src/calc/nicheMods.ts":_,"/src/calc/parseMod.ts":v,"/src/calc/riven.ts":y,"/src/calc/rivenHints.ts":b,"/src/calc/simulate.ts":x,"/src/calc/specialLines.ts":S,"/src/calc/target.ts":C,"/src/calc/warframeStats.ts":w,"/src/calc/weaponProfile.ts":T,"/src/components/DataExplorer.tsx":E,"/src/data/reloads.ts":D,"/src/optimizer/attackKinds.ts":O,"/src/optimizer/bossLeaderboard.ts":k,"/src/optimizer/capWorker.ts":A,"/src/optimizer/compare.ts":j,"/src/optimizer/compareWorker.ts":M,"/src/optimizer/damageCap.ts":N,"/src/optimizer/frameBuild.ts":P,"/src/optimizer/leaderboardLoader.ts":oe,"/src/optimizer/leaderboardTypes.ts":F,"/src/optimizer/leaderboardWeapon.ts":I,"/src/optimizer/modPool.ts":L,"/src/optimizer/objectives.ts":R,"/src/optimizer/optimize.ts":z,"/src/optimizer/rivenSearch.ts":B,"/src/optimizer/rivenWorker.ts":V,"/src/optimizer/scenario.ts":H}),Z=e=>pe[`/${e}`]??null,me=fe;function Q({tex:e,display:t=!1}){let r=(0,U.useMemo)(()=>n.renderToString(Y(e,Z),{displayMode:t,throwOnError:!1}),[e,t]);return t?(0,X.jsx)(`div`,{className:`formula-tex`,dangerouslySetInnerHTML:{__html:r}}):(0,X.jsx)(`span`,{dangerouslySetInnerHTML:{__html:r}})}function $(e){let{hash:t,missing:n}=ue(e.sources,Z);return{current:!n.length&&me[e.id]===t,missing:n}}function he({algorithm:e,index:t}){let{current:n,missing:r}=(0,U.useMemo)(()=>$(e),[e]);return(0,X.jsxs)(`details`,{className:`algo`,children:[(0,X.jsxs)(`summary`,{children:[(0,X.jsx)(`span`,{className:`algo-rank`,children:t+1}),(0,X.jsx)(`span`,{className:`algo-title`,children:e.title}),(0,X.jsx)(`span`,{className:`algo-cost`,children:(0,X.jsx)(Q,{tex:e.complexity})}),(0,X.jsx)(`span`,{className:`algo-status ${n?`ok`:`stale`}`,children:n?`✓ matches code`:`⚠ code changed`})]}),(0,X.jsxs)(`div`,{className:`algo-body`,children:[(0,X.jsxs)(`p`,{className:`muted algo-where`,children:[`Used on: `,e.where]}),!n&&(0,X.jsxs)(`p`,{className:`algo-warning`,children:[r.length?`Some of the code this describes is gone (${r.join(`, `)}). `:`The code this describes changed since this was last checked against it. `,`The steps below may be out of date.`]}),(0,X.jsx)(`p`,{children:Y(e.summary,Z)}),(0,X.jsx)(`ol`,{className:`algo-steps`,children:e.steps.map(e=>(0,X.jsx)(`li`,{children:Y(e,Z)},e))}),e.equations.map(e=>(0,X.jsxs)(`details`,{className:`algo-eq`,children:[(0,X.jsxs)(`summary`,{children:[e.name,e.complexity&&(0,X.jsx)(`span`,{className:`algo-cost`,children:(0,X.jsx)(Q,{tex:e.complexity})})]}),(0,X.jsx)(Q,{tex:e.tex,display:!0}),e.note&&(0,X.jsx)(`p`,{className:`muted`,children:Y(e.note,Z)})]},e.name)),(0,X.jsxs)(`p`,{className:`muted algo-sources`,children:[`Code: `,e.sources.map(e=>e.symbol?`${e.file.split(`/`).pop()} › ${e.symbol}`:e.file.split(`/`).pop()).join(`, `)]})]})]})}function ge(){let e=(0,U.useMemo)(()=>q.filter(e=>!$(e).current).length,[]);return(0,X.jsxs)(`div`,{className:`analysis`,children:[(0,X.jsxs)(`section`,{className:`panel`,children:[(0,X.jsx)(`h2`,{children:`About`}),(0,X.jsx)(`p`,{children:`A personal tool and project for exploring Warframe's weapon database in a comprehensive way: every weapon, mod, arcane and Incarnon evolution run through the game's damage math, optimized, ranked and compared. Weapon and mod data come from @wfcd/items, mechanics from the Warframe wiki.`})]}),(0,X.jsxs)(`section`,{className:`panel`,children:[(0,X.jsxs)(`div`,{className:`row spread`,children:[(0,X.jsx)(`h2`,{children:`How it works`}),(0,X.jsx)(`span`,{className:`algo-status ${e?`stale`:`ok`}`,children:e?`⚠ ${e} of ${q.length} out of date`:`✓ all ${q.length} match the code`})]}),(0,X.jsx)(`p`,{className:`muted`,children:`Every algorithm the site runs, biggest first. Open one for its steps, then each equation for the math and its time complexity. Each write-up is tied to the functions it describes: when that code changes the write-up is flagged here until it's rechecked, and numbers like the beam width are read straight out of the code.`}),(0,X.jsxs)(`p`,{className:`muted`,children:[`Notation: `,(0,X.jsx)(Q,{tex:`C`}),` = one damage calculation, `,(0,X.jsx)(Q,{tex:`T_{opt}`}),` = one build optimizer run, `,(0,X.jsx)(Q,{tex:`|P|`}),` = the mod pool,`,` `,(0,X.jsx)(Q,{tex:`S`}),` = mod slots, `,(0,X.jsx)(Q,{tex:`B`}),` = beam width, `,(0,X.jsx)(Q,{tex:`T`}),` = damage types, `,(0,X.jsx)(Q,{tex:`L`}),` = mod lines.`]}),(0,X.jsx)(`div`,{className:`algo-list`,children:q.map((e,t)=>(0,X.jsx)(he,{algorithm:e,index:t},e.id))})]})]})}export{ge as default};
+`)),missing:n}}var me=/\{\{([^#}]+)#([A-Za-z_$][\w$]*)\}\}/g;function he(e,t){if(!e)return null;let n=e.match(RegExp(`(?:const|let)\\s+${t}\\s*(?::[^=]+)?=\\s*([^\\n;]+)`));return n?n[1].replace(/\s*\/\/.*$/,``).replace(/\bas const\b/,``).trim():null}function J(e,t,n){return e.replace(me,(e,r,i)=>{let a=he(t(r),i);return a===null&&n?.push(`${r}#${i}`),a??`?`})}var ge={leaderboard:`1d5da096`,optimizer:`d3a60601`,"damage-cap":`e121e1ae`,riven:`bcedefbd`,boss:`2f183160`,compare:`6c5a0a5a`,advisor:`7694965c`,damage:`b0a1a86b`,simulate:`1b0e5a9b`,fight:`46bf8ba2`,incarnon:`a1ede6bb`,percentile:`e894b8bf`,enervate:`4b57406d`,analysis:`5e812991`,"about-sync":`f43c485c`},Y=e(),X=Object.assign({"/scripts/build-leaderboard.ts":r,"/scripts/leaderboardFingerprint.ts":i,"/src/about/algorithms.ts":a,"/src/about/sync.ts":o,"/src/calc/abilityDamage.ts":s,"/src/calc/advisor.ts":c,"/src/calc/capacity.ts":ee,"/src/calc/conditionOverload.ts":te,"/src/calc/constants.ts":ne,"/src/calc/damage.ts":re,"/src/calc/damageCap.ts":ie,"/src/calc/evolved.ts":ae,"/src/calc/fight.ts":oe,"/src/calc/fightWorker.ts":se,"/src/calc/incarnon.ts":ce,"/src/calc/incarnonForm.ts":l,"/src/calc/kill.ts":u,"/src/calc/loadoutCode.ts":d,"/src/calc/mechanicTags.ts":f,"/src/calc/modConflicts.ts":p,"/src/calc/modSets.ts":m,"/src/calc/modTieBreak.ts":h,"/src/calc/nicheMods.ts":g,"/src/calc/parseMod.ts":_,"/src/calc/riven.ts":v,"/src/calc/rivenHints.ts":y,"/src/calc/simulate.ts":b,"/src/calc/specialLines.ts":x,"/src/calc/target.ts":S,"/src/calc/warframeStats.ts":C,"/src/calc/weaponProfile.ts":w,"/src/components/DataExplorer.tsx":T,"/src/data/reloads.ts":E,"/src/optimizer/attackKinds.ts":D,"/src/optimizer/bossLeaderboard.ts":O,"/src/optimizer/capWorker.ts":k,"/src/optimizer/compare.ts":A,"/src/optimizer/compareWorker.ts":j,"/src/optimizer/damageCap.ts":M,"/src/optimizer/frameBuild.ts":N,"/src/optimizer/leaderboardLoader.ts":P,"/src/optimizer/leaderboardTypes.ts":F,"/src/optimizer/leaderboardWeapon.ts":I,"/src/optimizer/modPool.ts":le,"/src/optimizer/objectives.ts":L,"/src/optimizer/optimize.ts":R,"/src/optimizer/rivenSearch.ts":z,"/src/optimizer/rivenWorker.ts":B,"/src/optimizer/scenario.ts":V}),Z=e=>X[`/${e}`]??null,_e=ge;function Q({tex:e,display:t=!1}){let r=(0,H.useMemo)(()=>n.renderToString(J(e,Z),{displayMode:t,throwOnError:!1}),[e,t]);return t?(0,Y.jsx)(`div`,{className:`formula-tex`,dangerouslySetInnerHTML:{__html:r}}):(0,Y.jsx)(`span`,{dangerouslySetInnerHTML:{__html:r}})}function $(e){let{hash:t,missing:n}=pe(e.sources,Z);return{current:!n.length&&_e[e.id]===t,missing:n}}function ve({algorithm:e,index:t}){let{current:n,missing:r}=(0,H.useMemo)(()=>$(e),[e]);return(0,Y.jsxs)(`details`,{className:`algo`,children:[(0,Y.jsxs)(`summary`,{children:[(0,Y.jsx)(`span`,{className:`algo-rank`,children:t+1}),(0,Y.jsx)(`span`,{className:`algo-title`,children:e.title}),(0,Y.jsx)(`span`,{className:`algo-cost`,children:(0,Y.jsx)(Q,{tex:e.complexity})}),(0,Y.jsx)(`span`,{className:`algo-status ${n?`ok`:`stale`}`,children:n?`✓ matches code`:`⚠ code changed`})]}),(0,Y.jsxs)(`div`,{className:`algo-body`,children:[(0,Y.jsxs)(`p`,{className:`muted algo-where`,children:[`Used on: `,e.where]}),!n&&(0,Y.jsxs)(`p`,{className:`algo-warning`,children:[r.length?`Some of the code this describes is gone (${r.join(`, `)}). `:`The code this describes changed since this was last checked against it. `,`The steps below may be out of date.`]}),(0,Y.jsx)(`p`,{children:J(e.summary,Z)}),(0,Y.jsx)(`ol`,{className:`algo-steps`,children:e.steps.map(e=>(0,Y.jsx)(`li`,{children:J(e,Z)},e))}),e.equations.map(e=>(0,Y.jsxs)(`details`,{className:`algo-eq`,children:[(0,Y.jsxs)(`summary`,{children:[e.name,e.complexity&&(0,Y.jsx)(`span`,{className:`algo-cost`,children:(0,Y.jsx)(Q,{tex:e.complexity})})]}),(0,Y.jsx)(Q,{tex:e.tex,display:!0}),e.note&&(0,Y.jsx)(`p`,{className:`muted`,children:J(e.note,Z)})]},e.name)),(0,Y.jsxs)(`p`,{className:`muted algo-sources`,children:[`Code: `,e.sources.map(e=>e.symbol?`${e.file.split(`/`).pop()} › ${e.symbol}`:e.file.split(`/`).pop()).join(`, `)]})]})]})}function ye(){let e=(0,H.useMemo)(()=>q.filter(e=>!$(e).current).length,[]);return(0,Y.jsxs)(`div`,{className:`analysis`,children:[(0,Y.jsxs)(`section`,{className:`panel`,children:[(0,Y.jsx)(`h2`,{children:`About`}),(0,Y.jsx)(`p`,{children:`A personal tool and project for exploring Warframe's weapon database in a comprehensive way: every weapon, mod, arcane and Incarnon evolution run through the game's damage math, optimized, ranked and compared. Weapon and mod data come from @wfcd/items, mechanics from the Warframe wiki.`})]}),(0,Y.jsxs)(`section`,{className:`panel`,children:[(0,Y.jsxs)(`div`,{className:`row spread`,children:[(0,Y.jsx)(`h2`,{children:`How it works`}),(0,Y.jsx)(`span`,{className:`algo-status ${e?`stale`:`ok`}`,children:e?`⚠ ${e} of ${q.length} out of date`:`✓ all ${q.length} match the code`})]}),(0,Y.jsx)(`p`,{className:`muted`,children:`Every algorithm the site runs, biggest first. Open one for its steps, then each equation for the math and its time complexity. Each write-up is tied to the functions it describes: when that code changes the write-up is flagged here until it's rechecked, and numbers like the beam width are read straight out of the code.`}),(0,Y.jsxs)(`p`,{className:`muted`,children:[`Notation: `,(0,Y.jsx)(Q,{tex:`C`}),` = one damage calculation, `,(0,Y.jsx)(Q,{tex:`T_{opt}`}),` = one build optimizer run, `,(0,Y.jsx)(Q,{tex:`|P|`}),` = the mod pool,`,` `,(0,Y.jsx)(Q,{tex:`S`}),` = mod slots, `,(0,Y.jsx)(Q,{tex:`B`}),` = beam width, `,(0,Y.jsx)(Q,{tex:`T`}),` = damage types, `,(0,Y.jsx)(Q,{tex:`L`}),` = mod lines.`]}),(0,Y.jsx)(`div`,{className:`algo-list`,children:q.map((e,t)=>(0,Y.jsx)(ve,{algorithm:e,index:t},e.id))})]})]})}export{ye as default};
